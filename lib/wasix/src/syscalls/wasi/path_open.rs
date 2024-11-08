@@ -84,25 +84,6 @@ pub fn path_open<M: MemorySize>(
     )?);
     let env = ctx.data();
 
-    #[cfg(feature = "journal")]
-    if env.enable_journal {
-        JournalEffector::save_path_open(
-            &mut ctx,
-            out_fd,
-            dirfd,
-            dirflags,
-            path_string,
-            o_flags,
-            fs_rights_base,
-            fs_rights_inheriting,
-            fs_flags,
-        )
-        .map_err(|err| {
-            tracing::error!("failed to save unlink event - {}", err);
-            WasiError::Exit(ExitCode::Errno(Errno::Fault))
-        })?;
-    }
-
     let env = ctx.data();
     let (memory, mut state, mut inodes) =
         unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };

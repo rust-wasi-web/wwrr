@@ -4,22 +4,10 @@ use std::{
     fmt,
     ops::{Deref, DerefMut},
 };
-#[cfg(feature = "sys")]
-pub use wasmer_compiler::Tunables;
 pub use wasmer_types::{OnCalledAction, StoreId};
-#[cfg(feature = "sys")]
-use wasmer_vm::init_traps;
-#[cfg(feature = "sys")]
-pub use wasmer_vm::TrapHandlerFn;
 
-#[cfg(feature = "sys")]
-pub use wasmer_vm::{StoreHandle, StoreObjects};
-
-#[cfg(feature = "js")]
 pub use crate::js::store::{StoreHandle, StoreObjects};
 
-#[cfg(feature = "jsc")]
-pub use crate::jsc::store::{StoreHandle, StoreObjects};
 
 /// Call handler for a store.
 // TODO: better documentation!
@@ -36,9 +24,6 @@ pub(crate) struct StoreInner {
     pub(crate) objects: StoreObjects,
     #[derivative(Debug = "ignore")]
     pub(crate) engine: Engine,
-    #[cfg(feature = "sys")]
-    #[derivative(Debug = "ignore")]
-    pub(crate) trap_handler: Option<Box<TrapHandlerFn<'static>>>,
     #[derivative(Debug = "ignore")]
     pub(crate) on_called: Option<OnCalledHandler>,
 }
@@ -59,26 +44,13 @@ pub struct Store {
 impl Store {
     /// Creates a new `Store` with a specific [`Engine`].
     pub fn new(engine: impl Into<Engine>) -> Self {
-        // Make sure the signal handlers are installed.
-        // This is required for handling traps.
-        #[cfg(feature = "sys")]
-        init_traps();
-
         Self {
             inner: Box::new(StoreInner {
                 objects: Default::default(),
                 engine: engine.into(),
-                #[cfg(feature = "sys")]
-                trap_handler: None,
                 on_called: None,
             }),
         }
-    }
-
-    #[cfg(feature = "sys")]
-    /// Set the trap handler in this store.
-    pub fn set_trap_handler(&mut self, handler: Option<Box<TrapHandlerFn<'static>>>) {
-        self.inner.trap_handler = handler;
     }
 
     /// Returns the [`Engine`].
@@ -180,16 +152,6 @@ impl<'a> StoreRef<'a> {
     /// equal to another store if both have the same engine.
     pub fn same(a: &Self, b: &Self) -> bool {
         a.inner.objects.id() == b.inner.objects.id()
-    }
-
-    /// The signal handler
-    #[cfg(feature = "sys")]
-    #[inline]
-    pub fn signal_handler(&self) -> Option<*const TrapHandlerFn<'static>> {
-        self.inner
-            .trap_handler
-            .as_ref()
-            .map(|handler| handler.as_ref() as *const _)
     }
 }
 

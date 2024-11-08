@@ -17,15 +17,6 @@ pub fn clock_time_set<M: MemorySize>(
     let ret = clock_time_set_internal(&mut ctx, clock_id, time);
     let env = ctx.data();
 
-    if ret == Errno::Success {
-        #[cfg(feature = "journal")]
-        if env.enable_journal {
-            JournalEffector::save_clock_time_set(&mut ctx, clock_id, time).map_err(|err| {
-                tracing::error!("failed to save clock time set event - {}", err);
-                WasiError::Exit(ExitCode::Errno(Errno::Fault))
-            })?;
-        }
-    }
     Ok(ret)
 }
 

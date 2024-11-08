@@ -27,22 +27,6 @@ pub fn sock_connect<M: MemorySize>(
 
     wasi_try_ok!(sock_connect_internal(&mut ctx, sock, peer_addr)?);
 
-    #[cfg(feature = "journal")]
-    if ctx.data().enable_journal {
-        let local_addr = wasi_try_ok!(__sock_actor(
-            &mut ctx,
-            sock,
-            Rights::empty(),
-            |socket, _| socket.addr_local()
-        ));
-        JournalEffector::save_sock_connect(&mut ctx, sock, local_addr, peer_addr).map_err(
-            |err| {
-                tracing::error!("failed to save sock_connected event - {}", err);
-                WasiError::Exit(ExitCode::Errno(Errno::Fault))
-            },
-        )?;
-    }
-
     Ok(Errno::Success)
 }
 

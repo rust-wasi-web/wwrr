@@ -1,6 +1,4 @@
-// TODO: should be behind a different , tokio specific feature flag.
-#[cfg(feature = "sys-thread")]
-pub mod tokio;
+
 
 use std::ops::Deref;
 use std::task::{Context, Poll};

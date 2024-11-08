@@ -54,23 +54,6 @@ pub fn path_filestat_set_times<M: MemorySize>(
     ));
     let env = ctx.data();
 
-    #[cfg(feature = "journal")]
-    if env.enable_journal {
-        JournalEffector::save_path_set_times(
-            &mut ctx,
-            fd,
-            flags,
-            path_string,
-            st_atim,
-            st_mtim,
-            fst_flags,
-        )
-        .map_err(|err| {
-            tracing::error!("failed to save file set times event - {}", err);
-            WasiError::Exit(ExitCode::Errno(Errno::Fault))
-        })?;
-    }
-
     Ok(Errno::Success)
 }
 

@@ -4,18 +4,7 @@ pub mod types {
     pub use wasmer_wasix_types::{types::*, wasi};
 }
 
-#[cfg(any(
-    target_os = "freebsd",
-    target_os = "linux",
-    target_os = "android",
-    target_vendor = "apple"
-))]
-pub mod unix;
-#[cfg(target_family = "wasm")]
 pub mod wasm;
-#[cfg(target_os = "windows")]
-pub mod windows;
-
 pub mod journal;
 pub mod wasi;
 pub mod wasix;
@@ -124,7 +113,7 @@ use crate::{
         fs_error_into_wasi_err, virtual_file_type_to_wasi_file_type, Fd, InodeVal, Kind,
         MAX_SYMLINKS,
     },
-    journal::{DynJournal, JournalEffector},
+    journal::DynJournal,
     os::task::{
         process::{MaybeCheckpointResult, WasiProcessCheckpoint},
         thread::{RewindResult, RewindResultType},
@@ -484,10 +473,7 @@ where
     Fut: Future<Output = T> + Send + Sync + 'static,
 {
     // Determine the deep sleep time
-    let deep_sleep_time = match ctx.data().enable_journal {
-        true => Duration::from_micros(100),
-        false => Duration::from_millis(50),
-    };
+    let deep_sleep_time = Duration::from_millis(50);
 
     // Box up the trigger
     let mut trigger = Box::pin(work);
@@ -564,8 +550,6 @@ where
     T: 'static,
     Fut: Future<Output = Result<T, Errno>>,
 {
-    let snapshot_wait = wait_for_snapshot(env);
-
     // This poller will process any signals when the main working function is idle
     struct Poller<'a, Fut, T>
     where
@@ -1045,65 +1029,6 @@ pub(crate) fn deep_sleep<M: MemorySize>(
         let memory_stack = memory_stack.freeze();
         let rewind_stack = rewind_stack.freeze();
         let thread_layout = ctx.data().thread.memory_layout().clone();
-
-        // If journal'ing is enabled then we dump the stack into the journal
-        if ctx.data().enable_journal {
-            // Grab all the globals and serialize them
-            let store_data = crate::utils::store::capture_store_snapshot(&mut ctx.as_store_mut())
-                .serialize()
-                .unwrap();
-            let store_data = Bytes::from(store_data);
-
-            tracing::debug!(
-                "stack snapshot unwind (memory_stack={}, rewind_stack={}, store_data={})",
-                memory_stack.len(),
-                rewind_stack.len(),
-                store_data.len(),
-            );
-
-            #[cfg(feature = "journal")]
-            {
-                // Write our thread state to the snapshot
-                let tid = ctx.data().thread.tid();
-                let thread_start = ctx.data().thread.thread_start_type();
-                if let Err(err) = JournalEffector::save_thread_state::<M>(
-                    &mut ctx,
-                    tid,
-                    memory_stack.clone(),
-                    rewind_stack.clone(),
-                    store_data.clone(),
-                    thread_start,
-                    thread_layout.clone(),
-                ) {
-                    return wasmer_types::OnCalledAction::Trap(err.into());
-                }
-            }
-
-            // If all the threads are now in a deep sleep state
-            // then we can trigger the idle snapshot event
-            let inner = ctx.data().process.inner.clone();
-            let is_idle = {
-                let mut guard = inner.0.lock().unwrap();
-                guard.threads.values().all(WasiThread::is_deep_sleeping)
-            };
-
-            // When we idle the journal functionality may be set
-            // will take a snapshot of the memory and threads so
-            // that it can resumed.
-            #[cfg(feature = "journal")]
-            {
-                if is_idle && ctx.data_mut().has_snapshot_trigger(SnapshotTrigger::Idle) {
-                    let mut guard = inner.0.lock().unwrap();
-                    if let Err(err) = JournalEffector::save_memory_and_snapshot(
-                        &mut ctx,
-                        &mut guard,
-                        SnapshotTrigger::Idle,
-                    ) {
-                        return wasmer_types::OnCalledAction::Trap(err.into());
-                    }
-                }
-            }
-        }
 
         // Schedule the process on the stack so that it can be resumed
         OnCalledAction::Trap(Box::new(WasiError::DeepSleep(DeepSleepWork {

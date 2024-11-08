@@ -5,12 +5,7 @@ use std::mem::MaybeUninit;
 use std::ops::Range;
 use wasmer_types::Pages;
 
-#[cfg(feature = "js")]
 use crate::js::externals::memory_view as memory_view_impl;
-#[cfg(feature = "jsc")]
-use crate::jsc::externals::memory_view as memory_view_impl;
-#[cfg(feature = "sys")]
-use crate::sys::externals::memory_view as memory_view_impl;
 
 /// A WebAssembly `memory` view.
 ///

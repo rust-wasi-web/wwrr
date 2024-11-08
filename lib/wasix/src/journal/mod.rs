@@ -1,8 +1,5 @@
-#[cfg(feature = "journal")]
-mod effector;
-#[cfg(not(feature = "journal"))]
-#[path = "effector/unimplemented.rs"]
-mod effector;
+#[derive(Debug, Clone)]
+#[deprecated = "no journal"]
+pub struct JournalEffector {}
 
-pub use effector::*;
 pub use wasmer_journal::*;

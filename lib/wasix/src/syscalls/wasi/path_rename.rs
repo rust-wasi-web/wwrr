@@ -38,16 +38,6 @@ pub fn path_rename<M: MemorySize>(
     let ret = path_rename_internal(&mut ctx, old_fd, &source_str, new_fd, &target_str)?;
     let env = ctx.data();
 
-    if ret == Errno::Success {
-        #[cfg(feature = "journal")]
-        if env.enable_journal {
-            JournalEffector::save_path_rename(&mut ctx, old_fd, source_str, new_fd, target_str)
-                .map_err(|err| {
-                    tracing::error!("failed to save path rename event - {}", err);
-                    WasiError::Exit(ExitCode::Errno(Errno::Fault))
-                })?;
-        }
-    }
     Ok(ret)
 }
 

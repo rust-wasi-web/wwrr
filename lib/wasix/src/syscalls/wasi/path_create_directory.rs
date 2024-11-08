@@ -40,14 +40,6 @@ pub fn path_create_directory<M: MemorySize>(
     wasi_try_ok!(path_create_directory_internal(&mut ctx, fd, &path_string));
     let env = ctx.data();
 
-    #[cfg(feature = "journal")]
-    if env.enable_journal {
-        JournalEffector::save_path_create_directory(&mut ctx, fd, path_string).map_err(|err| {
-            tracing::error!("failed to save create directory event - {}", err);
-            WasiError::Exit(ExitCode::Errno(Errno::Fault))
-        })?;
-    }
-
     Ok(Errno::Success)
 }
 

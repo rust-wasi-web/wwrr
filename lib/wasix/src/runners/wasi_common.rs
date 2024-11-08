@@ -7,7 +7,6 @@ use std::{
 use anyhow::{Context, Error};
 use derivative::Derivative;
 use futures::future::BoxFuture;
-use tokio::runtime::Handle;
 use virtual_fs::{FileSystem, FsError, OverlayFileSystem, RootFileSystemBuilder, TmpFileSystem};
 use wasmer::Imports;
 use webc::metadata::annotations::Wasi as WasiAnnotation;
@@ -273,17 +272,7 @@ pub struct MappedDirectory {
 
 impl From<MappedDirectory> for MountedDirectory {
     fn from(value: MappedDirectory) -> Self {
-        cfg_if::cfg_if! {
-            if #[cfg(feature = "host-fs")] {
-                let MappedDirectory { host, guest } = value;
-                let fs: Arc<dyn FileSystem + Send + Sync> =
-                    Arc::new(virtual_fs::host_fs::FileSystem::new(Handle::current(), host).unwrap());
-
-                MountedDirectory { guest, fs }
-            } else {
-                unreachable!("The `host-fs` feature needs to be enabled to map {value:?}")
-            }
-        }
+        unreachable!("The `host-fs` feature needs to be enabled to map {value:?}")
     }
 }
 
@@ -376,15 +365,7 @@ impl<F: FileSystem> virtual_fs::FileOpener for RelativeOrAbsolutePathHack<F> {
 
 #[cfg(test)]
 mod tests {
-    use std::time::SystemTime;
-
-    use tempfile::TempDir;
-    use virtual_fs::{DirEntry, FileType, Metadata, WebcVolumeFileSystem};
-    use webc::Container;
-
     use super::*;
-
-    const PYTHON: &[u8] = include_bytes!("../../../c-api/examples/assets/python-0.1.0.wasmer");
 
     /// Fixes <https://github.com/wasmerio/wasmer/issues/3789>
     #[tokio::test]
@@ -443,90 +424,6 @@ mod tests {
                 ("HARD_CODED".to_string(), b"env-vars".to_vec()),
                 ("EXTRA".to_string(), b"envs".to_vec()),
             ]
-        );
-    }
-
-    #[tokio::test]
-    #[cfg_attr(not(feature = "host-fs"), ignore)]
-    async fn python_use_case() {
-        let temp = TempDir::new().unwrap();
-        let sub_dir = temp.path().join("path").join("to");
-        std::fs::create_dir_all(&sub_dir).unwrap();
-        std::fs::write(sub_dir.join("file.txt"), b"Hello, World!").unwrap();
-        let mapping = [MountedDirectory::from(MappedDirectory {
-            guest: "/home".to_string(),
-            host: sub_dir,
-        })];
-        let container = Container::from_bytes(PYTHON).unwrap();
-        let webc_fs = WebcVolumeFileSystem::mount_all(&container);
-
-        let root_fs = RootFileSystemBuilder::default().build();
-        let fs = prepare_filesystem(root_fs, &mapping, Some(Arc::new(webc_fs))).unwrap();
-
-        assert!(fs.metadata("/home/file.txt".as_ref()).unwrap().is_file());
-        assert!(fs.metadata("lib".as_ref()).unwrap().is_dir());
-        assert!(fs
-            .metadata("lib/python3.6/collections/__init__.py".as_ref())
-            .unwrap()
-            .is_file());
-        assert!(fs
-            .metadata("lib/python3.6/encodings/__init__.py".as_ref())
-            .unwrap()
-            .is_file());
-    }
-
-    fn unix_timestamp_nanos(instant: SystemTime) -> Option<u64> {
-        let duration = instant.duration_since(SystemTime::UNIX_EPOCH).ok()?;
-        Some(duration.as_nanos() as u64)
-    }
-
-    #[tokio::test]
-    #[cfg_attr(not(feature = "host-fs"), ignore)]
-    async fn convert_mapped_directory_to_mounted_directory() {
-        let temp = TempDir::new().unwrap();
-        let dir = MappedDirectory {
-            guest: "/mnt/dir".to_string(),
-            host: temp.path().to_path_buf(),
-        };
-        let contents = "Hello, World!";
-        let file_txt = temp.path().join("file.txt");
-        std::fs::write(&file_txt, contents).unwrap();
-        let metadata = std::fs::metadata(&file_txt).unwrap();
-
-        let got = MountedDirectory::from(dir);
-
-        let directory_contents: Vec<_> = got
-            .fs
-            .read_dir("/".as_ref())
-            .unwrap()
-            .map(|entry| entry.unwrap())
-            .collect();
-        assert_eq!(
-            directory_contents,
-            vec![DirEntry {
-                path: PathBuf::from("/file.txt"),
-                metadata: Ok(Metadata {
-                    ft: FileType::new_file(),
-                    // Note: Some timestamps aren't available on MUSL and will
-                    // default to zero.
-                    accessed: metadata
-                        .accessed()
-                        .ok()
-                        .and_then(unix_timestamp_nanos)
-                        .unwrap_or(0),
-                    created: metadata
-                        .created()
-                        .ok()
-                        .and_then(unix_timestamp_nanos)
-                        .unwrap_or(0),
-                    modified: metadata
-                        .modified()
-                        .ok()
-                        .and_then(unix_timestamp_nanos)
-                        .unwrap_or(0),
-                    len: contents.len() as u64,
-                })
-            }]
         );
     }
 }

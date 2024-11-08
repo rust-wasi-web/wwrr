@@ -40,7 +40,6 @@ pub struct Module {
     name: Option<String>,
     // WebAssembly type hints
     type_hints: Option<ModuleTypeHints>,
-    #[cfg(feature = "js-serializable-module")]
     raw_bytes: Option<Bytes>,
 }
 
@@ -87,7 +86,6 @@ impl Module {
         let binary = binary.into_bytes();
 
         // The module is now validated, so we can safely parse it's types
-        #[cfg(feature = "wasm-types-polyfill")]
         let (type_hints, name) = {
             let info = crate::module_info_polyfill::translate_module(&binary[..]).unwrap();
 
@@ -107,14 +105,11 @@ impl Module {
                 info.info.name,
             )
         };
-        #[cfg(not(feature = "wasm-types-polyfill"))]
-        let (type_hints, name) = (None, None);
 
         Self {
             module: JsHandle::new(module),
             type_hints,
             name,
-            #[cfg(feature = "js-serializable-module")]
             raw_bytes: Some(binary),
         }
     }
@@ -211,15 +206,8 @@ impl Module {
     }
 
     pub fn serialize(&self) -> Result<Bytes, SerializeError> {
-        #[cfg(feature = "js-serializable-module")]
         return self.raw_bytes.clone().ok_or(SerializeError::Generic(
             "Not able to serialize module".to_string(),
-        ));
-
-        #[cfg(not(feature = "js-serializable-module"))]
-        return Err(SerializeError::Generic(
-            "You need to enable the `js-serializable-module` feature flag to serialize a `Module`"
-                .to_string(),
         ));
     }
 
@@ -228,12 +216,8 @@ impl Module {
         _engine: &impl AsEngineRef,
         _bytes: impl IntoBytes,
     ) -> Result<Self, DeserializeError> {
-        #[cfg(feature = "js-serializable-module")]
         return Self::from_binary(_engine, &_bytes.into_bytes())
             .map_err(|e| DeserializeError::Compiler(e));
-
-        #[cfg(not(feature = "js-serializable-module"))]
-        return Err(DeserializeError::Generic("You need to enable the `js-serializable-module` feature flag to deserialize a `Module`".to_string()));
     }
 
     #[tracing::instrument(level = "debug", skip_all)]
@@ -241,12 +225,8 @@ impl Module {
         _engine: &impl AsEngineRef,
         _bytes: impl IntoBytes,
     ) -> Result<Self, DeserializeError> {
-        #[cfg(feature = "js-serializable-module")]
         return Self::from_binary(_engine, &_bytes.into_bytes())
             .map_err(|e| DeserializeError::Compiler(e));
-
-        #[cfg(not(feature = "js-serializable-module"))]
-        return Err(DeserializeError::Generic("You need to enable the `js-serializable-module` feature flag to deserialize a `Module`".to_string()));
     }
 
     pub unsafe fn deserialize_from_file_unchecked(
@@ -455,7 +435,6 @@ impl From<WebAssembly::Module> for Module {
             module: JsHandle::new(module),
             name: None,
             type_hints: None,
-            #[cfg(feature = "js-serializable-module")]
             raw_bytes: None,
         }
     }

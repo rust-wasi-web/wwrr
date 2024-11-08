@@ -15,12 +15,11 @@ rust-version.workspace = true
 [dependencies]
 wasmer-wasix-types = { path = "../wasi-types", version = "0.27.0", features = [ "enable-serde" ] }
 wasmer-types = { path = "../types", version = "=4.3.7", default-features = false }
-wasmer = { path = "../api", version = "=4.3.7", default-features = false, features = ["wat", "js-serializable-module"] }
-virtual-mio  = { path = "../virtual-io", version = "0.3.1", default-features = false }
+wasmer = { path = "../api", version = "=4.3.7", default-features = false, features = ["wat"] }
+virtual-mio  = { path = "../virtual-io", version = "0.3.1", default-features = false, features = ["js"] }
 virtual-fs = { path = "../virtual-fs", version = "0.16.0", default-features = false, features = ["webc-fs"] }
 virtual-net = { path = "../virtual-net", version = "0.8.0", default-features = false, features = ["rkyv"] }
 wasmer-journal = { path = "../journal", version = "0.9.0", default-features = false }
-wasmer-emscripten = { path = "../emscripten", version = "=4.3.7", optional = true }
 wasmer-config = { version = "0.8.0", path = "../config" }
 
 http.workspace = true
@@ -106,20 +105,8 @@ http-body-util = { version="0.1.1", optional = true }
 toml = "0.8"
 pin-utils = "0.1.0"
 
-[target.'cfg(not(target_arch = "riscv64"))'.dependencies.reqwest]
-workspace = true
-default-features = false
-features = ["rustls-tls", "json", "stream", "socks", "blocking"]
-optional = true
-
-[target.'cfg(target_arch = "riscv64")'.dependencies.reqwest]
-workspace = true
-default-features = false
-features = ["native-tls", "json", "stream", "socks", "blocking"]
-optional = true
-
 [target.'cfg(unix)'.dependencies]
-libc.workspace = true
+libc = "0.2"
 
 [target.'cfg(all(unix, not(target_os="ios")))'.dependencies]
 termios = { version = "0.3" }
@@ -131,7 +118,7 @@ windows-sys = { version = "0.59", features = ["Win32_System_SystemInformation"] 
 terminal_size = { version = "0.3.0" }
 
 [dev-dependencies]
-wasmer = { path = "../api", version = "=4.3.7", default-features = false, features = ["wat", "js-serializable-module"] }
+wasmer = { path = "../api", version = "=4.3.7", default-features = false, features = ["wat"] }
 tokio = { workspace = true, features = [ "sync", "macros", "rt" ], default-features = false }
 pretty_assertions.workspace = true
 tracing-test = "0.2.4"
@@ -141,38 +128,14 @@ wasm-bindgen-test = "0.3.0"
 wasm-bindgen-test = "0.3.0"
 tracing-wasm = "0.2"
 
-[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-tracing-subscriber = { version = "^0.3" }
-wasmer = { path = "../api", version = "=4.3.7", default-features = false, features = ["wat", "js-serializable-module", "cranelift"] }
-
 [features]
-default = ["sys-default"]
+default = ["js-default"]
 
 time = ["tokio/time"]
 ctrlc = ["tokio/signal"]
 
-webc_runner_rt_wcgi = ["hyper", "hyper-util", "http-body-util", "wcgi", "wcgi-host", "tower", "tower-http"]
-webc_runner_rt_dcgi = ["webc_runner_rt_wcgi", "journal"]
-webc_runner_rt_dproxy = ["hyper", "hyper-util", "http-body-util", "tower", "tower-http", "journal"]
-webc_runner_rt_emscripten = ["wasmer-emscripten"]
-
-sys = ["webc/mmap", "time", "virtual-mio/sys"]
-sys-default = [
-    "sys",
-    "logging",
-    "host-fs",
-    "journal",
-    "sys-poll",
-    "sys-thread",
-    "host-vnet",
-    "host-threads",
-    "host-reqwest",
-    "ctrlc"
-]
-sys-poll = []
 extra-logging = []
-sys-thread = ["tokio/rt", "tokio/time", "tokio/rt-multi-thread", "rusty_pool"]
-journal = ["tokio/fs", "wasmer-journal/log-file"]
+# journal = ["tokio/fs", "wasmer-journal/log-file"]
 
 # Deprecated. Kept it for compatibility
 compiler = []
@@ -189,10 +152,6 @@ js = [
 js-default = ["js"]
 test-js = ["js", "wasmer/wat"]
 
-host-vnet = ["virtual-net/host-net"]
-host-threads = []
-host-reqwest = ["reqwest"]
-host-fs = ["virtual-fs/host-fs"]
 remote-vnet = ["virtual-net/remote"]
 
 logging = ["tracing/log"]
@@ -204,12 +163,4 @@ enable-serde = [
 ]
 
 [package.metadata.docs.rs]
-features = [
-    "wasmer/sys",
-    "webc_runner_rt_wcgi",
-    "webc_runner_rt_dcgi",
-    "webc_runner_rt_dproxy",
-    "webc_runner_rt_emscripten",
-    "sys-default",
-]
 rustc-args = ["--cfg", "docsrs"]

@@ -513,7 +513,6 @@ mod tests {
             .open(Path::new("/test_new_filesystem/foo2.txt"))
             .unwrap();
         file_write.write_all(b"hello").await.unwrap();
-        let _ = std::fs::remove_file("/test_new_filesystem/foo2.txt");
     }
 
     #[tokio::test]
@@ -560,7 +559,6 @@ mod tests {
             bar_dir.is_empty(),
             "the foo directory is updated and well-defined"
         );
-        let _ = fs_extra::remove_items(&["/test_create_dir"]);
     }
 
     #[tokio::test]
@@ -785,8 +783,6 @@ mod tests {
             read_dir_names(&fs, "/test_rename/bar/baz").contains(&"world2.txt".to_string()),
             "world2.txt was moved to the correct place"
         );
-
-        let _ = fs_extra::remove_items(&["/test_rename"]);
     }
 
     #[tokio::test]
@@ -836,8 +832,6 @@ mod tests {
             root_metadata.modified > foo_metadata.modified,
             "the parent modified time was updated"
         );
-
-        let _ = fs_extra::remove_items(&["/test_metadata"]);
     }
 
     #[tokio::test]
@@ -868,8 +862,6 @@ mod tests {
             Err(FsError::EntryNotFound),
             "removing a file that doesn't exists",
         );
-
-        let _ = fs_extra::remove_items(&["./test_remove_file"]);
     }
 
     #[tokio::test]
@@ -945,8 +937,6 @@ mod tests {
         if let Some(s) = readdir.next() {
             panic!("next: {:?}", s);
         }
-
-        let _ = fs_extra::remove_items(&["./test_readdir"]);
     }
 
     /*

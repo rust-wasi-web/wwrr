@@ -12,8 +12,6 @@ use virtual_fs::{ArcFile, FileSystem, FsError, TmpFileSystem, VirtualFile};
 use wasmer::{AsStoreMut, Extern, Imports, Instance, Module, Store};
 use wasmer_config::package::PackageId;
 
-#[cfg(feature = "journal")]
-use crate::journal::{DynJournal, SnapshotTrigger};
 use crate::{
     bin_factory::{BinFactory, BinaryPackage},
     capabilities::Capabilities,
@@ -79,18 +77,6 @@ pub struct WasiEnvBuilder {
 
     pub(super) capabilites: Capabilities,
     pub(super) additional_imports: Imports,
-
-    #[cfg(feature = "journal")]
-    pub(super) snapshot_on: Vec<SnapshotTrigger>,
-
-    #[cfg(feature = "journal")]
-    pub(super) snapshot_interval: Option<std::time::Duration>,
-
-    #[cfg(feature = "journal")]
-    pub(super) journals: Vec<Arc<DynJournal>>,
-
-    #[cfg(feature = "ctrlc")]
-    pub(super) attach_ctrl_c: bool,
 }
 
 impl std::fmt::Debug for WasiEnvBuilder {
@@ -547,20 +533,6 @@ impl WasiEnvBuilder {
         Ok(self)
     }
 
-    /// Specifies one or more journal files that Wasmer will use to restore
-    /// the state of the WASM process.
-    ///
-    /// The state of the WASM process and its sandbox will be reapplied use
-    /// the journals in the order that you specify here.
-    ///
-    /// The last journal file specified will be created if it does not exist
-    /// and opened for read and write. New journal events will be written to this
-    /// file
-    #[cfg(feature = "journal")]
-    pub fn add_journal(&mut self, journal: Arc<DynJournal>) {
-        self.journals.push(journal);
-    }
-
     pub fn set_current_dir(&mut self, dir: impl Into<PathBuf>) {
         self.current_dir = Some(dir.into());
     }
@@ -661,16 +633,6 @@ impl WasiEnvBuilder {
 
     pub fn set_capabilities(&mut self, capabilities: Capabilities) {
         self.capabilites = capabilities;
-    }
-
-    #[cfg(feature = "journal")]
-    pub fn add_snapshot_trigger(&mut self, on: SnapshotTrigger) {
-        self.snapshot_on.push(on);
-    }
-
-    #[cfg(feature = "journal")]
-    pub fn with_snapshot_interval(&mut self, interval: std::time::Duration) {
-        self.snapshot_interval.replace(interval);
     }
 
     /// Add an item to the list of importable items provided to the instance.
@@ -875,21 +837,7 @@ impl WasiEnvBuilder {
         };
 
         let runtime = self.runtime.unwrap_or_else(|| {
-            #[cfg(feature = "sys-thread")]
-            {
-                #[allow(unused_mut)]
-                let mut runtime = crate::runtime::PluggableRuntime::new(Arc::new(crate::runtime::task_manager::tokio::TokioTaskManager::default()));
-                #[cfg(feature = "journal")]
-                for journal in self.journals.clone() {
-                    runtime.add_journal(journal);
-                }
-                Arc::new(runtime)
-            }
-
-            #[cfg(not(feature = "sys-thread"))]
-            {
                 panic!("this build does not support a default runtime - specify one with WasiEnvBuilder::runtime()");
-            }
         });
 
         let uses = self.uses;
@@ -917,14 +865,9 @@ impl WasiEnvBuilder {
             memory_ty: None,
             process: None,
             thread: None,
-            #[cfg(feature = "journal")]
-            call_initialize: self.journals.is_empty(),
-            #[cfg(not(feature = "journal"))]
             call_initialize: true,
             can_deep_sleep: false,
             extra_tracing: true,
-            #[cfg(feature = "journal")]
-            snapshot_on: self.snapshot_on,
             additional_imports: self.additional_imports,
         };
 
@@ -1004,20 +947,6 @@ impl WasiEnvBuilder {
         module_hash: ModuleHash,
         store: &mut Store,
     ) -> Result<(), WasiRuntimeError> {
-        // If no handle or runtime exists then create one
-        #[cfg(feature = "sys-thread")]
-        let _guard = if tokio::runtime::Handle::try_current().is_err() {
-            let runtime = tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .unwrap();
-            Some(runtime)
-        } else {
-            None
-        };
-        #[cfg(feature = "sys-thread")]
-        let _guard = _guard.as_ref().map(|r| r.enter());
-
         if self.capabilites.threading.enable_asynchronous_threading {
             tracing::warn!(
                 "The enable_asynchronous_threading capability is enabled. Use WasiEnvBuilder::run_with_store_async() to avoid spurious errors.",

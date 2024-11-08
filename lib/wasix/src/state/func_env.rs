@@ -8,8 +8,6 @@ use wasmer_wasix_types::wasi::ExitCode;
 
 #[allow(unused_imports)]
 use crate::os::task::thread::RewindResultType;
-#[cfg(feature = "journal")]
-use crate::syscalls::restore_snapshot;
 use crate::{
     import_object_for_all_wasi_versions,
     runtime::SpawnMemoryType,
@@ -314,69 +312,6 @@ impl WasiFunctionEnv {
 
         #[allow(unused_mut)]
         let mut rewind_state = None;
-
-        #[cfg(feature = "journal")]
-        {
-            // If there are journals we need to restore then do so (this will
-            // prevent the initialization function from running
-            let restore_journals = self.data(&store).runtime.journals().clone();
-            if !restore_journals.is_empty() {
-                tracing::trace!("replaying journal=true");
-                self.data_mut(&mut store).replaying_journal = true;
-
-                for journal in restore_journals {
-                    let ctx = self.env.clone().into_mut(&mut store);
-                    let rewind = match restore_snapshot(ctx, journal, true) {
-                        Ok(r) => r,
-                        Err(err) => {
-                            tracing::trace!("replaying journal=false (err={:?})", err);
-                            self.data_mut(&mut store).replaying_journal = false;
-                            return Err(err);
-                        }
-                    };
-                    rewind_state = rewind.map(|rewind| (rewind, RewindResultType::RewindRestart));
-                }
-
-                tracing::trace!("replaying journal=false");
-                self.data_mut(&mut store).replaying_journal = false;
-            }
-
-            // If there is no rewind state then the journal is being replayed
-            // and hence we do not need to write an init module event
-            //
-            // But otherwise we need to notify the journal of the module hash
-            // so that recompiled modules will restart
-            if rewind_state.is_none() {
-                // The first event we save is an event that records the module hash.
-                // Note: This is used to detect if an incorrect journal is used on the wrong
-                // process or if a process has been recompiled
-                let wasm_hash = Box::from(self.data(&store).process.module_hash.as_bytes());
-                let mut ctx = self.env.clone().into_mut(&mut store);
-                crate::journal::JournalEffector::save_event(
-                    &mut ctx,
-                    crate::journal::JournalEntry::InitModuleV1 { wasm_hash },
-                )
-                .map_err(|err| {
-                    WasiRuntimeError::Runtime(wasmer::RuntimeError::new(format!(
-                        "journal failed to save the module initialization event - {}",
-                        err
-                    )))
-                })?;
-            } else {
-                // Otherwise we should emit a clear ethereal event
-                let mut ctx = self.env.clone().into_mut(&mut store);
-                crate::journal::JournalEffector::save_event(
-                    &mut ctx,
-                    crate::journal::JournalEntry::ClearEtherealV1,
-                )
-                .map_err(|err| {
-                    WasiRuntimeError::Runtime(wasmer::RuntimeError::new(format!(
-                        "journal failed to save clear ethereal event - {}",
-                        err
-                    )))
-                })?;
-            }
-        }
 
         tracing::debug!("bootstrap complete");
 

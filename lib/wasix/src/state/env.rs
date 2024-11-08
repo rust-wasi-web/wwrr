@@ -22,8 +22,6 @@ use wasmer_wasix_types::{
     wasix::ThreadStartType,
 };
 
-#[cfg(feature = "journal")]
-use crate::journal::{DynJournal, JournalEffector, SnapshotTrigger};
 use crate::{
     bin_factory::{BinFactory, BinaryPackage},
     capabilities::Capabilities,
@@ -271,10 +269,6 @@ pub struct WasiEnvInit {
     /// Additional functionality provided to the WASIX instance, besides the
     /// normal WASIX syscalls.
     pub additional_imports: Imports,
-
-    /// Indicates triggers that will cause a snapshot to be taken
-    #[cfg(feature = "journal")]
-    pub snapshot_on: Vec<SnapshotTrigger>,
 }
 
 impl WasiEnvInit {
@@ -311,8 +305,6 @@ impl WasiEnvInit {
             call_initialize: self.call_initialize,
             can_deep_sleep: self.can_deep_sleep,
             extra_tracing: false,
-            #[cfg(feature = "journal")]
-            snapshot_on: self.snapshot_on.clone(),
             additional_imports: self.additional_imports.clone(),
         }
     }
@@ -347,17 +339,10 @@ pub struct WasiEnv {
     /// Is this environment capable and setup for deep sleeping
     pub enable_deep_sleep: bool,
 
-    /// Enables the snap shotting functionality
-    pub enable_journal: bool,
-
     /// Enables an exponential backoff of the process CPU usage when there
     /// are no active run tokens (when set holds the maximum amount of
     /// time that it will pause the CPU)
     pub enable_exponential_cpu_backoff: Option<Duration>,
-
-    /// Flag that indicates if the environment is currently replaying the journal
-    /// (and hence it should not record new events)
-    pub replaying_journal: bool,
 
     /// Flag that indicates the cleanup of the environment is to be disabled
     /// (this is normally used so that the instance can be reused later on)
@@ -392,9 +377,7 @@ impl Clone for WasiEnv {
             runtime: self.runtime.clone(),
             capabilities: self.capabilities.clone(),
             enable_deep_sleep: self.enable_deep_sleep,
-            enable_journal: self.enable_journal,
             enable_exponential_cpu_backoff: self.enable_exponential_cpu_backoff,
-            replaying_journal: self.replaying_journal,
             disable_fs_cleanup: self.disable_fs_cleanup,
         }
     }
@@ -432,9 +415,7 @@ impl WasiEnv {
             runtime: self.runtime.clone(),
             capabilities: self.capabilities.clone(),
             enable_deep_sleep: self.enable_deep_sleep,
-            enable_journal: self.enable_journal,
             enable_exponential_cpu_backoff: self.enable_exponential_cpu_backoff,
-            replaying_journal: false,
             disable_fs_cleanup: self.disable_fs_cleanup,
         };
         Ok((new_env, handle))
@@ -535,11 +516,6 @@ impl WasiEnv {
             init.control_plane.new_process(module_hash)?
         };
 
-        #[cfg(feature = "journal")]
-        {
-            process.inner.0.lock().unwrap().snapshot_on = init.snapshot_on.into_iter().collect();
-        }
-
         let layout = WasiMemoryLayout::default();
         let thread = if let Some(t) = init.thread {
             t
@@ -557,11 +533,6 @@ impl WasiEnv {
             state: Arc::new(init.state),
             inner: Default::default(),
             owned_handles: Vec::new(),
-            #[cfg(feature = "journal")]
-            enable_journal: init.runtime.active_journal().is_some(),
-            #[cfg(not(feature = "journal"))]
-            enable_journal: false,
-            replaying_journal: false,
             enable_deep_sleep: init.capabilities.threading.enable_asynchronous_threading,
             enable_exponential_cpu_backoff: init
                 .capabilities
@@ -578,9 +549,6 @@ impl WasiEnv {
         for pkg in &init.webc_dependencies {
             env.use_package(pkg)?;
         }
-
-        #[cfg(feature = "sys")]
-        env.map_commands(init.mapped_commands.clone())?;
 
         Ok(env)
     }
@@ -995,44 +963,6 @@ impl WasiEnv {
         self.state.stdin()
     }
 
-    /// Returns true if the process should perform snapshots or not
-    pub fn should_journal(&self) -> bool {
-        self.enable_journal && !self.replaying_journal
-    }
-
-    /// Returns true if the environment has an active journal
-    #[cfg(feature = "journal")]
-    pub fn has_active_journal(&self) -> bool {
-        self.runtime().active_journal().is_some()
-    }
-
-    /// Returns the active journal or fails with an error
-    #[cfg(feature = "journal")]
-    pub fn active_journal(&self) -> Result<&DynJournal, Errno> {
-        self.runtime().active_journal().ok_or_else(|| {
-            tracing::debug!("failed to save thread exit as there is not active journal");
-            Errno::Fault
-        })
-    }
-
-    /// Returns true if a particular snapshot trigger is enabled
-    #[cfg(feature = "journal")]
-    pub fn has_snapshot_trigger(&self, trigger: SnapshotTrigger) -> bool {
-        let guard = self.process.inner.0.lock().unwrap();
-        guard.snapshot_on.contains(&trigger)
-    }
-
-    /// Returns true if a particular snapshot trigger is enabled
-    #[cfg(feature = "journal")]
-    pub fn pop_snapshot_trigger(&mut self, trigger: SnapshotTrigger) -> bool {
-        let mut guard = self.process.inner.0.lock().unwrap();
-        if trigger.only_once() {
-            guard.snapshot_on.remove(&trigger)
-        } else {
-            guard.snapshot_on.contains(&trigger)
-        }
-    }
-
     /// Internal helper function to get a standard device handle.
     /// Expects one of `__WASI_STDIN_FILENO`, `__WASI_STDOUT_FILENO`, `__WASI_STDERR_FILENO`.
     pub fn std_dev_get(
@@ -1203,47 +1133,6 @@ impl WasiEnv {
         Ok(())
     }
 
-    #[cfg(feature = "sys")]
-    pub fn map_commands(
-        &self,
-        map_commands: std::collections::HashMap<String, std::path::PathBuf>,
-    ) -> Result<(), WasiStateCreationError> {
-        // Load all the mapped atoms
-        #[allow(unused_imports)]
-        use std::path::Path;
-
-        #[allow(unused_imports)]
-        use virtual_fs::FileSystem;
-
-        #[cfg(feature = "sys")]
-        for (command, target) in map_commands.iter() {
-            // Read the file
-            let file = std::fs::read(target).map_err(|err| {
-                WasiStateCreationError::WasiInheritError(format!(
-                    "failed to read local binary [{}] - {}",
-                    target.as_os_str().to_string_lossy(),
-                    err
-                ))
-            })?;
-            let file: std::borrow::Cow<'static, [u8]> = file.into();
-
-            if let WasiFsRoot::Sandbox(root_fs) = &self.state.fs.root_fs {
-                let _ = root_fs.create_dir(Path::new("/bin"));
-
-                let path = format!("/bin/{}", command);
-                let path = Path::new(path.as_str());
-                if let Err(err) = root_fs.new_open_options_ext().insert_ro_file(path, file) {
-                    tracing::debug!("failed to add atom command [{}] - {}", command, err);
-                    continue;
-                }
-            } else {
-                tracing::debug!("failed to add atom command [{}] to the root file system as it is not sandboxed", command);
-                continue;
-            }
-        }
-        Ok(())
-    }
-
     /// Cleans up all the open files (if this is the main thread)
     #[allow(clippy::await_holding_lock)]
     pub fn blocking_on_exit(&self, exit_code: Option<ExitCode>) {
@@ -1255,20 +1144,6 @@ impl WasiEnv {
     #[allow(clippy::await_holding_lock)]
     pub fn on_exit(&self, exit_code: Option<ExitCode>) -> BoxFuture<'static, ()> {
         const CLEANUP_TIMEOUT: Duration = Duration::from_secs(10);
-
-        // If snap-shooting is enabled then we should record an event that the thread has exited.
-        #[cfg(feature = "journal")]
-        if self.should_journal() && self.has_active_journal() {
-            if let Err(err) = JournalEffector::save_thread_exit(self, self.tid(), exit_code) {
-                tracing::warn!("failed to save snapshot event for thread exit - {}", err);
-            }
-
-            if self.thread.is_main() {
-                if let Err(err) = JournalEffector::save_process_exit(self, exit_code) {
-                    tracing::warn!("failed to save snapshot event for process exit - {}", err);
-                }
-            }
-        }
 
         // If this is the main thread then also close all the files
         if self.thread.is_main() {

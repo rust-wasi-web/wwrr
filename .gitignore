@@ -13,6 +13,7 @@ api-docs-repo/
 /wapm-cli/
 /src/windows-installer/WasmerInstaller.exe
 /lib/c-api/wasmer.h
+/lib/api/third_party
 .xwin-cache
 wapm.toml
 wasmer.toml

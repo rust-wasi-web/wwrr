@@ -1,9 +1,5 @@
-#[cfg(feature = "journal")]
-use crate::{journal::JournalEffector, syscalls::do_checkpoint_from_outside, unwind, WasiResult};
 use crate::{journal::SnapshotTrigger, WasiEnv, WasiRuntimeError};
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "journal")]
-use std::collections::HashSet;
 use std::{
     collections::HashMap,
     convert::TryInto,
@@ -171,15 +167,8 @@ pub struct WasiProcessInner {
     /// If true then the journaling will be disabled after the
     /// next snapshot is taken
     pub disable_journaling_after_checkpoint: bool,
-    /// List of situations that the process will checkpoint on
-    #[cfg(feature = "journal")]
-    pub snapshot_on: HashSet<SnapshotTrigger>,
     /// Any wakers waiting on this process (for example for a checkpoint)
     pub wakers: Vec<Waker>,
-    /// The snapshot memory significantly reduce the amount of
-    /// duplicate entries in the journal for memory that has not changed
-    #[cfg(feature = "journal")]
-    pub snapshot_memory_hash: HashMap<MemorySnapshotRegion, u64>,
     /// Represents all the backoff properties for this process
     /// which will be used to determine if the CPU should be
     /// throttled or not
@@ -192,195 +181,8 @@ pub enum MaybeCheckpointResult<'a> {
 }
 
 impl WasiProcessInner {
-    /// Checkpoints the process which will cause all other threads to
-    /// pause and for the thread and memory state to be saved
-    #[cfg(feature = "journal")]
-    pub fn checkpoint<M: wasmer_types::MemorySize>(
-        inner: LockableWasiProcessInner,
-        ctx: FunctionEnvMut<'_, WasiEnv>,
-        for_what: WasiProcessCheckpoint,
-    ) -> WasiResult<MaybeCheckpointResult<'_>> {
-        // Set the checkpoint flag and then enter the normal processing loop
-        {
-            let mut guard = inner.0.lock().unwrap();
-            guard.checkpoint = for_what;
-            for waker in guard.wakers.drain(..) {
-                waker.wake();
-            }
-            inner.1.notify_all();
-        }
-
-        Self::maybe_checkpoint::<M>(inner, ctx)
-    }
-
-    /// If a checkpoint has been started this will block the current process
-    /// until the checkpoint operation has completed
-    #[cfg(feature = "journal")]
-    pub fn maybe_checkpoint<M: wasmer_types::MemorySize>(
-        inner: LockableWasiProcessInner,
-        ctx: FunctionEnvMut<'_, WasiEnv>,
-    ) -> WasiResult<MaybeCheckpointResult<'_>> {
-        // Enter the lock which will determine if we are in a checkpoint or not
-
-        use bytes::Bytes;
-        use wasmer::AsStoreMut;
-        use wasmer_types::OnCalledAction;
-
-        use crate::{os::task::thread::RewindResultType, rewind_ext, WasiError};
-        let guard = inner.0.lock().unwrap();
-        if guard.checkpoint == WasiProcessCheckpoint::Execute {
-            // No checkpoint so just carry on
-            return Ok(Ok(MaybeCheckpointResult::NotThisTime(ctx)));
-        }
-        trace!("checkpoint capture");
-        drop(guard);
-
-        // Perform the unwind action
-        let thread_layout = ctx.data().thread.memory_layout().clone();
-        unwind::<M, _>(ctx, move |mut ctx, memory_stack, rewind_stack| {
-            // Grab all the globals and serialize them
-            let store_data = crate::utils::store::capture_store_snapshot(&mut ctx.as_store_mut())
-                .serialize()
-                .unwrap();
-            let memory_stack = memory_stack.freeze();
-            let rewind_stack = rewind_stack.freeze();
-            let store_data = Bytes::from(store_data);
-
-            tracing::debug!(
-                "stack snapshot unwind (memory_stack={}, rewind_stack={}, store_data={})",
-                memory_stack.len(),
-                rewind_stack.len(),
-                store_data.len(),
-            );
-
-            // Write our thread state to the snapshot
-            let thread_start = ctx.data().thread.thread_start_type();
-            let tid = ctx.data().thread.tid();
-            if let Err(err) = JournalEffector::save_thread_state::<M>(
-                &mut ctx,
-                tid,
-                memory_stack.clone(),
-                rewind_stack.clone(),
-                store_data.clone(),
-                thread_start,
-                thread_layout,
-            ) {
-                return wasmer_types::OnCalledAction::Trap(err.into());
-            }
-
-            let mut guard = inner.0.lock().unwrap();
-
-            // Wait for the checkpoint to finish (or if we are the last thread
-            // to freeze then we have to execute the checksum operation)
-            loop {
-                if let WasiProcessCheckpoint::Snapshot { trigger } = guard.checkpoint {
-                    ctx.data().thread.set_checkpointing(true);
-
-                    // Now if we are the last thread we also write the memory
-                    let is_last_thread = guard
-                        .threads
-                        .values()
-                        .all(|t| t.is_check_pointing() || t.is_deep_sleeping());
-                    if is_last_thread {
-                        if let Err(err) =
-                            JournalEffector::save_memory_and_snapshot(&mut ctx, &mut guard, trigger)
-                        {
-                            inner.1.notify_all();
-                            return wasmer_types::OnCalledAction::Trap(err.into());
-                        }
-
-                        // Clear the checkpointing flag and notify everyone to wake up
-                        ctx.data().thread.set_checkpointing(false);
-                        trace!("checkpoint complete");
-                        if guard.disable_journaling_after_checkpoint {
-                            ctx.data_mut().enable_journal = false;
-                        }
-                        guard.checkpoint = WasiProcessCheckpoint::Execute;
-                        for waker in guard.wakers.drain(..) {
-                            waker.wake();
-                        }
-                        inner.1.notify_all();
-                    } else {
-                        guard = inner.1.wait(guard).unwrap();
-                    }
-                    continue;
-                }
-
-                ctx.data().thread.set_checkpointing(false);
-                trace!("checkpoint finished");
-
-                // Rewind the stack and carry on
-                return match rewind_ext::<M>(
-                    &mut ctx,
-                    Some(memory_stack),
-                    rewind_stack,
-                    store_data,
-                    RewindResultType::RewindWithoutResult,
-                ) {
-                    Errno::Success => OnCalledAction::InvokeAgain,
-                    err => {
-                        tracing::warn!(
-                            "snapshot resumption failed - could not rewind the stack - errno={}",
-                            err
-                        );
-                        OnCalledAction::Trap(Box::new(WasiError::Exit(err.into())))
-                    }
-                };
-            }
-        })?;
-
-        Ok(Ok(MaybeCheckpointResult::Unwinding))
-    }
-
     // Execute any checkpoints that can be executed while outside of the WASM process
-    #[cfg(not(feature = "journal"))]
     pub fn do_checkpoints_from_outside(_ctx: &mut FunctionEnvMut<'_, WasiEnv>) {}
-
-    // Execute any checkpoints that can be executed while outside of the WASM process
-    #[cfg(feature = "journal")]
-    pub fn do_checkpoints_from_outside(ctx: &mut FunctionEnvMut<'_, WasiEnv>) {
-        let inner = ctx.data().process.inner.clone();
-        let mut guard = inner.0.lock().unwrap();
-
-        // Wait for the checkpoint to finish (or if we are the last thread
-        // to freeze then we have to execute the checksum operation)
-        while let WasiProcessCheckpoint::Snapshot { trigger } = guard.checkpoint {
-            ctx.data().thread.set_checkpointing(true);
-
-            // Now if we are the last thread we also write the memory
-            let is_last_thread = guard
-                .threads
-                .values()
-                .all(|t| t.is_check_pointing() || t.is_deep_sleeping());
-            if is_last_thread {
-                if let Err(err) =
-                    JournalEffector::save_memory_and_snapshot(ctx, &mut guard, trigger)
-                {
-                    inner.1.notify_all();
-                    tracing::error!("failed to snapshot memory and threads - {}", err);
-                    return;
-                }
-
-                // Clear the checkpointing flag and notify everyone to wake up
-                ctx.data().thread.set_checkpointing(false);
-                trace!("checkpoint complete");
-                if guard.disable_journaling_after_checkpoint {
-                    ctx.data_mut().enable_journal = false;
-                }
-                guard.checkpoint = WasiProcessCheckpoint::Execute;
-                for waker in guard.wakers.drain(..) {
-                    waker.wake();
-                }
-                inner.1.notify_all();
-            } else {
-                guard = inner.1.wait(guard).unwrap();
-            }
-            continue;
-        }
-
-        ctx.data().thread.set_checkpointing(false);
-        trace!("checkpoint finished");
-    }
 }
 
 // TODO: why do we need this, how is it used?
@@ -422,10 +224,6 @@ impl WasiProcess {
                 checkpoint: WasiProcessCheckpoint::Execute,
                 wakers: Default::default(),
                 waiting: waiting.clone(),
-                #[cfg(feature = "journal")]
-                snapshot_on: Default::default(),
-                #[cfg(feature = "journal")]
-                snapshot_memory_hash: Default::default(),
                 disable_journaling_after_checkpoint: false,
                 backoff: WasiProcessCpuBackoff::new(max_cpu_backoff_time, max_cpu_cool_off_time),
             }),
@@ -580,120 +378,6 @@ impl WasiProcess {
         signal_process_internal(&self.inner, signal);
     }
 
-    /// Takes a snapshot of the process and disables journaling returning
-    /// a future that can be waited on for the snapshot to complete
-    ///
-    /// Note: If you ignore the returned future the checkpoint will still
-    /// occur but it will execute asynchronously
-    pub fn snapshot_and_disable_journaling(
-        &self,
-        trigger: SnapshotTrigger,
-    ) -> std::pin::Pin<Box<dyn futures::Future<Output = ()> + Send + Sync>> {
-        let mut guard = self.inner.0.lock().unwrap();
-        guard.disable_journaling_after_checkpoint = true;
-        guard.checkpoint = WasiProcessCheckpoint::Snapshot { trigger };
-        self.wait_for_checkpoint_finish()
-    }
-
-    /// Takes a snapshot of the process
-    ///
-    /// Note: If you ignore the returned future the checkpoint will still
-    /// occur but it will execute asynchronously
-    pub fn snapshot(
-        &self,
-        trigger: SnapshotTrigger,
-    ) -> std::pin::Pin<Box<dyn futures::Future<Output = ()> + Send + Sync>> {
-        let mut guard = self.inner.0.lock().unwrap();
-        guard.checkpoint = WasiProcessCheckpoint::Snapshot { trigger };
-        self.wait_for_checkpoint_finish()
-    }
-
-    /// Disables the journaling functionality
-    pub fn disable_journaling_after_checkpoint(&self) {
-        let mut guard = self.inner.0.lock().unwrap();
-        guard.disable_journaling_after_checkpoint = true;
-    }
-
-    /// Wait for the checkout process to finish
-    #[cfg(not(feature = "journal"))]
-    pub fn wait_for_checkpoint(
-        &self,
-    ) -> std::pin::Pin<Box<dyn futures::Future<Output = ()> + Send + Sync>> {
-        Box::pin(std::future::pending())
-    }
-
-    /// Wait for the checkout process to finish
-    #[cfg(feature = "journal")]
-    pub fn wait_for_checkpoint(
-        &self,
-    ) -> std::pin::Pin<Box<dyn futures::Future<Output = ()> + Send + Sync>> {
-        use futures::Future;
-        use std::{
-            pin::Pin,
-            task::{Context, Poll},
-        };
-
-        struct Poller {
-            inner: LockableWasiProcessInner,
-        }
-        impl Future for Poller {
-            type Output = ();
-            fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-                let mut guard = self.inner.0.lock().unwrap();
-                if !matches!(guard.checkpoint, WasiProcessCheckpoint::Execute) {
-                    return Poll::Ready(());
-                }
-                if !guard.wakers.iter().any(|w| w.will_wake(cx.waker())) {
-                    guard.wakers.push(cx.waker().clone());
-                }
-                Poll::Pending
-            }
-        }
-        Box::pin(Poller {
-            inner: self.inner.clone(),
-        })
-    }
-
-    /// Wait for the checkout process to finish
-    #[cfg(not(feature = "journal"))]
-    pub fn wait_for_checkpoint_finish(
-        &self,
-    ) -> std::pin::Pin<Box<dyn futures::Future<Output = ()> + Send + Sync>> {
-        Box::pin(std::future::pending())
-    }
-
-    /// Wait for the checkout process to finish
-    #[cfg(feature = "journal")]
-    pub fn wait_for_checkpoint_finish(
-        &self,
-    ) -> std::pin::Pin<Box<dyn futures::Future<Output = ()> + Send + Sync>> {
-        use futures::Future;
-        use std::{
-            pin::Pin,
-            task::{Context, Poll},
-        };
-
-        struct Poller {
-            inner: LockableWasiProcessInner,
-        }
-        impl Future for Poller {
-            type Output = ();
-            fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-                let mut guard = self.inner.0.lock().unwrap();
-                if matches!(guard.checkpoint, WasiProcessCheckpoint::Execute) {
-                    return Poll::Ready(());
-                }
-                if !guard.wakers.iter().any(|w| w.will_wake(cx.waker())) {
-                    guard.wakers.push(cx.waker().clone());
-                }
-                Poll::Pending
-            }
-        }
-        Box::pin(Poller {
-            inner: self.inner.clone(),
-        })
-    }
-
     /// Signals one of the threads every interval
     pub fn signal_interval(&self, signal: Signal, interval: Option<Duration>, repeat: bool) {
         let mut inner = self.inner.0.lock().unwrap();
@@ -813,28 +497,6 @@ fn signal_process_internal(process: &LockableWasiProcessInner, signal: Signal) {
     let mut guard = process.0.lock().unwrap();
     let pid = guard.pid;
     tracing::trace!(%pid, "signal-process({:?})", signal);
-
-    // If the snapshot on ctrl-c is currently registered then we need
-    // to take a snapshot and exit
-    #[cfg(feature = "journal")]
-    {
-        if signal == Signal::Sigint
-            && (guard.snapshot_on.contains(&SnapshotTrigger::Sigint)
-                || guard.snapshot_on.remove(&SnapshotTrigger::FirstSigint))
-        {
-            drop(guard);
-
-            tracing::debug!(%pid, "snapshot-on-interrupt-signal");
-
-            do_checkpoint_from_outside(
-                process,
-                WasiProcessCheckpoint::Snapshot {
-                    trigger: SnapshotTrigger::Sigint,
-                },
-            );
-            return;
-        };
-    }
 
     // Check if there are subprocesses that will receive this signal
     // instead of this process

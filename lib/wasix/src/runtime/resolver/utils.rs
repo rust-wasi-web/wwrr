@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::Error;
 use http::{HeaderMap, StatusCode};
@@ -54,34 +54,6 @@ pub(crate) fn http_error(response: &HttpResponse) -> Error {
     }
 
     Error::msg(status)
-}
-
-pub(crate) fn file_path_from_url(url: &Url) -> Result<PathBuf, Error> {
-    debug_assert_eq!(url.scheme(), "file");
-
-    // Note: The Url::to_file_path() method is platform-specific
-    cfg_if::cfg_if! {
-        if #[cfg(any(unix, windows, target_os = "redox", target_os = "wasi"))] {
-            use anyhow::Context;
-
-            if let Ok(path) = url.to_file_path() {
-                return Ok(path);
-            }
-
-            // Sometimes we'll get a UNC-like path (e.g.
-            // "file:///?\\C:/\\/path/to/file.txt") and Url::to_file_path()
-            // won't be able to handle the "\\?" so we try to "massage" the URL
-            // a bit.
-            // See <https://github.com/servo/rust-url/issues/450> for more.
-            let modified = url.as_str().replace(r"\\?", "").replace("//?", "").replace('\\', "/");
-            Url::parse(&modified)
-                .ok()
-                .and_then(|url| url.to_file_path().ok())
-                .context("Unable to extract the file path")
-        } else {
-            anyhow::bail!("Url::to_file_path() is not supported on this platform");
-        }
-    }
 }
 
 #[cfg(test)]

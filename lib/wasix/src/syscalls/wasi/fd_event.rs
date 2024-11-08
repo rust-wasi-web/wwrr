@@ -17,14 +17,6 @@ pub fn fd_event<M: MemorySize>(
     Span::current().record("ret_fd", fd);
     wasi_try_mem_ok!(ret_fd.write(&memory, fd));
 
-    #[cfg(feature = "journal")]
-    if env.enable_journal {
-        JournalEffector::save_fd_event(&mut ctx, initial_val, flags, fd).map_err(|err| {
-            tracing::error!("failed to save fd_event event - {}", err);
-            WasiError::Exit(ExitCode::Errno(Errno::Fault))
-        })?;
-    }
-
     Ok(Errno::Success)
 }
 

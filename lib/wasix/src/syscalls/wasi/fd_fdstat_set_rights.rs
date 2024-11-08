@@ -25,15 +25,6 @@ pub fn fd_fdstat_set_rights(
     ));
     let env = ctx.data();
 
-    #[cfg(feature = "journal")]
-    if env.enable_journal {
-        JournalEffector::save_fd_set_rights(&mut ctx, fd, fs_rights_base, fs_rights_inheriting)
-            .map_err(|err| {
-                tracing::error!("failed to save file set rights event - {}", err);
-                WasiError::Exit(ExitCode::Errno(Errno::Fault))
-            })?;
-    }
-
     Ok(Errno::Success)
 }
 

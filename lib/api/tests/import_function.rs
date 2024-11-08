@@ -1,5 +1,4 @@
 use macro_wasmer_universal_test::universal_test;
-#[cfg(feature = "js")]
 use wasm_bindgen_test::*;
 
 use anyhow::Result;

@@ -1,14 +1,8 @@
-#[cfg(feature = "js")]
 use crate::js::trap::Trap;
-#[cfg(feature = "jsc")]
-use crate::jsc::trap::Trap;
 use std::fmt;
 use std::sync::Arc;
 use thiserror::Error;
 use wasmer_types::{FrameInfo, TrapCode};
-#[cfg(feature = "sys")]
-use wasmer_vm::Trap;
-
 use wasmer_types::ImportError;
 
 /// The WebAssembly.LinkError object indicates an error during
@@ -18,18 +12,18 @@ use wasmer_types::ImportError;
 ///
 /// [link-error]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/WebAssembly/LinkError
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "std", derive(Error))]
-#[cfg_attr(feature = "std", error("Link error: {0}"))]
+#[derive(Error)]
+#[error("Link error: {0}")]
 pub enum LinkError {
     /// An error occurred when checking the import types.
-    #[cfg_attr(feature = "std", error("Error while importing {0:?}.{1:?}: {2}"))]
+    #[error("Error while importing {0:?}.{1:?}: {2}")]
     Import(String, String, ImportError),
 
     /// A trap ocurred during linking.
-    #[cfg_attr(feature = "std", error("RuntimeError occurred during linking: {0}"))]
+    #[error("RuntimeError occurred during linking: {0}")]
     Trap(#[source] RuntimeError),
     /// Insufficient resources available for linking.
-    #[cfg_attr(feature = "std", error("Insufficient resources: {0}"))]
+    #[error("Insufficient resources: {0}")]
     Resource(String),
 }
 
@@ -42,29 +36,29 @@ pub enum LinkError {
 /// start function, and an error when initializing the user's
 /// host environments.
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "std", derive(Error))]
+#[derive(Error)]
 pub enum InstantiationError {
     /// A linking ocurred during instantiation.
-    #[cfg_attr(feature = "std", error(transparent))]
+    #[error(transparent)]
     Link(LinkError),
 
     /// A runtime error occured while invoking the start function
-    #[cfg_attr(feature = "std", error(transparent))]
+    #[error(transparent)]
     Start(RuntimeError),
 
     /// The module was compiled with a CPU feature that is not available on
     /// the current host.
-    #[cfg_attr(feature = "std", error("missing required CPU features: {0:?}"))]
+    #[error("missing required CPU features: {0:?}")]
     CpuFeature(String),
 
     /// Import from a different [`Store`][super::Store].
     /// This error occurs when an import from a different store is used.
-    #[cfg_attr(feature = "std", error("cannot mix imports from different stores"))]
+    #[error("cannot mix imports from different stores")]
     DifferentStores,
 
     /// Import from a different Store.
     /// This error occurs when an import from a different store is used.
-    #[cfg_attr(feature = "std", error("incorrect OS or architecture"))]
+    #[error("incorrect OS or architecture")]
     DifferentArchOS,
 }
 

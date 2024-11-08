@@ -1,5 +1,4 @@
 mod backend_source;
-mod filesystem_source;
 mod in_memory_source;
 mod inputs;
 mod multi_source;
@@ -11,7 +10,6 @@ mod web_source;
 
 pub use self::{
     backend_source::BackendSource,
-    filesystem_source::FileSystemSource,
     in_memory_source::InMemorySource,
     inputs::{
         Command, Dependency, DistributionInfo, FileSystemMapping, PackageInfo, PackageSummary,

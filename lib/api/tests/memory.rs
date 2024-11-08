@@ -28,9 +28,6 @@ fn test_shared_memory_atomics_notify_send() {
     let mem = if let Some(m) = mem.as_shared(&store) {
         m
     } else {
-        #[cfg(feature = "sys")]
-        panic!("Memory is not shared");
-        #[cfg(not(feature = "sys"))]
         return;
     };
 
@@ -60,19 +57,4 @@ fn test_shared_memory_atomics_notify_send() {
 
     mem.wait(MemoryLocation::new_32(10), None).unwrap();
     done.store(true, Ordering::SeqCst);
-}
-
-#[cfg(feature = "sys")]
-#[test]
-fn test_shared_memory_disable_atomics() {
-    use wasmer::AtomicsError;
-
-    let mut store = Store::default();
-    let mem = Memory::new(&mut store, MemoryType::new(10, Some(65536), true)).unwrap();
-
-    let mem = mem.as_shared(&store).unwrap();
-    mem.disable_atomics().unwrap();
-
-    let err = mem.wait(MemoryLocation::new_32(1), None).unwrap_err();
-    assert_eq!(err, AtomicsError::AtomicsDisabled);
 }

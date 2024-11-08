@@ -147,16 +147,16 @@ async fn fetch(request: HttpRequest) -> Result<HttpResponse, Error> {
         },
     } = request;
 
-    let mut opts = RequestInit::new();
-    opts.method(method.as_str());
-    opts.mode(RequestMode::Cors);
+    let opts = RequestInit::new();
+    opts.set_method(method.as_str());
+    opts.set_mode(RequestMode::Cors);
 
     if let Some(data) = body {
         let data_len = data.len();
         let array = js_sys::Uint8Array::new_with_length(data_len as u32);
         array.copy_from(&data[..]);
 
-        opts.body(Some(&array));
+        opts.set_body(&array);
     }
 
     let request = {

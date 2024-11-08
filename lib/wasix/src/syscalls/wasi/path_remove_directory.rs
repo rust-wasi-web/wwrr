@@ -28,16 +28,6 @@ pub fn path_remove_directory<M: MemorySize>(
     wasi_try!(path_remove_directory_internal(&mut ctx, fd, &path_str));
     let env = ctx.data();
 
-    #[cfg(feature = "journal")]
-    if env.enable_journal {
-        wasi_try!(
-            JournalEffector::save_path_remove_directory(&mut ctx, fd, path_str).map_err(|err| {
-                tracing::error!("failed to save remove directory event - {}", err);
-                Errno::Fault
-            })
-        )
-    }
-
     Errno::Success
 }
 

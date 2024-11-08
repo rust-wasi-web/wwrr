@@ -9,20 +9,6 @@ use super::*;
 impl WasiFunctionEnv {
     #[allow(clippy::result_large_err)]
     pub fn run_async(self, mut store: Store) -> Result<(Self, Store), WasiRuntimeError> {
-        // If no handle or runtime exists then create one
-        #[cfg(feature = "sys-thread")]
-        let _guard = if tokio::runtime::Handle::try_current().is_err() {
-            let runtime = tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .unwrap();
-            Some(runtime)
-        } else {
-            None
-        };
-        #[cfg(feature = "sys-thread")]
-        let _guard = _guard.as_ref().map(|r| r.enter());
-
         self.data(&store).thread.set_status_running();
 
         let tasks = self.data(&store).tasks().clone();

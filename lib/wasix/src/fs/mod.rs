@@ -24,7 +24,7 @@ use ahash::AHashMap;
 use futures::{future::BoxFuture, Future, TryStreamExt};
 #[cfg(feature = "enable-serde")]
 use serde_derive::{Deserialize, Serialize};
-use tokio::{io::AsyncWriteExt, runtime::Handle};
+use tokio::io::AsyncWriteExt;
 use tracing::{debug, trace};
 use virtual_fs::{copy_reference, FileSystem, FsError, OpenOptions, VirtualFile};
 use wasmer_config::package::PackageId;
@@ -575,17 +575,6 @@ impl WasiFs {
             Some(Reverse(fd)) => fd,
             None => self.next_fd.next_val(),
         }
-    }
-
-    /// We need to clear the freed FD list when the journal is replayed as it
-    /// will close lots of file descriptors which will fill the list. We clear
-    /// the list and allocate new FD's instead.
-    ///
-    /// This should only be used when the file descriptors are being managed
-    /// externally (e.g. journals)
-    pub(crate) fn clear_freed_fd_list(&self) {
-        let mut freed_fds = self.freed_fds.write().unwrap();
-        freed_fds.clear();
     }
 
     /// Closes all the file handles.
@@ -2117,62 +2106,7 @@ impl std::fmt::Debug for WasiFs {
 
 /// Returns the default filesystem backing
 pub fn default_fs_backing() -> Box<dyn virtual_fs::FileSystem + Send + Sync> {
-    cfg_if::cfg_if! {
-        if #[cfg(feature = "host-fs")] {
-            Box::new(virtual_fs::host_fs::FileSystem::new(Handle::current(), "/").unwrap())
-        } else if #[cfg(not(feature = "host-fs"))] {
-            Box::<virtual_fs::mem_fs::FileSystem>::default()
-        } else {
-            Box::<FallbackFileSystem>::default()
-        }
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct FallbackFileSystem;
-
-impl FallbackFileSystem {
-    fn fail() -> ! {
-        panic!("No filesystem set for wasmer-wasi, please enable either the `host-fs` or `mem-fs` feature or set your custom filesystem with `WasiEnvBuilder::set_fs`");
-    }
-}
-
-impl FileSystem for FallbackFileSystem {
-    fn readlink(&self, _path: &Path) -> virtual_fs::Result<PathBuf> {
-        Self::fail()
-    }
-    fn read_dir(&self, _path: &Path) -> Result<virtual_fs::ReadDir, FsError> {
-        Self::fail();
-    }
-    fn create_dir(&self, _path: &Path) -> Result<(), FsError> {
-        Self::fail();
-    }
-    fn remove_dir(&self, _path: &Path) -> Result<(), FsError> {
-        Self::fail();
-    }
-    fn rename<'a>(&'a self, _from: &Path, _to: &Path) -> BoxFuture<'a, Result<(), FsError>> {
-        Self::fail();
-    }
-    fn metadata(&self, _path: &Path) -> Result<virtual_fs::Metadata, FsError> {
-        Self::fail();
-    }
-    fn symlink_metadata(&self, _path: &Path) -> Result<virtual_fs::Metadata, FsError> {
-        Self::fail();
-    }
-    fn remove_file(&self, _path: &Path) -> Result<(), FsError> {
-        Self::fail();
-    }
-    fn new_open_options(&self) -> virtual_fs::OpenOptions {
-        Self::fail();
-    }
-    fn mount(
-        &self,
-        _name: String,
-        _path: &Path,
-        _fs: Box<dyn FileSystem + Send + Sync>,
-    ) -> virtual_fs::Result<()> {
-        Self::fail()
-    }
+    Box::<virtual_fs::mem_fs::FileSystem>::default()
 }
 
 pub fn virtual_file_type_to_wasi_file_type(file_type: virtual_fs::FileType) -> Filetype {

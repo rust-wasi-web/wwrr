@@ -19,8 +19,6 @@ use virtual_net::{DynVirtualNetworking, VirtualNetworking};
 use wasmer::{Module, RuntimeError};
 use wasmer_wasix_types::wasi::ExitCode;
 
-#[cfg(feature = "journal")]
-use crate::journal::DynJournal;
 use crate::{
     http::{DynHttpClient, HttpClient},
     os::TtyBridge,
@@ -79,13 +77,7 @@ where
 
     /// Create a new [`wasmer::Store`].
     fn new_store(&self) -> wasmer::Store {
-        cfg_if::cfg_if! {
-            if #[cfg(feature = "sys")] {
-                wasmer::Store::new(self.engine())
-            } else {
-                wasmer::Store::default()
-            }
-        }
+        wasmer::Store::default()
     }
 
     /// Get a custom HTTP client
@@ -119,26 +111,9 @@ where
     /// Callback thats invokes whenever the instance is tainted, tainting can occur
     /// for multiple reasons however the most common is a panic within the process
     fn on_taint(&self, _reason: TaintReason) {}
-
-    /// The list of journals which will be used to restore the state of the
-    /// runtime at a particular point in time
-    #[cfg(feature = "journal")]
-    fn journals(&self) -> &'_ Vec<Arc<DynJournal>> {
-        &EMPTY_JOURNAL_LIST
-    }
-
-    /// The snapshot capturer takes and restores snapshots of the WASM process at specific
-    /// points in time by reading and writing log entries
-    #[cfg(feature = "journal")]
-    fn active_journal(&self) -> Option<&'_ DynJournal> {
-        None
-    }
 }
 
 pub type DynRuntime = dyn Runtime + Send + Sync;
-
-#[cfg(feature = "journal")]
-static EMPTY_JOURNAL_LIST: Vec<Arc<DynJournal>> = Vec::new();
 
 /// Load a a Webassembly module, trying to use a pre-compiled version if possible.
 ///
@@ -217,21 +192,13 @@ pub struct PluggableRuntime {
     pub module_cache: Arc<dyn ModuleCache + Send + Sync>,
     #[derivative(Debug = "ignore")]
     pub tty: Option<Arc<dyn TtyBridge + Send + Sync>>,
-    #[cfg(feature = "journal")]
-    #[derivative(Debug = "ignore")]
-    pub journals: Vec<Arc<DynJournal>>,
 }
 
 impl PluggableRuntime {
     pub fn new(rt: Arc<dyn VirtualTaskManager>) -> Self {
         // TODO: the cfg flags below should instead be handled by separate implementations.
-        cfg_if::cfg_if! {
-            if #[cfg(feature = "host-vnet")] {
-                let networking = Arc::new(virtual_net::host::LocalNetworking::default());
-            } else {
-                let networking = Arc::new(virtual_net::UnsupportedVirtualNetworking::default());
-            }
-        }
+        let networking = Arc::new(virtual_net::UnsupportedVirtualNetworking::default());
+
         let http_client =
             crate::http::default_http_client().map(|client| Arc::new(client) as DynHttpClient);
 
@@ -254,8 +221,6 @@ impl PluggableRuntime {
             source: Arc::new(source),
             package_loader: Arc::new(loader),
             module_cache: Arc::new(module_cache::in_memory()),
-            #[cfg(feature = "journal")]
-            journals: Vec::new(),
         }
     }
 
@@ -305,12 +270,6 @@ impl PluggableRuntime {
         self.http_client = Some(Arc::new(client));
         self
     }
-
-    #[cfg(feature = "journal")]
-    pub fn add_journal(&mut self, journal: Arc<DynJournal>) -> &mut Self {
-        self.journals.push(journal);
-        self
-    }
 }
 
 impl Runtime for PluggableRuntime {
@@ -356,16 +315,6 @@ impl Runtime for PluggableRuntime {
     fn module_cache(&self) -> Arc<dyn ModuleCache + Send + Sync> {
         self.module_cache.clone()
     }
-
-    #[cfg(feature = "journal")]
-    fn journals(&self) -> &'_ Vec<Arc<DynJournal>> {
-        &self.journals
-    }
-
-    #[cfg(feature = "journal")]
-    fn active_journal(&self) -> Option<&DynJournal> {
-        self.journals.iter().last().map(|a| a.as_ref())
-    }
 }
 
 /// Runtime that allows for certain things to be overridden
@@ -383,9 +332,6 @@ pub struct OverriddenRuntime {
     module_cache: Option<Arc<dyn ModuleCache + Send + Sync>>,
     #[derivative(Debug = "ignore")]
     tty: Option<Arc<dyn TtyBridge + Send + Sync>>,
-    #[cfg(feature = "journal")]
-    #[derivative(Debug = "ignore")]
-    journals: Option<Vec<Arc<DynJournal>>>,
 }
 
 impl OverriddenRuntime {
@@ -400,8 +346,6 @@ impl OverriddenRuntime {
             engine: None,
             module_cache: None,
             tty: None,
-            #[cfg(feature = "journal")]
-            journals: None,
         }
     }
 
@@ -440,18 +384,6 @@ impl OverriddenRuntime {
 
     pub fn with_module_cache(mut self, module_cache: Arc<dyn ModuleCache + Send + Sync>) -> Self {
         self.module_cache.replace(module_cache);
-        self
-    }
-
-    #[cfg(feature = "journal")]
-    pub fn with_tty(mut self, tty: Arc<dyn TtyBridge + Send + Sync>) -> Self {
-        self.tty.replace(tty);
-        self
-    }
-
-    #[cfg(feature = "journal")]
-    pub fn with_journals(mut self, journals: Vec<Arc<DynJournal>>) -> Self {
-        self.journals.replace(journals);
         self
     }
 }
@@ -526,24 +458,6 @@ impl Runtime for OverriddenRuntime {
             Some(tty.deref())
         } else {
             self.inner.tty()
-        }
-    }
-
-    #[cfg(feature = "journal")]
-    fn journals(&self) -> &'_ Vec<Arc<DynJournal>> {
-        if let Some(journals) = self.journals.as_ref() {
-            journals
-        } else {
-            self.inner.journals()
-        }
-    }
-
-    #[cfg(feature = "journal")]
-    fn active_journal(&self) -> Option<&'_ DynJournal> {
-        if let Some(journals) = self.journals.as_ref() {
-            journals.iter().last().map(|a| a.as_ref())
-        } else {
-            self.inner.active_journal()
         }
     }
 

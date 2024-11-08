@@ -33,14 +33,7 @@ tracing = ["tracing-lib", "wai-bindgen-wasmer-impl/tracing"]
 async = ["async-trait", "wai-bindgen-wasmer-impl/async"]
 
 # Wasmer features
-js = ["wasmer/js-default"]
-sys = ["wasmer/sys"]
-
-# Wasmer compiler (with `sys` feature only)
-cranelift = ["wasmer/cranelift"]
-singlepass = ["wasmer/singlepass"]
-llvm = ["wasmer/llvm"]
+js = []
 
 [package.metadata.docs.rs]
-features = ["wasmer/sys"]
 rustc-args = ["--cfg", "docsrs"]

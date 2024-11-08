@@ -1,8 +1,6 @@
 use std::f32::consts::E;
 
 use super::*;
-#[cfg(feature = "journal")]
-use crate::journal::JournalEffector;
 use crate::{
     capture_store_snapshot,
     os::task::thread::WasiMemoryLayout,

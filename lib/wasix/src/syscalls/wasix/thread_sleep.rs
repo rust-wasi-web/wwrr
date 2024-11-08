@@ -28,14 +28,8 @@ pub(crate) fn thread_sleep_internal<M: MemorySize + 'static>(
     }
 
     ctx = wasi_try_ok!(maybe_backoff::<M>(ctx)?);
-    ctx = wasi_try_ok!(maybe_snapshot::<M>(ctx)?);
 
     let env = ctx.data();
-
-    #[cfg(feature = "sys-thread")]
-    if duration == 0 {
-        std::thread::yield_now();
-    }
 
     if duration > 0 {
         let duration = Duration::from_nanos(duration);

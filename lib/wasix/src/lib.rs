@@ -1,5 +1,3 @@
-// FIXME: merge with ./lib.rs_upstream
-
 #![doc(html_favicon_url = "https://wasmer.io/images/icons/favicon-32x32.png")]
 #![doc(html_logo_url = "https://github.com/wasmerio.png?size=200")]
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
@@ -14,16 +12,8 @@
 //! [WASI plugin example](https://github.com/wasmerio/wasmer/blob/main/examples/plugin.rs)
 //! for an example of how to extend WASI using the WASI FS API.
 
-#[cfg(all(not(feature = "sys"), not(feature = "js")))]
-compile_error!("At least the `sys` or the `js` feature must be enabled. Please, pick one.");
-
-#[cfg(all(feature = "sys", feature = "js"))]
-compile_error!(
-    "Cannot have both `sys` and `js` features enabled at the same time. Please, pick one."
-);
-
-#[cfg(all(feature = "sys", target_arch = "wasm32"))]
-compile_error!("The `sys` feature must be enabled only for non-`wasm32` target.");
+#[cfg(not(feature = "js"))]
+compile_error!("The `js` feature must be enabled.");
 
 #[cfg(all(feature = "js", not(target_arch = "wasm32")))]
 compile_error!(
@@ -76,11 +66,6 @@ pub use virtual_fs::{DuplexPipe, FsError, Pipe, VirtualFile, WasiBidirectionalSh
 pub use virtual_net;
 pub use virtual_net::{UnsupportedVirtualNetworking, VirtualNetworking};
 
-#[cfg(feature = "host-vnet")]
-pub use virtual_net::{
-    host::{LocalNetworking, LocalTcpListener, LocalTcpStream, LocalUdpSocket},
-    io_err_into_net_error,
-};
 use wasmer_wasix_types::wasi::{Errno, ExitCode};
 
 pub use crate::{
@@ -99,7 +84,7 @@ pub use crate::{
         WasiEnv, WasiEnvBuilder, WasiEnvInit, WasiFunctionEnv, WasiInstanceHandles,
         WasiStateCreationError, ALL_RIGHTS,
     },
-    syscalls::{journal::wait_for_snapshot, rewind, rewind_ext, types, unwind},
+    syscalls::{rewind, rewind_ext, types, unwind},
     utils::is_wasix_module,
     utils::{
         get_wasi_version, get_wasi_versions, is_wasi_module,
@@ -823,39 +808,5 @@ fn mem_error_to_wasi(err: MemoryAccessError) -> Errno {
         MemoryAccessError::Overflow => Errno::Overflow,
         MemoryAccessError::NonUtf8String => Errno::Inval,
         _ => Errno::Unknown,
-    }
-}
-
-/// Run a synchronous function that would normally be blocking.
-///
-/// When the `sys-thread` feature is enabled, this will call
-/// [`tokio::task::block_in_place()`]. Otherwise, it calls the function
-/// immediately.
-pub(crate) fn block_in_place<Ret>(thunk: impl FnOnce() -> Ret) -> Ret {
-    cfg_if::cfg_if! {
-        if #[cfg(feature = "sys-thread")] {
-            tokio::task::block_in_place(thunk)
-        } else {
-            thunk()
-        }
-    }
-}
-
-/// Spawns a new blocking task that runs the provided closure.
-///
-/// The closure is executed on a separate thread, allowing it to perform blocking operations
-/// without blocking the main thread. The closure is wrapped in a `Future` that resolves to the
-/// result of the closure's execution.
-pub(crate) async fn spawn_blocking<F, R>(f: F) -> Result<R, tokio::task::JoinError>
-where
-    F: FnOnce() -> R + Send + 'static,
-    R: Send + 'static,
-{
-    cfg_if::cfg_if! {
-        if #[cfg(target_arch = "wasm32")] {
-            Ok(block_in_place(f))
-        } else {
-            tokio::task::spawn_blocking(f).await
-        }
     }
 }

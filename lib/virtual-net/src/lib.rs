@@ -3,8 +3,6 @@
 #[cfg(feature = "remote")]
 pub mod client;
 pub mod composite;
-#[cfg(feature = "host-net")]
-pub mod host;
 pub mod loopback;
 pub mod meta;
 #[cfg(feature = "remote")]
@@ -47,8 +45,6 @@ pub use bytes::Bytes;
 pub use bytes::BytesMut;
 use serde::{Deserialize, Serialize};
 pub use virtual_mio::{handler_into_waker, InterestHandler};
-#[cfg(feature = "host-net")]
-pub use virtual_mio::{InterestGuard, InterestHandlerWaker, InterestType};
 
 pub type Result<T> = std::result::Result<T, NetworkError>;
 

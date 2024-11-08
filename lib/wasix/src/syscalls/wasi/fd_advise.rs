@@ -23,14 +23,6 @@ pub fn fd_advise(
     wasi_try_ok!(fd_advise_internal(&mut ctx, fd, offset, len, advice));
     let env = ctx.data();
 
-    #[cfg(feature = "journal")]
-    if env.enable_journal {
-        JournalEffector::save_fd_advise(&mut ctx, fd, offset, len, advice).map_err(|err| {
-            tracing::error!("failed to save file descriptor advise event - {}", err);
-            WasiError::Exit(ExitCode::Errno(Errno::Fault))
-        })?;
-    }
-
     Ok(Errno::Success)
 }
 

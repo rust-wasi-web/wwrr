@@ -4,6 +4,7 @@
 /// This module should not be needed any longer (with the exception of the memory)
 /// once the type reflection is added to the WebAssembly JS API.
 /// https://github.com/WebAssembly/js-types/
+
 use std::{any::Any, fmt};
 
 use js_sys::{

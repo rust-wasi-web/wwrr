@@ -1,3 +1,5 @@
+#![cfg(not(target_arch = "wasm32"))]
+
 // file is a modified version of  https://github.com/AltSysrq/proptest/blob/proptest-derive/proptest-derive/tests/compiletest.rs
 
 // Original copyright and license:

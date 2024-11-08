@@ -1,11 +1,6 @@
 use std::task::Waker;
 
 use super::*;
-#[cfg(feature = "journal")]
-use crate::{
-    journal::{JournalEffector, JournalEntry},
-    utils::map_snapshot_err,
-};
 use crate::{net::socket::TimeType, syscalls::*};
 
 /// ### `fd_write()`
@@ -47,7 +42,6 @@ pub fn fd_write<M: MemorySize>(
         FdWriteSource::Iovs { iovs, iovs_len },
         offset as u64,
         true,
-        env.enable_journal,
     )?);
 
     Span::current().record("nwritten", bytes_written);
@@ -87,15 +81,12 @@ pub fn fd_pwrite<M: MemorySize>(
 ) -> Result<Errno, WasiError> {
     wasi_try_ok!(WasiEnv::process_signals_and_exit(&mut ctx)?);
 
-    let enable_snapshot_capture = ctx.data().enable_journal;
-
     let bytes_written = wasi_try_ok!(fd_write_internal::<M>(
         &ctx,
         fd,
         FdWriteSource::Iovs { iovs, iovs_len },
         offset,
         false,
-        enable_snapshot_capture,
     )?);
 
     Span::current().record("nwritten", bytes_written);
@@ -125,7 +116,6 @@ pub(crate) fn fd_write_internal<M: MemorySize>(
     data: FdWriteSource<'_, M>,
     offset: u64,
     should_update_cursor: bool,
-    should_snapshot: bool,
 ) -> Result<Result<usize, Errno>, WasiError> {
     let mut env = ctx.data();
     let state = env.state.clone();
@@ -397,17 +387,6 @@ pub(crate) fn fd_write_internal<M: MemorySize>(
                 }
             }
         };
-
-        #[cfg(feature = "journal")]
-        if should_snapshot && can_snapshot && bytes_written > 0 {
-            if let FdWriteSource::Iovs { iovs, iovs_len } = data {
-                JournalEffector::save_fd_write(ctx, fd, offset, bytes_written, iovs, iovs_len)
-                    .map_err(|err| {
-                        tracing::error!("failed to save terminal data - {}", err);
-                        WasiError::Exit(ExitCode::Errno(Errno::Fault))
-                    })?;
-            }
-        }
 
         env = ctx.data();
         memory = unsafe { env.memory_view(&ctx) };

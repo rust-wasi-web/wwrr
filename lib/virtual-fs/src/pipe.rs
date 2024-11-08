@@ -1,6 +1,4 @@
 use bytes::{Buf, Bytes};
-#[cfg(feature = "futures")]
-use futures::Future;
 use std::io::IoSlice;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::ops::DerefMut;

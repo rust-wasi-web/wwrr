@@ -1,4 +1,3 @@
-#![cfg_attr(feature = "sys", allow(unused))]
 use std::cell::{Ref, RefCell, RefMut};
 use std::ops::{Deref, DerefMut};
 use std::{

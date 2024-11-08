@@ -26,14 +26,6 @@ pub fn fd_seek<M: MemorySize>(
     let new_offset = wasi_try_ok!(fd_seek_internal(&mut ctx, fd, offset, whence)?);
     let env = ctx.data();
 
-    #[cfg(feature = "journal")]
-    if env.enable_journal {
-        JournalEffector::save_fd_seek(&mut ctx, fd, offset, whence).map_err(|err| {
-            tracing::error!("failed to save file descriptor seek event - {}", err);
-            WasiError::Exit(ExitCode::Errno(Errno::Fault))
-        })?;
-    }
-
     // reborrow
     let env = ctx.data();
     let memory = unsafe { env.memory_view(&ctx) };

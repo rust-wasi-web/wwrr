@@ -1,20 +1,13 @@
 use std::{
     collections::HashMap,
-    fmt::Write as _,
-    io::{ErrorKind, Write as _},
-    path::PathBuf,
     sync::{Arc, RwLock},
 };
 
 use anyhow::{Context, Error};
 use bytes::Bytes;
 use http::{HeaderMap, Method};
-use tempfile::NamedTempFile;
 use url::Url;
-use webc::{
-    compat::{Container, ContainerError},
-    DetectError,
-};
+use webc::compat::Container;
 
 use crate::{
     bin_factory::BinaryPackage,
@@ -31,7 +24,7 @@ use crate::{
 pub struct BuiltinPackageLoader {
     client: Arc<dyn HttpClient + Send + Sync>,
     in_memory: InMemoryCache,
-    cache: Option<FileSystemCache>,
+
     /// A mapping from hostnames to tokens
     tokens: HashMap<String, String>,
 
@@ -55,7 +48,6 @@ impl BuiltinPackageLoader {
         BuiltinPackageLoader {
             in_memory: InMemoryCache::default(),
             client: Arc::new(crate::http::default_http_client().unwrap()),
-            cache: None,
             hash_validation: HashIntegrityValidationMode::NoValidate,
             tokens: HashMap::new(),
         }
@@ -67,53 +59,6 @@ impl BuiltinPackageLoader {
     pub fn with_hash_validation_mode(mut self, mode: HashIntegrityValidationMode) -> Self {
         self.hash_validation = mode;
         self
-    }
-
-    pub fn with_cache_dir(self, cache_dir: impl Into<PathBuf>) -> Self {
-        BuiltinPackageLoader {
-            cache: Some(FileSystemCache {
-                cache_dir: cache_dir.into(),
-            }),
-            ..self
-        }
-    }
-
-    pub fn validate_cache(
-        &self,
-        mode: CacheValidationMode,
-    ) -> Result<Vec<ImageHashMismatchError>, anyhow::Error> {
-        let cache = self
-            .cache
-            .as_ref()
-            .context("can not validate cache - no cache configured")?;
-
-        let items = cache.validate_hashes()?;
-        let mut errors = Vec::new();
-        for (path, error) in items {
-            match mode {
-                CacheValidationMode::WarnOnMismatch => {
-                    tracing::warn!(?error, "hash mismatch in cached image file");
-                }
-                CacheValidationMode::PruneOnMismatch => {
-                    tracing::warn!(?error, "deleting cached image file due to hash mismatch");
-                    match std::fs::remove_file(&path) {
-                        Ok(()) => {}
-                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                        Err(fs_err) => {
-                            tracing::error!(
-                                path=%error.source,
-                                ?fs_err,
-                                "could not delete cached image file with hash mismatch"
-                            );
-                        }
-                    }
-                }
-            }
-
-            errors.push(error);
-        }
-
-        Ok(errors)
     }
 
     pub fn with_http_client(self, client: impl HttpClient + Send + Sync + 'static) -> Self {
@@ -159,15 +104,6 @@ impl BuiltinPackageLoader {
             return Ok(Some(cached));
         }
 
-        if let Some(cache) = self.cache.as_ref() {
-            if let Some(cached) = cache.lookup(hash).await? {
-                // Note: We want to propagate it to the in-memory cache, too
-                tracing::debug!("Copying from the filesystem cache to the in-memory cache");
-                self.in_memory.save(&cached, *hash);
-                return Ok(Some(cached));
-            }
-        }
-
         Ok(None)
     }
 
@@ -179,9 +115,7 @@ impl BuiltinPackageLoader {
     ) -> Result<(), anyhow::Error> {
         let info = info.clone();
         let image = image.clone();
-        crate::spawn_blocking(move || Self::validate_hash_sync(&image, mode, &info))
-            .await
-            .context("tokio runtime failed")?
+        Self::validate_hash_sync(&image, mode, &info)
     }
 
     /// Validate image contents with the specified validation mode.
@@ -220,32 +154,6 @@ impl BuiltinPackageLoader {
 
     #[tracing::instrument(level = "debug", skip_all, fields(%dist.webc, %dist.webc_sha256))]
     async fn download(&self, dist: &DistributionInfo) -> Result<Bytes, Error> {
-        if dist.webc.scheme() == "file" {
-            match crate::runtime::resolver::utils::file_path_from_url(&dist.webc) {
-                Ok(path) => {
-                    let bytes = crate::spawn_blocking({
-                        let path = path.clone();
-                        move || std::fs::read(path)
-                    })
-                    .await?
-                    .with_context(|| format!("Unable to read \"{}\"", path.display()))?;
-
-                    let bytes = bytes::Bytes::from(bytes);
-
-                    Self::validate_hash(&bytes, self.hash_validation, dist).await?;
-
-                    return Ok(bytes);
-                }
-                Err(e) => {
-                    tracing::debug!(
-                        url=%dist.webc,
-                        error=&*e,
-                        "Unable to convert the file:// URL to a path",
-                    );
-                }
-            }
-        }
-
         let request = HttpRequest {
             headers: self.headers(&dist.webc),
             url: dist.webc.clone(),
@@ -340,38 +248,9 @@ impl PackageLoader for BuiltinPackageLoader {
             .await
             .with_context(|| format!("Unable to download \"{}\"", summary.dist.webc))?;
 
-        // We want to cache the container we downloaded, but we want to do it
-        // in a smart way to keep memory usage down.
-
-        if let Some(cache) = &self.cache {
-            match cache
-                .save_and_load_as_mmapped(bytes.clone(), &summary.dist)
-                .await
-            {
-                Ok(container) => {
-                    tracing::debug!("Cached to disk");
-                    self.in_memory.save(&container, summary.dist.webc_sha256);
-                    // The happy path - we've saved to both caches and loaded the
-                    // container from disk (hopefully using mmap) so we're done.
-                    return Ok(container);
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        error=&*e,
-                        pkg=%summary.pkg.id,
-                        pkg.hash=%summary.dist.webc_sha256,
-                        pkg.url=%summary.dist.webc,
-                        "Unable to save the downloaded package to disk",
-                    );
-                }
-            }
-        }
-
-        // The sad path - looks like we don't have a filesystem cache so we'll
-        // need to keep the whole thing in memory.
-        let container = crate::spawn_blocking(move || Container::from_bytes(bytes)).await??;
-        // We still want to cache it in memory, of course
+        let container = Container::from_bytes(bytes)?;
         self.in_memory.save(&container, summary.dist.webc_sha256);
+
         Ok(container)
     }
 
@@ -414,162 +293,6 @@ pub enum CacheValidationMode {
     PruneOnMismatch,
 }
 
-// FIXME: This implementation will block the async runtime and should use
-// some sort of spawn_blocking() call to run it in the background.
-#[derive(Debug)]
-struct FileSystemCache {
-    cache_dir: PathBuf,
-}
-
-impl FileSystemCache {
-    const FILE_SUFFIX: &'static str = ".bin";
-
-    /// Validate that the cached image file names correspond to their actual
-    /// file content hashes.
-    fn validate_hashes(&self) -> Result<Vec<(PathBuf, ImageHashMismatchError)>, anyhow::Error> {
-        let mut items = Vec::<(PathBuf, ImageHashMismatchError)>::new();
-
-        let iter = match std::fs::read_dir(&self.cache_dir) {
-            Ok(v) => v,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                // Cache dir does not exist, so nothing to validate.
-                return Ok(Vec::new());
-            }
-            Err(err) => {
-                return Err(err).with_context(|| {
-                    format!(
-                        "Could not read image cache dir: '{}'",
-                        self.cache_dir.display()
-                    )
-                });
-            }
-        };
-
-        for res in iter {
-            let entry = res?;
-            if !entry.file_type()?.is_file() {
-                continue;
-            }
-
-            // Extract the hash from the filename.
-
-            let hash_opt = entry
-                .file_name()
-                .to_str()
-                .and_then(|x| {
-                    let (raw_hash, _) = x.split_once(Self::FILE_SUFFIX)?;
-                    Some(raw_hash)
-                })
-                .and_then(|x| WebcHash::parse_hex(x).ok());
-            let Some(expected_hash) = hash_opt else {
-                continue;
-            };
-
-            // Compute the actual hash.
-            let path = entry.path();
-            let actual_hash = WebcHash::for_file(&path)?;
-
-            if actual_hash != expected_hash {
-                let err = ImageHashMismatchError {
-                    source: path.to_string_lossy().to_string(),
-                    actual_hash,
-                    expected_hash,
-                };
-                items.push((path, err));
-            }
-        }
-
-        Ok(items)
-    }
-
-    async fn lookup(&self, hash: &WebcHash) -> Result<Option<Container>, Error> {
-        let path = self.path(hash);
-
-        let container = crate::spawn_blocking({
-            let path = path.clone();
-            move || Container::from_disk(path)
-        })
-        .await?;
-        match container {
-            Ok(c) => Ok(Some(c)),
-            Err(ContainerError::Open { error, .. })
-            | Err(ContainerError::Read { error, .. })
-            | Err(ContainerError::Detect(DetectError::Io(error)))
-                if error.kind() == ErrorKind::NotFound =>
-            {
-                Ok(None)
-            }
-            Err(e) => {
-                let msg = format!("Unable to read \"{}\"", path.display());
-                Err(Error::new(e).context(msg))
-            }
-        }
-    }
-
-    async fn save(&self, webc: Bytes, dist: &DistributionInfo) -> Result<(), Error> {
-        let path = self.path(&dist.webc_sha256);
-        let dist = dist.clone();
-
-        crate::spawn_blocking(move || {
-            let parent = path.parent().expect("Always within cache_dir");
-
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("Unable to create \"{}\"", parent.display()))?;
-
-            let mut temp = NamedTempFile::new_in(parent)?;
-            temp.write_all(&webc)?;
-            temp.flush()?;
-            temp.as_file_mut().sync_all()?;
-            temp.persist(&path)?;
-
-            tracing::debug!(
-                pkg.hash=%dist.webc_sha256,
-                pkg.url=%dist.webc,
-                path=%path.display(),
-                num_bytes=webc.len(),
-                "Saved to disk",
-            );
-            Result::<_, Error>::Ok(())
-        })
-        .await??;
-
-        Ok(())
-    }
-
-    #[tracing::instrument(level = "debug", skip_all)]
-    async fn save_and_load_as_mmapped(
-        &self,
-        webc: Bytes,
-        dist: &DistributionInfo,
-    ) -> Result<Container, Error> {
-        // First, save it to disk
-        self.save(webc, dist).await?;
-
-        // Now try to load it again. The resulting container should use
-        // a memory-mapped file rather than an in-memory buffer.
-        match self.lookup(&dist.webc_sha256).await? {
-            Some(container) => Ok(container),
-            None => {
-                // Something really weird has occurred and we can't see the
-                // saved file. Just error out and let the fallback code do its
-                // thing.
-                Err(Error::msg("Unable to load the downloaded memory from disk"))
-            }
-        }
-    }
-
-    fn path(&self, hash: &WebcHash) -> PathBuf {
-        let hash = hash.as_bytes();
-        let mut filename = String::with_capacity(hash.len() * 2);
-        for b in hash {
-            write!(filename, "{b:02x}").unwrap();
-        }
-        filename.push_str(Self::FILE_SUFFIX);
-
-        self.cache_dir.join(filename)
-    }
-}
-
 #[derive(Debug, Default)]
 struct InMemoryCache(RwLock<HashMap<WebcHash, Container>>);
 
@@ -590,7 +313,6 @@ mod tests {
 
     use futures::future::BoxFuture;
     use http::{HeaderMap, StatusCode};
-    use tempfile::TempDir;
     use wasmer_config::package::PackageId;
 
     use crate::{
@@ -600,7 +322,7 @@ mod tests {
 
     use super::*;
 
-    const PYTHON: &[u8] = include_bytes!("../../../../c-api/examples/assets/python-0.1.0.wasmer");
+    const PYTHON: &[u8] = include_bytes!("../../../../../test-assets/python-0.1.0.wasmer");
 
     #[derive(Debug)]
     pub(crate) struct DummyClient {
@@ -629,16 +351,13 @@ mod tests {
     }
 
     async fn cache_misses_will_trigger_a_download_internal() {
-        let temp = TempDir::new().unwrap();
         let client = Arc::new(DummyClient::with_responses([HttpResponse {
             body: Some(PYTHON.to_vec()),
             redirected: false,
             status: StatusCode::OK,
             headers: HeaderMap::new(),
         }]));
-        let loader = BuiltinPackageLoader::new()
-            .with_cache_dir(temp.path())
-            .with_shared_http_client(client.clone());
+        let loader = BuiltinPackageLoader::new().with_shared_http_client(client.clone());
         let summary = PackageSummary {
             pkg: PackageInfo {
                 id: PackageId::new_named("python/python", "0.1.0".parse().unwrap()),
@@ -666,15 +385,7 @@ mod tests {
         // Make sure we got the right package
         let manifest = container.manifest();
         assert_eq!(manifest.entrypoint.as_deref(), Some("python"));
-        // it should have been automatically saved to disk
-        let path = loader
-            .cache
-            .as_ref()
-            .unwrap()
-            .path(&summary.dist.webc_sha256);
-        assert!(path.exists());
-        assert_eq!(std::fs::read(&path).unwrap(), PYTHON);
-        // and cached in memory for next time
+        // it should be cached in memory for next time
         let in_memory = loader.in_memory.0.read().unwrap();
         assert!(in_memory.contains_key(&summary.dist.webc_sha256));
     }
@@ -692,35 +403,3 @@ mod tests {
     }
 }
 
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    // NOTE: must be a tokio test because the BuiltinPackageLoader::new()
-    // constructor requires a runtime...
-    #[tokio::test]
-    async fn test_builtin_package_downloader_cache_validation() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path();
-
-        let contents = "fail";
-        let correct_hash = WebcHash::sha256(contents);
-        let used_hash =
-            WebcHash::parse_hex("0000a28ea38a000f3a3328cb7fabe330638d3258affe1a869e3f92986222d997")
-                .unwrap();
-        let filename = format!("{}{}", used_hash, FileSystemCache::FILE_SUFFIX);
-        let file_path = path.join(filename);
-        std::fs::write(&file_path, contents).unwrap();
-
-        let dl = BuiltinPackageLoader::new().with_cache_dir(path);
-
-        let errors = dl
-            .validate_cache(CacheValidationMode::PruneOnMismatch)
-            .unwrap();
-        assert_eq!(errors.len(), 1);
-        assert_eq!(errors[0].actual_hash, correct_hash);
-        assert_eq!(errors[0].expected_hash, used_hash);
-
-        assert_eq!(file_path.exists(), false);
-    }
-}

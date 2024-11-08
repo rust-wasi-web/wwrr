@@ -11,7 +11,7 @@ rust-version.workspace = true
 
 [dependencies]
 base64.workspace = true
-hyper = { workspace = true, optional = true }
+hyper = { version = "1", optional = true }
 rkyv = { workspace = true, optional = true }
 
 thiserror = "1"
@@ -19,11 +19,9 @@ bytes = "1.1"
 async-trait = { version = "^0.1" }
 tracing = "0.1"
 tokio = { workspace = true, default-features = false, features = ["io-util"] }
-libc = { workspace = true, optional = true }
-mio = { workspace = true, optional = true }
-socket2 = { workspace = true, optional = true }
+libc = { version = "^0.2", default-features = false, optional = true }
 derivative = { version = "^2" }
-virtual-mio  = { path = "../virtual-io", version = "0.3.0", default-features = false }
+virtual-mio  = { path = "../virtual-io", version = "0.3.0", default-features = false, features = ["js"] }
 bincode = { version = "1.3" }
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 pin-project-lite = "0.2.9"
@@ -42,21 +40,21 @@ default-features = false
 features = ["proto-ipv4", "std", "alloc"]
 
 [dev-dependencies]
-tokio = { workspace = true, default-features = false, features = [ "macros", "rt-multi-thread" ] }
+tokio = { workspace = true, default-features = false, features = [ "macros"] }
 tracing-test = { version = "0.2" }
 serial_test = "2.0.0"
 
 [features]
-default = [ "host-net", "remote", "json", "messagepack", "cbor", "hyper", "tokio-tungstenite" ]
-host-net = [ "libc", "tokio/io-util", "virtual-mio/sys", "tokio/net", "tokio/rt", "socket2", "mio" ]
+#default = [ "remote", "json", "messagepack", "cbor", "hyper", "tokio-tungstenite" ]
 remote = [ "libc", "tokio/io-util", "tokio/sync", "tokio-serde", "tokio-util" ]
 json = [ "tokio-serde/json" ]
 messagepack = [ "tokio-serde/messagepack" ]
 cbor = [ "tokio-serde/cbor" ]
 hyper = [ "hyper-tungstenite", "hyper-util", "dep:hyper" ]
+tokio = [ ]
 tokio-tungstenite = [ "dep:tokio-tungstenite" ]
 rkyv = [ "dep:rkyv", "dep:bytecheck" ]
 
 [package.metadata.docs.rs]
-features = ["host-net", "remote"]
+features = ["remote"]
 rustc-args = ["--cfg", "docsrs"]

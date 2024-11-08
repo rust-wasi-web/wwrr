@@ -1,28 +1,3 @@
-#[cfg(all(feature = "std", feature = "core"))]
-compile_error!(
-    "The `std` and `core` features are both enabled, which is an error. Please enable only once."
-);
-
-#[cfg(all(not(feature = "std"), not(feature = "core")))]
-compile_error!("Both the `std` and `core` features are disabled. Please enable one of them.");
-
-#[cfg(feature = "core")]
-pub(crate) extern crate alloc;
-
-mod lib {
-    #[cfg(feature = "core")]
-    pub mod std {
-        pub use crate::alloc::{borrow, boxed, str, string, sync, vec};
-        pub use core::fmt;
-        pub use hashbrown as collections;
-    }
-
-    #[cfg(feature = "std")]
-    pub mod std {
-        pub use std::{borrow, boxed, collections, fmt, str, string, sync, vec};
-    }
-}
-
 mod as_js;
 pub(crate) mod engine;
 pub(crate) mod errors;

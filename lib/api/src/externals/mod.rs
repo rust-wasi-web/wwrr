@@ -14,12 +14,7 @@ use crate::exports::{ExportError, Exportable};
 use crate::ExternType;
 use std::fmt;
 
-#[cfg(feature = "js")]
 use crate::js::vm::VMExtern;
-#[cfg(feature = "jsc")]
-use crate::jsc::vm::VMExtern;
-#[cfg(feature = "sys")]
-use wasmer_vm::VMExtern;
 
 use crate::store::{AsStoreMut, AsStoreRef};
 

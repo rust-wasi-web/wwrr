@@ -49,22 +49,6 @@ pub fn path_link<M: MemorySize>(
     ));
     let env = ctx.data();
 
-    #[cfg(feature = "journal")]
-    if env.enable_journal {
-        JournalEffector::save_path_link(
-            &mut ctx,
-            old_fd,
-            old_flags,
-            old_path_str,
-            new_fd,
-            new_path_str,
-        )
-        .map_err(|err| {
-            tracing::error!("failed to save path hard link event - {}", err);
-            WasiError::Exit(ExitCode::Errno(Errno::Fault))
-        })?;
-    }
-
     Ok(Errno::Success)
 }
 

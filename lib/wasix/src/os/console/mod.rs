@@ -21,8 +21,6 @@ use virtual_fs::{
     ArcBoxFile, ArcFile, AsyncWriteExt, CombineFile, DeviceFile, DuplexPipe, FileSystem, Pipe,
     PipeRx, PipeTx, RootFileSystemBuilder, StaticFile, VirtualFile,
 };
-#[cfg(feature = "sys")]
-use wasmer::Engine;
 use wasmer_config::package::PackageSource;
 use wasmer_wasix_types::{types::__WASI_STDIN_FILENO, wasi::Errno};
 

@@ -22,14 +22,6 @@ pub fn port_addr_add<M: MemorySize>(
 
     wasi_try_ok!(port_addr_add_internal(&mut ctx, cidr)?);
 
-    #[cfg(feature = "journal")]
-    if ctx.data().enable_journal {
-        JournalEffector::save_port_addr_add(&mut ctx, cidr).map_err(|err| {
-            tracing::error!("failed to save port_addr_add event - {}", err);
-            WasiError::Exit(ExitCode::Errno(Errno::Fault))
-        })?;
-    }
-
     Ok(Errno::Success)
 }
 

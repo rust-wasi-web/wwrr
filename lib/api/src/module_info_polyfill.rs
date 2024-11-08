@@ -5,6 +5,7 @@
 //! for the Wasm imports and exports.
 //!
 //! <https://github.com/WebAssembly/js-types/blob/master/proposals/js-types/Overview.md>
+
 use core::convert::TryFrom;
 use std::vec::Vec;
 use wasmer_types::entity::EntityRef;

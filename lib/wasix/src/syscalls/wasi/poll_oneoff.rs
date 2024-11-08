@@ -65,7 +65,6 @@ pub fn poll_oneoff<M: MemorySize + 'static>(
     wasi_try_ok!(WasiEnv::process_signals_and_exit(&mut ctx)?);
 
     ctx = wasi_try_ok!(maybe_backoff::<M>(ctx)?);
-    ctx = wasi_try_ok!(maybe_snapshot::<M>(ctx)?);
 
     ctx.data_mut().poll_seed += 1;
     let mut env = ctx.data();
@@ -409,20 +408,6 @@ where
             evts
         }
     };
-
-    #[cfg(feature = "sys")]
-    if env.capabilities.threading.enable_blocking_sleep && subs_len == 1 {
-        // Here, `poll_oneoff` is merely in a sleeping state
-        // due to a single relative timer event. This particular scenario was
-        // added following experimental findings indicating that std::thread::sleep
-        // yields more consistent sleep durations, allowing wasmer to meet
-        // real-time demands with greater precision.
-        if let Some(timeout) = timeout {
-            std::thread::sleep(timeout);
-            process_events(&ctx, process_timeout(&ctx));
-            return Ok(Errno::Success);
-        }
-    }
 
     let tasks = env.tasks().clone();
     let timeout = async move {

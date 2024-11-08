@@ -24,8 +24,6 @@ pub fn sock_accept<M: MemorySize>(
 ) -> Result<Errno, WasiError> {
     wasi_try_ok!(WasiEnv::process_signals_and_exit(&mut ctx)?);
 
-    ctx = wasi_try_ok!(maybe_snapshot::<M>(ctx)?);
-
     let env = ctx.data();
     let (memory, state, _) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
 
@@ -79,23 +77,6 @@ pub fn sock_accept_v2<M: MemorySize>(
         nonblocking,
         None
     )?);
-
-    #[cfg(feature = "journal")]
-    if ctx.data().enable_journal {
-        JournalEffector::save_sock_accepted(
-            &mut ctx,
-            sock,
-            fd,
-            local_addr,
-            peer_addr,
-            fd_flags,
-            nonblocking,
-        )
-        .map_err(|err| {
-            tracing::error!("failed to save sock_accepted event - {}", err);
-            WasiError::Exit(ExitCode::Errno(Errno::Fault))
-        })?;
-    }
 
     let env = ctx.data();
     let (memory, state, _) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };

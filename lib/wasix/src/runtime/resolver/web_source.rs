@@ -231,12 +231,12 @@ impl WebSource {
             .await
             .context("Unable to get the locally cached file")?;
 
-        let webc_sha256 = crate::block_in_place(|| WebcHash::for_file(&local_path))
+        let webc_sha256 = WebcHash::for_file(&local_path)
             .with_context(|| format!("Unable to hash \"{}\"", local_path.display()))?;
 
         // Note: We want to use Container::from_disk() rather than the bytes
         // our HTTP client gave us because then we can use memory-mapped files
-        let container = crate::block_in_place(|| Container::from_disk(&local_path))
+        let container = Container::from_disk(&local_path)
             .with_context(|| format!("Unable to load \"{}\"", local_path.display()))?;
 
         let id = PackageInfo::package_id_from_manifest(container.manifest())?
@@ -393,8 +393,10 @@ mod tests {
 
     use super::*;
 
-    const PYTHON: &[u8] = include_bytes!("../../../../c-api/examples/assets/python-0.1.0.wasmer");
-    const COREUTILS: &[u8] = include_bytes!("../../../../../tests/integration/cli/tests/webc/coreutils-1.0.16-e27dbb4f-2ef2-4b44-b46a-ddd86497c6d7.webc");
+    const PYTHON: &[u8] = include_bytes!("../../../../../test-assets/python-0.1.0.wasmer");
+    const COREUTILS: &[u8] = include_bytes!(
+        "../../../../../test-assets/coreutils-1.0.16-e27dbb4f-2ef2-4b44-b46a-ddd86497c6d7.webc"
+    );
     const DUMMY_URL: &str = "http://my-registry.io/some/package";
     const DUMMY_URL_HASH: &str = "4D7481F44E1D971A8C60D3C7BD505E2727602CF9369ED623920E029C2BA2351D";
 

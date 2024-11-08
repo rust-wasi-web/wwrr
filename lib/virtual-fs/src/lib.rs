@@ -25,8 +25,6 @@ pub mod combine_file;
 pub mod cow_file;
 pub mod dual_write_file;
 pub mod empty_fs;
-#[cfg(feature = "host-fs")]
-pub mod host_fs;
 pub mod mem_fs;
 pub mod null_file;
 pub mod passthru_fs;
@@ -41,8 +39,6 @@ pub(crate) mod ops;
 mod overlay_fs;
 pub mod pipe;
 mod static_file;
-#[cfg(feature = "static-fs")]
-pub mod static_fs;
 mod trace_fs;
 #[cfg(feature = "webc-fs")]
 mod webc_volume_fs;
