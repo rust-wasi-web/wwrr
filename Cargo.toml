@@ -5,6 +5,7 @@ members = [
     "lib/config",
     "lib/derive",
     "lib/journal",
+    "lib/js",
     "lib/types",
     "lib/virtual-fs",
     "lib/virtual-io",
@@ -40,3 +41,7 @@ tokio = { version = "1.39.0", default-features = false}
 webc = { version = "6.0.1", default-features = false, features = ["package"] }
 http = "1.0.0"
 hyper = "1"
+
+[profile.release]
+lto = true
+opt-level = 'z'
