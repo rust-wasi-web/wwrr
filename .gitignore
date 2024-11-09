@@ -33,3 +33,11 @@ link.tar.gz
 # Ignore files used by the "direnv" tool.
 .direnv
 .envrc
+
+target/
+**/*.rs.bk
+node_modules/
+dist/
+*.log
+pkg/
+.env

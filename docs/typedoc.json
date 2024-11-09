@@ -1,0 +1,7 @@
+{
+    "entryPoints": [
+        "../src-js/index.ts"
+    ],
+    "out": "public",
+    "$schema": "https://typedoc.org/schema.json"
+}
