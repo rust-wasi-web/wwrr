@@ -1,28 +1,18 @@
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 
-#[cfg(feature = "remote")]
-pub mod client;
 pub mod composite;
 pub mod loopback;
 pub mod meta;
-#[cfg(feature = "remote")]
-pub mod rx_tx;
-#[cfg(feature = "remote")]
-pub mod server;
 pub mod tcp_pair;
 #[cfg(feature = "tokio")]
 #[cfg(test)]
 mod tests;
 
-#[cfg(feature = "remote")]
-pub use client::{RemoteNetworkingClient, RemoteNetworkingClientDriver};
 pub use composite::CompositeTcpListener;
 pub use loopback::LoopbackNetworking;
 use pin_project_lite::pin_project;
 #[cfg(feature = "rkyv")]
 use rkyv::{Archive, CheckBytes, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
-#[cfg(feature = "remote")]
-pub use server::{RemoteNetworkingServer, RemoteNetworkingServerDriver};
 use std::fmt;
 use std::mem::MaybeUninit;
 use std::net::IpAddr;

@@ -10,7 +10,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 virtual-fs = { path = "../virtual-fs", default-features = false }
-virtual-net = { path = "../virtual-net", default-features = false, features = ["remote"] }
+virtual-net = { path = "../virtual-net", default-features = false }
 wasmer = { path = "../api" }
 wasmer-types = { path = "../types" }
 wasmer-wasix = { path = "../wasix" }
