@@ -14,7 +14,7 @@ virtual-net = { path = "../virtual-net", default-features = false, features = ["
 wasmer = { path = "../api" }
 wasmer-config = { path = "../config" }
 wasmer-types = { path = "../types" }
-wasmer-wasix = { path = "../wasix", default-features = false, features = ["js", "js-default"] }
+wasmer-wasix = { path = "../wasix" }
 
 lazy_static = "1.5"
 anyhow = "1"

@@ -78,17 +78,7 @@ async fn test_stdout() {
         .args(["Gordon"])
         .stdout(Box::new(stdout_tx));
 
-    #[cfg(feature = "js")]
-    {
-        builder.run_with_store(module, &mut store).unwrap();
-    }
-    #[cfg(not(feature = "js"))]
-    {
-        std::thread::spawn(move || builder.run_with_store(module, &mut store))
-            .join()
-            .unwrap()
-            .unwrap();
-    }
+    builder.run_with_store(module, &mut store).unwrap();
 
     let mut stdout_str = String::new();
     stdout_rx.read_to_string(&mut stdout_str).await.unwrap();
@@ -100,7 +90,6 @@ async fn test_env() {
     let mut store = Store::default();
     let module = Module::new(&store, include_bytes!("envvar.wasm")).unwrap();
 
-    #[cfg(feature = "js")]
     tracing_wasm::set_as_global_default_with_config({
         let mut builder = tracing_wasm::WASMLayerConfigBuilder::new();
         builder.set_console_config(tracing_wasm::ConsoleConfig::ReportWithoutConsoleColor);
@@ -117,18 +106,7 @@ async fn test_env() {
         .env("TEST2", "VALUE2")
         .stdout(Box::new(pipe_tx));
 
-    #[cfg(feature = "js")]
-    {
-        builder.run_with_store(module, &mut store).unwrap();
-    }
-
-    #[cfg(not(feature = "js"))]
-    {
-        std::thread::spawn(move || builder.run_with_store(module, &mut store))
-            .join()
-            .unwrap()
-            .unwrap();
-    }
+    builder.run_with_store(module, &mut store).unwrap();
 
     let mut stdout_str = String::new();
     pipe_rx.read_to_string(&mut stdout_str).await.unwrap();
@@ -151,18 +129,7 @@ async fn test_stdin() {
 
     let builder = WasiEnv::builder("command-name").stdin(Box::new(pipe_rx));
 
-    #[cfg(feature = "js")]
-    {
-        builder.run_with_store(module, &mut store).unwrap();
-    }
-
-    #[cfg(not(feature = "js"))]
-    {
-        std::thread::spawn(move || builder.run_with_store(module, &mut store))
-            .join()
-            .unwrap()
-            .unwrap();
-    }
+    builder.run_with_store(module, &mut store).unwrap();
 
     // We assure stdin is now empty
     // Can't easily be tested with current pipe impl.

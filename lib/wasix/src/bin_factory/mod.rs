@@ -23,14 +23,10 @@ pub use self::{
         run_exec, spawn_exec, spawn_exec_module, spawn_load_module, spawn_load_wasm, spawn_union_fs,
     },
 };
-use crate::{
-    os::{command::Commands, task::TaskJoinHandle},
-    Runtime, SpawnError, WasiEnv,
-};
+use crate::{os::task::TaskJoinHandle, Runtime, SpawnError, WasiEnv};
 
 #[derive(Debug, Clone)]
 pub struct BinFactory {
-    pub(crate) commands: Commands,
     runtime: Arc<dyn Runtime + Send + Sync + 'static>,
     pub(crate) local: Arc<RwLock<HashMap<String, Option<BinaryPackage>>>>,
 }
@@ -38,7 +34,6 @@ pub struct BinFactory {
 impl BinFactory {
     pub fn new(runtime: Arc<dyn Runtime + Send + Sync + 'static>) -> BinFactory {
         BinFactory {
-            commands: Commands::new_with_builtins(runtime.clone()),
             runtime,
             local: Arc::new(RwLock::new(HashMap::new())),
         }
@@ -105,16 +100,6 @@ impl BinFactory {
         store: &mut Option<wasmer::Store>,
         builder: &mut Option<WasiEnv>,
     ) -> Result<TaskJoinHandle, SpawnError> {
-        // We check for built in commands
-        if let Some(parent_ctx) = parent_ctx {
-            if self.commands.exists(name.as_str()) {
-                return self
-                    .commands
-                    .exec(parent_ctx, name.as_str(), store, builder);
-            }
-        } else if self.commands.exists(name.as_str()) {
-            tracing::warn!("builtin command without a parent ctx - {}", name);
-        }
         Err(SpawnError::BinaryNotFound { binary: name })
     }
 

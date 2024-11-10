@@ -187,24 +187,6 @@ impl TaskJoinHandle {
         self.watch.borrow().clone()
     }
 
-    #[cfg(feature = "ctrlc")]
-    pub fn install_ctrlc_handler(&self) {
-        use wasmer::FromToNativeWasmType;
-        use wasmer_wasix_types::wasi::Signal;
-
-        let signal_handler = self.signal_handler.clone();
-
-        tokio::spawn(async move {
-            // Loop sending ctrl-c presses as signals to the signal handler
-            while tokio::signal::ctrl_c().await.is_ok() {
-                if let Err(err) = signal_handler.signal(Signal::Sigint.to_native() as u8) {
-                    tracing::error!("failed to process signal - {}", err);
-                    std::process::exit(1);
-                }
-            }
-        });
-    }
-
     /// Wait until the task finishes.
     pub async fn wait_finished(&mut self) -> Result<ExitCode, Arc<WasiRuntimeError>> {
         loop {

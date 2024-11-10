@@ -9,7 +9,6 @@ use wasmer_config::package::{PackageHash, PackageId, PackageSource};
 use webc::{compat::SharedBytes, Container};
 
 use crate::{
-    runners::MappedDirectory,
     runtime::resolver::{PackageInfo, ResolveError},
     Runtime,
 };
@@ -78,59 +77,9 @@ pub struct BinaryPackage {
     pub commands: Vec<BinaryPackageCommand>,
     pub uses: Vec<String>,
     pub file_system_memory_footprint: u64,
-
-    pub additional_host_mapped_directories: Vec<MappedDirectory>,
 }
 
 impl BinaryPackage {
-    #[tracing::instrument(level = "debug", skip_all)]
-    pub async fn from_dir(
-        dir: &Path,
-        rt: &(dyn Runtime + Send + Sync),
-    ) -> Result<Self, anyhow::Error> {
-        let source = rt.source();
-
-        // since each package must be in its own directory, hash of the `dir` should provide a good enough
-        // unique identifier for the package
-        let hash = sha2::Sha256::digest(dir.display().to_string().as_bytes()).into();
-        let id = PackageId::Hash(PackageHash::from_sha256_bytes(hash));
-
-        let manifest_path = dir.join("wasmer.toml");
-        let webc = webc::wasmer_package::Package::from_manifest(&manifest_path)?;
-        let container = Container::from(webc);
-        let manifest = container.manifest();
-
-        let root = PackageInfo::from_manifest(id, manifest, container.version())?;
-        let root_id = root.id.clone();
-
-        let resolution = crate::runtime::resolver::resolve(&root_id, &root, &*source).await?;
-        let mut pkg = rt
-            .package_loader()
-            .load_package_tree(&container, &resolution, true)
-            .await
-            .map_err(|e| anyhow::anyhow!(e))?;
-
-        // HACK: webc has no way to return its deserialized manifest to us, so we need to do it again here
-        // We already read and parsed the manifest once, so it'll succeed again. Unwrapping is safe at this point.
-        let wasmer_toml = std::fs::read_to_string(&manifest_path).unwrap();
-        let wasmer_toml: wasmer_config::package::Manifest = toml::from_str(&wasmer_toml).unwrap();
-        pkg.additional_host_mapped_directories.extend(
-            wasmer_toml
-                .fs
-                .into_iter()
-                .map(|(guest, host)| {
-                    anyhow::Ok(MappedDirectory {
-                        host: dir.join(host).canonicalize()?,
-                        guest,
-                    })
-                })
-                .collect::<Result<Vec<_>, _>>()?
-                .into_iter(),
-        );
-
-        Ok(pkg)
-    }
-
     /// Load a [`webc::Container`] and all its dependencies into a
     /// [`BinaryPackage`].
     #[tracing::instrument(level = "debug", skip_all)]

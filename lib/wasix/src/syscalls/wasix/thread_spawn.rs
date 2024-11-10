@@ -129,11 +129,7 @@ pub fn thread_spawn_internal_using_layout<M: MemorySize>(
     // TODO: Currently asynchronous threading does not work with multi
     //       threading in JS but it does work for the main thread. This will
     //       require more work to find out why.
-    thread_env.enable_deep_sleep = if cfg!(feature = "js") {
-        false
-    } else {
-        unsafe { env.capable_of_deep_sleep() }
-    };
+    thread_env.enable_deep_sleep = false;
 
     // This next function gets a context for the local thread and then
     // calls into the process

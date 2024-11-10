@@ -12,20 +12,13 @@
 //! [WASI plugin example](https://github.com/wasmerio/wasmer/blob/main/examples/plugin.rs)
 //! for an example of how to extend WASI using the WASI FS API.
 
-#[cfg(not(feature = "js"))]
-compile_error!("The `js` feature must be enabled.");
-
-#[cfg(all(feature = "js", not(target_arch = "wasm32")))]
+#[cfg(not(target_arch = "wasm32"))]
 compile_error!(
-    "The `js` feature must be enabled only for the `wasm32` target (either `wasm32-unknown-unknown` or `wasm32-wasi`)."
+    "The target must be `wasm32-unknown-unknown`."
 );
 
 #[cfg(all(test, target_arch = "wasm32"))]
 wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
-
-#[cfg(test)]
-#[macro_use]
-extern crate pretty_assertions;
 
 #[macro_use]
 mod macros;
@@ -39,7 +32,6 @@ pub mod fs;
 pub mod http;
 pub mod journal;
 mod rewind;
-pub mod runners;
 pub mod runtime;
 mod state;
 mod syscalls;

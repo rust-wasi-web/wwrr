@@ -160,14 +160,6 @@ impl WasiEnvBuilder {
         self
     }
 
-    /// Attaches a ctrl-c handler which will send signals to the
-    /// process rather than immediately termiante it
-    #[cfg(feature = "ctrlc")]
-    pub fn attach_ctrl_c(mut self) -> Self {
-        self.attach_ctrl_c = true;
-        self
-    }
-
     /// Add an environment variable pair.
     ///
     /// Both the key and value of an environment variable must not
@@ -995,23 +987,7 @@ impl WasiEnvBuilder {
         module_hash: ModuleHash,
         mut store: Store,
     ) -> Result<(), WasiRuntimeError> {
-        #[cfg(feature = "ctrlc")]
-        let attach_ctrl_c = self.attach_ctrl_c;
-
         let (_, env) = self.instantiate_ext(module, module_hash, &mut store)?;
-
-        // Install the ctrl-c handler
-        #[cfg(feature = "ctrlc")]
-        if attach_ctrl_c {
-            tokio::spawn({
-                let process = env.data(&store).process.clone();
-                async move {
-                    while tokio::signal::ctrl_c().await.is_ok() {
-                        process.signal_process(wasmer_wasix_types::wasi::Signal::Sigint);
-                    }
-                }
-            });
-        }
 
         env.run_async(store)?;
         Ok(())

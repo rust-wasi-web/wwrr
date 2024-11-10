@@ -81,7 +81,7 @@ pub trait CustomSectionLike<'a> {
 
     fn protection(&self) -> &CustomSectionProtection;
     fn bytes(&self) -> &[u8];
-    fn relocations(&'a self) -> &[Self::Relocations];
+    fn relocations(&'a self) -> &'a [Self::Relocations];
 }
 
 impl<'a> CustomSectionLike<'a> for CustomSection {
@@ -95,7 +95,7 @@ impl<'a> CustomSectionLike<'a> for CustomSection {
         self.bytes.0.as_ref()
     }
 
-    fn relocations(&'a self) -> &[Self::Relocations] {
+    fn relocations(&'a self) -> &'a [Self::Relocations] {
         self.relocations.as_slice()
     }
 }
@@ -111,7 +111,7 @@ impl<'a> CustomSectionLike<'a> for ArchivedCustomSection {
         self.bytes.0.as_ref()
     }
 
-    fn relocations(&'a self) -> &[Self::Relocations] {
+    fn relocations(&'a self) -> &'a [Self::Relocations] {
         self.relocations.as_slice()
     }
 }

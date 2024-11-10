@@ -66,8 +66,6 @@ pub async fn load_package_tree(
         commands,
         uses: Vec::new(),
         file_system_memory_footprint,
-
-        additional_host_mapped_directories: vec![],
     };
 
     Ok(loaded)
