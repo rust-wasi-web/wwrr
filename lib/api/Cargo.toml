@@ -41,7 +41,6 @@ wat = { version = "=1.0.71", optional = true }
 wat = "1.0"
 anyhow = "1.0"
 wasm-bindgen-test = "0.3.0"
-macro-wasmer-universal-test = { version = "4.3.7", path = "./macro-wasmer-universal-test" }
 
 
 [package.metadata.wasm-pack.profile.release]

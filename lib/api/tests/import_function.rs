@@ -1,11 +1,9 @@
-use macro_wasmer_universal_test::universal_test;
 use wasm_bindgen_test::*;
 
-use anyhow::Result;
 use wasmer::*;
 
-#[universal_test]
-fn pass_i64_between_host_and_plugin() -> Result<(), String> {
+#[wasm_bindgen_test]
+fn pass_i64_between_host_and_plugin()  {
     let mut store = Store::default();
 
     let wat = r#"(module
@@ -14,7 +12,7 @@ fn pass_i64_between_host_and_plugin() -> Result<(), String> {
             (i64.add (call $add_one_i64 (i64.add (local.get 0) (i64.const 1))) (i64.const 1))
         )
     )"#;
-    let module = Module::new(&store, wat).map_err(|e| format!("{e:?}"))?;
+    let module = Module::new(&store, wat).map_err(|e| format!("{e:?}")).unwrap();
 
     let imports = {
         imports! {
@@ -24,11 +22,11 @@ fn pass_i64_between_host_and_plugin() -> Result<(), String> {
         }
     };
 
-    let instance = Instance::new(&mut store, &module, &imports).map_err(|e| format!("{e:?}"))?;
+    let instance = Instance::new(&mut store, &module, &imports).map_err(|e| format!("{e:?}")).unwrap();
     let add_three_i64 = instance
         .exports
         .get_typed_function::<i64, i64>(&store, "add_three_i64")
-        .map_err(|e| format!("{e:?}"))?;
+        .map_err(|e| format!("{e:?}")).unwrap();
 
     let mut numbers = Vec::<i64>::new();
     numbers.extend(-4..=4);
@@ -38,16 +36,16 @@ fn pass_i64_between_host_and_plugin() -> Result<(), String> {
     for number in numbers {
         let wasm_result = add_three_i64
             .call(&mut store, number)
-            .map_err(|e| format!("{e:?}"))?;
+            .map_err(|e| format!("{e:?}")).unwrap();
         let compare_result = number.wrapping_add(3);
 
         assert_eq!(wasm_result, compare_result)
     }
-    Ok(())
+    
 }
 
-#[universal_test]
-fn pass_u64_between_host_and_plugin() -> Result<(), String> {
+#[wasm_bindgen_test]
+fn pass_u64_between_host_and_plugin()  {
     let mut store = Store::default();
 
     let wat = r#"(module
@@ -56,7 +54,7 @@ fn pass_u64_between_host_and_plugin() -> Result<(), String> {
             (i64.add (call $add_one_u64 (i64.add (local.get 0) (i64.const 1))) (i64.const 1))
         )
     )"#;
-    let module = Module::new(&store, wat).map_err(|e| format!("{e:?}"))?;
+    let module = Module::new(&store, wat).map_err(|e| format!("{e:?}")).unwrap();
 
     let imports = {
         imports! {
@@ -66,11 +64,11 @@ fn pass_u64_between_host_and_plugin() -> Result<(), String> {
         }
     };
 
-    let instance = Instance::new(&mut store, &module, &imports).map_err(|e| format!("{e:?}"))?;
+    let instance = Instance::new(&mut store, &module, &imports).map_err(|e| format!("{e:?}")).unwrap();
     let add_three_u64 = instance
         .exports
         .get_typed_function::<u64, u64>(&store, "add_three_u64")
-        .map_err(|e| format!("{e:?}"))?;
+        .map_err(|e| format!("{e:?}")).unwrap();
 
     let mut numbers = Vec::<u64>::new();
     numbers.extend(0..=4);
@@ -80,16 +78,16 @@ fn pass_u64_between_host_and_plugin() -> Result<(), String> {
     for number in numbers {
         let wasm_result = add_three_u64
             .call(&mut store, number)
-            .map_err(|e| format!("{e:?}"))?;
+            .map_err(|e| format!("{e:?}")).unwrap();
         let compare_result = number.wrapping_add(3);
 
         assert_eq!(wasm_result, compare_result)
     }
-    Ok(())
+    
 }
 
-#[universal_test]
-fn calling_function_exports() -> Result<()> {
+#[wasm_bindgen_test]
+fn calling_function_exports() {
     let mut store = Store::default();
     let wat = r#"(module
     (func (export "add") (param $lhs i32) (param $rhs i32) (result i32)
@@ -97,7 +95,7 @@ fn calling_function_exports() -> Result<()> {
         local.get $rhs
         i32.add)
 )"#;
-    let module = Module::new(&store, wat)?;
+    let module = Module::new(&store, wat).unwrap();
     let imports = imports! {
         // "host" => {
         //     "host_func1" => Function::new_typed(&mut store, |p: u64| {
@@ -106,18 +104,18 @@ fn calling_function_exports() -> Result<()> {
         //     }),
         // }
     };
-    let instance = Instance::new(&mut store, &module, &imports)?;
+    let instance = Instance::new(&mut store, &module, &imports).unwrap();
 
-    let add: TypedFunction<(i32, i32), i32> = instance.exports.get_typed_function(&store, "add")?;
+    let add: TypedFunction<(i32, i32), i32> = instance.exports.get_typed_function(&store, "add").unwrap();
 
-    let result = add.call(&mut store, 10, 20)?;
+    let result = add.call(&mut store, 10, 20).unwrap();
     assert_eq!(result, 30);
 
-    Ok(())
+    
 }
 
-#[universal_test]
-fn back_and_forth_with_imports() -> Result<()> {
+#[wasm_bindgen_test]
+fn back_and_forth_with_imports() {
     let mut store = Store::default();
     // We can use the WAT syntax as well!
     let module = Module::new(
@@ -128,7 +126,7 @@ fn back_and_forth_with_imports() -> Result<()> {
                 (call $sum (local.get 0) (i32.const 1))
             )
         )"#,
-    )?;
+    ).unwrap();
 
     fn sum(a: i32, b: i32) -> i32 {
         println!("Summing: {}+{}", a, b);
@@ -140,11 +138,11 @@ fn back_and_forth_with_imports() -> Result<()> {
             "sum" => Function::new_typed(&mut store, sum),
         }
     };
-    let instance = Instance::new(&mut store, &module, &import_object)?;
+    let instance = Instance::new(&mut store, &module, &import_object).unwrap();
 
     let add_one: TypedFunction<i32, i32> =
-        instance.exports.get_typed_function(&store, "add_one")?;
-    add_one.call(&mut store, 1)?;
+        instance.exports.get_typed_function(&store, "add_one").unwrap();
+    add_one.call(&mut store, 1).unwrap();
 
-    Ok(())
+    
 }

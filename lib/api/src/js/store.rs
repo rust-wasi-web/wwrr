@@ -18,19 +18,19 @@ mod objects {
     }
 
     macro_rules! impl_store_object {
-    ($($field:ident => $ty:ty,)*) => {
-        $(
-            impl StoreObject for $ty {
-                fn list(store: &StoreObjects) -> &Vec<Self> {
-                    &store.$field
+        ($($field:ident => $ty:ty,)*) => {
+            $(
+                impl StoreObject for $ty {
+                    fn list(store: &StoreObjects) -> &Vec<Self> {
+                        &store.$field
+                    }
+                    fn list_mut(store: &mut StoreObjects) -> &mut Vec<Self> {
+                        &mut store.$field
+                    }
                 }
-                fn list_mut(store: &mut StoreObjects) -> &mut Vec<Self> {
-                    &mut store.$field
-                }
-            }
-        )*
-    };
-}
+            )*
+        };
+    }
 
     impl_store_object! {
         // Note: we store the globals in order to be able to access them later via

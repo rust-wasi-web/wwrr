@@ -1,6 +1,6 @@
 use std::{collections::VecDeque, task::Waker};
 
-use virtual_fs::{AsyncReadExt, DeviceFile, ReadBuf};
+use virtual_fs::{AsyncReadExt, ReadBuf};
 
 use super::*;
 use crate::{

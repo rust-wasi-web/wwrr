@@ -1,10 +1,9 @@
-use macro_wasmer_universal_test::universal_test;
 use wasm_bindgen_test::*;
 
 use wasmer::*;
 
-#[universal_test]
-fn data_and_store_mut() -> Result<(), String> {
+#[wasm_bindgen_test]
+fn data_and_store_mut() {
     let mut store = Store::default();
     let global_mut = Global::new_mut(&mut store, Value::I32(10));
     struct Env {
@@ -37,6 +36,4 @@ fn data_and_store_mut() -> Result<(), String> {
         .unwrap();
 
     assert_eq!(data.global.get(&mut storemut), Value::I32(data.value));
-
-    Ok(())
 }

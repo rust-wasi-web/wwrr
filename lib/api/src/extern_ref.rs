@@ -1,7 +1,6 @@
 use std::any::Any;
 
 use crate::store::{AsStoreMut, AsStoreRef};
-
 use crate::js::extern_ref as extern_ref_imp;
 use crate::vm::VMExternRef;
 

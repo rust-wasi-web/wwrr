@@ -400,7 +400,7 @@ mod tests {
 
     #[test]
     #[tracing_test::traced_test]
-    pub fn test_offload_file() -> anyhow::Result<()> {
+    pub fn test_offload_file() {
         let buffer = OwnedBuffer::from_bytes(std::iter::repeat(12u8).take(100).collect::<Vec<_>>());
         let test_data2 = buffer.clone();
 
@@ -409,26 +409,26 @@ mod tests {
 
         let mut cursor = 0u64;
         let test_data = std::iter::repeat(56u8).take(100).collect::<Vec<_>>();
-        file.write(OffloadWrite::Buffer(&test_data), &mut cursor)?;
+        file.write(OffloadWrite::Buffer(&test_data), &mut cursor).unwrap();
 
         assert_eq!(file.len(), 100);
 
         cursor = 0;
         let mut result = std::iter::repeat(0u8).take(100).collect::<Vec<_>>();
-        file.read(&mut result, &mut cursor)?;
+        file.read(&mut result, &mut cursor).unwrap();
         assert_eq!(
             &result,
             &std::iter::repeat(56u8).take(100).collect::<Vec<_>>()
         );
 
         cursor = 50;
-        file.write(OffloadWrite::Buffer(&test_data2), &mut cursor)?;
+        file.write(OffloadWrite::Buffer(&test_data2), &mut cursor).unwrap();
 
         assert_eq!(file.len(), 150);
 
         cursor = 0;
         let mut result = std::iter::repeat(0u8).take(150).collect::<Vec<_>>();
-        file.read(&mut result, &mut cursor)?;
+        file.read(&mut result, &mut cursor).unwrap();
         assert_eq!(
             &result,
             &std::iter::repeat(56u8)
@@ -442,7 +442,7 @@ mod tests {
 
         cursor = 0;
         let mut result = std::iter::repeat(0u8).take(200).collect::<Vec<_>>();
-        file.read(&mut result, &mut cursor)?;
+        file.read(&mut result, &mut cursor).unwrap();
         assert_eq!(
             &result,
             &std::iter::repeat(56u8)
@@ -456,7 +456,7 @@ mod tests {
 
         cursor = 0;
         let mut result = std::iter::repeat(0u8).take(33).collect::<Vec<_>>();
-        file.read(&mut result, &mut cursor)?;
+        file.read(&mut result, &mut cursor).unwrap();
         assert_eq!(
             &result,
             &std::iter::repeat(56u8).take(33).collect::<Vec<_>>()
@@ -464,13 +464,13 @@ mod tests {
 
         let mut cursor = 10u64;
         let test_data = std::iter::repeat(74u8).take(10).collect::<Vec<_>>();
-        file.write(OffloadWrite::Buffer(&test_data), &mut cursor)?;
+        file.write(OffloadWrite::Buffer(&test_data), &mut cursor).unwrap();
 
         assert_eq!(file.len(), 33);
 
         cursor = 0;
         let mut result = std::iter::repeat(0u8).take(33).collect::<Vec<_>>();
-        file.read(&mut result, &mut cursor)?;
+        file.read(&mut result, &mut cursor).unwrap();
         assert_eq!(
             &result,
             &std::iter::repeat(56u8)
@@ -479,7 +479,5 @@ mod tests {
                 .chain(std::iter::repeat(56u8).take(13))
                 .collect::<Vec<_>>()
         );
-
-        Ok(())
     }
 }

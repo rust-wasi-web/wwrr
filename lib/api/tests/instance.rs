@@ -1,10 +1,9 @@
-use macro_wasmer_universal_test::universal_test;
 use wasm_bindgen_test::*;
 
 use wasmer::*;
 
-#[universal_test]
-fn exports_work_after_multiple_instances_have_been_freed() -> Result<(), String> {
+#[wasm_bindgen_test]
+fn exports_work_after_multiple_instances_have_been_freed() {
     let mut store = Store::default();
     let module = Module::new(
         &store,
@@ -18,10 +17,13 @@ fn exports_work_after_multiple_instances_have_been_freed() -> Result<(), String>
   (export \"sum\" (func $sum_f)))
 ",
     )
-    .map_err(|e| format!("{e:?}"))?;
+    .map_err(|e| format!("{e:?}"))
+    .unwrap();
 
     let imports = Imports::new();
-    let instance = Instance::new(&mut store, &module, &imports).map_err(|e| format!("{e:?}"))?;
+    let instance = Instance::new(&mut store, &module, &imports)
+        .map_err(|e| format!("{e:?}"))
+        .unwrap();
     let instance2 = instance.clone();
     let instance3 = instance.clone();
 
@@ -29,7 +31,8 @@ fn exports_work_after_multiple_instances_have_been_freed() -> Result<(), String>
     let sum = instance
         .exports
         .get_function("sum")
-        .map_err(|e| format!("{e:?}"))?
+        .map_err(|e| format!("{e:?}"))
+        .unwrap()
         .clone();
 
     drop(instance);
@@ -39,16 +42,15 @@ fn exports_work_after_multiple_instances_have_been_freed() -> Result<(), String>
     // All instances have been dropped, but `sum` continues to work!
     assert_eq!(
         sum.call(&mut store, &[Value::I32(1), Value::I32(2)])
-            .map_err(|e| format!("{e:?}"))?
+            .map_err(|e| format!("{e:?}"))
+            .unwrap()
             .into_vec(),
         vec![Value::I32(3)],
     );
-
-    Ok(())
 }
 
-#[universal_test]
-fn unit_native_function_env() -> Result<(), String> {
+#[wasm_bindgen_test]
+fn unit_native_function_env() {
     let mut store = Store::default();
 
     #[derive(Clone)]
@@ -72,8 +74,7 @@ fn unit_native_function_env() -> Result<(), String> {
     let expected = vec![Value::I32(12)].into_boxed_slice();
     let result = imported
         .call(&mut store, &[Value::I32(4)])
-        .map_err(|e| format!("{e:?}"))?;
+        .map_err(|e| format!("{e:?}"))
+        .unwrap();
     assert_eq!(result, expected);
-
-    Ok(())
 }

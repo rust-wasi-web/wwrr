@@ -1,9 +1,5 @@
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 
-#[cfg(test)]
-#[macro_use]
-extern crate pretty_assertions;
-
 use futures::future::BoxFuture;
 use std::any::Any;
 use std::ffi::OsString;
@@ -16,57 +12,27 @@ use std::task::Context;
 use std::task::Poll;
 use thiserror::Error;
 
-pub mod arc_box_file;
 pub mod arc_file;
-pub mod arc_fs;
 pub mod buffer_file;
-pub mod builder;
-pub mod combine_file;
 pub mod cow_file;
-pub mod dual_write_file;
-pub mod empty_fs;
 pub mod mem_fs;
 pub mod null_file;
-pub mod passthru_fs;
-pub mod random_file;
-pub mod special_file;
 pub mod tmp_fs;
-pub mod union_fs;
-pub mod zero_file;
-// tty_file -> see wasmer_wasi::tty_file
 mod filesystems;
 pub(crate) mod ops;
-mod overlay_fs;
 pub mod pipe;
 mod static_file;
-mod trace_fs;
-#[cfg(feature = "webc-fs")]
-mod webc_volume_fs;
 
 pub mod limiter;
 
-pub use arc_box_file::*;
 pub use arc_file::*;
-pub use arc_fs::*;
 pub use buffer_file::*;
-pub use builder::*;
-pub use combine_file::*;
 pub use cow_file::*;
-pub use dual_write_file::*;
-pub use empty_fs::*;
 pub use filesystems::FileSystems;
 pub use null_file::*;
-pub use overlay_fs::OverlayFileSystem;
-pub use passthru_fs::*;
 pub use pipe::*;
-pub use special_file::*;
 pub use static_file::StaticFile;
 pub use tmp_fs::*;
-pub use trace_fs::TraceFileSystem;
-pub use union_fs::*;
-#[cfg(feature = "webc-fs")]
-pub use webc_volume_fs::WebcVolumeFileSystem;
-pub use zero_file::*;
 
 pub type Result<T> = std::result::Result<T, FsError>;
 

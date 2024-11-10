@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "lib/api",
-    "lib/api/macro-wasmer-universal-test",
     "lib/derive",
     "lib/js",
     "lib/types",

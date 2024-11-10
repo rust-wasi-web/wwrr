@@ -13,7 +13,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-virtual-fs = { path = "../virtual-fs", default-features = false, features = ["webc-fs", "no-time"] }
+virtual-fs = { path = "../virtual-fs", default-features = false, features = ["no-time"] }
 virtual-mio = { path = "../virtual-io", default-features = false, features = ["js"] }
 virtual-net = { path = "../virtual-net", default-features = false, features = ["rkyv"] }
 wasmer = { path = "../api", default-features = false, features = ["wat"] }

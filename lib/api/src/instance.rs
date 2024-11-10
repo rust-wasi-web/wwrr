@@ -5,7 +5,6 @@ use std::fmt;
 
 use crate::imports::Imports;
 use crate::store::AsStoreMut;
-
 use crate::js::instance as instance_imp;
 
 /// A WebAssembly Instance is a stateful, executable

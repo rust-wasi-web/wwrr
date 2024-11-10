@@ -1,7 +1,6 @@
 //! Builder system for configuring a [`WasiState`] and creating it.
 
 use std::{
-    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     sync::Arc,
 };
