@@ -24,7 +24,6 @@ pub mod os;
 // TODO: should this be pub?
 pub mod fs;
 pub mod http;
-pub mod journal;
 pub mod net;
 mod rewind;
 pub mod runtime;

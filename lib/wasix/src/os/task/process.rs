@@ -1,4 +1,4 @@
-use crate::{journal::SnapshotTrigger, WasiEnv, WasiRuntimeError};
+use crate::{WasiEnv, WasiRuntimeError};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -118,9 +118,6 @@ pub enum WasiProcessCheckpoint {
     /// No checkpoint will take place and the process
     /// should just execute as per normal
     Execute,
-    /// The process needs to take a snapshot of the
-    /// memory and state-machine
-    Snapshot { trigger: SnapshotTrigger },
 }
 
 #[repr(C)]

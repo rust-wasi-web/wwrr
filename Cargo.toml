@@ -3,7 +3,6 @@ members = [
     "lib/api",
     "lib/api/macro-wasmer-universal-test",
     "lib/derive",
-    "lib/journal",
     "lib/js",
     "lib/types",
     "lib/virtual-fs",

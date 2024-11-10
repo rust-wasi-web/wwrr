@@ -1,5 +1,5 @@
 use super::*;
-use crate::{journal::SnapshotTrigger, syscalls::*};
+use crate::syscalls::*;
 
 /// ### `sock_listen()`
 /// Listen for connections on a socket

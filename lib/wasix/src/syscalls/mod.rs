@@ -4,7 +4,6 @@ pub mod types {
     pub use wasmer_wasix_types::{types::*, wasi};
 }
 
-pub mod journal;
 pub mod wasi;
 pub mod wasix;
 pub mod wasm;
@@ -17,7 +16,6 @@ use futures::{
 use tracing::instrument;
 pub use wasi::*;
 pub use wasix::*;
-use wasmer_journal::SnapshotTrigger;
 use wasmer_wasix_types::wasix::ThreadStartType;
 
 pub mod legacy;
@@ -46,17 +44,8 @@ use std::{io::IoSlice, marker::PhantomData, mem::MaybeUninit, task::Waker, time:
 
 pub(crate) use bytes::{Bytes, BytesMut};
 pub(crate) use cooked_waker::IntoWaker;
-pub use journal::*;
 pub(crate) use sha2::Sha256;
 pub(crate) use tracing::{debug, error, trace, warn};
-#[cfg(any(
-    target_os = "freebsd",
-    target_os = "linux",
-    target_os = "android",
-    target_vendor = "apple"
-))]
-pub use unix::*;
-#[cfg(target_family = "wasm")]
 pub use wasm::*;
 
 pub(crate) use virtual_fs::{
@@ -69,8 +58,6 @@ pub(crate) use wasmer::{
     OnCalledAction, Pages, RuntimeError, Store, TypedFunction, Value, WasmPtr, WasmSlice,
 };
 pub(crate) use wasmer_wasix_types::{asyncify::__wasi_asyncify_t, wasi::EventUnion};
-#[cfg(target_os = "windows")]
-pub use windows::*;
 
 pub(crate) use self::types::{
     wasi::{
@@ -96,7 +83,6 @@ use crate::{
         fs_error_into_wasi_err, virtual_file_type_to_wasi_file_type, Fd, InodeVal, Kind,
         MAX_SYMLINKS,
     },
-    journal::DynJournal,
     os::task::{
         process::{MaybeCheckpointResult, WasiProcessCheckpoint},
         thread::{RewindResult, RewindResultType},

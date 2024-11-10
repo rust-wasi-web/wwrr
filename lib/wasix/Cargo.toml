@@ -17,7 +17,6 @@ virtual-fs = { path = "../virtual-fs", default-features = false, features = ["we
 virtual-mio = { path = "../virtual-io", default-features = false, features = ["js"] }
 virtual-net = { path = "../virtual-net", default-features = false, features = ["rkyv"] }
 wasmer = { path = "../api", default-features = false, features = ["wat"] }
-wasmer-journal = { path = "../journal", default-features = false }
 wasmer-types = { path = "../types", default-features = false }
 wasmer-wasix-types = { path = "../wasi-types", features = ["enable-serde"] }
 
