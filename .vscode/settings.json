@@ -1,0 +1,8 @@
+{
+    "rust-analyzer.cargo.target": "wasm32-unknown-unknown",
+    // "rust-analyzer.cargo.features": ["js"],
+    "rust-analyzer.cargo.allTargets": true,
+    "rust-analyzer.linkedProjects": [
+        "Cargo.toml",
+    ],
+}
