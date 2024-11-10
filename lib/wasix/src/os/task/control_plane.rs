@@ -68,8 +68,6 @@ impl Default for ControlPlaneConfig {
 
 #[derive(Debug)]
 struct State {
-    config: ControlPlaneConfig,
-
     /// Total number of active tasks (threads) across all processes.
     task_count: Arc<AtomicUsize>,
 
@@ -87,10 +85,9 @@ struct MutableState {
 }
 
 impl WasiControlPlane {
-    pub fn new(config: ControlPlaneConfig) -> Self {
+    pub fn new() -> Self {
         Self {
             state: Arc::new(State {
-                config,
                 task_count: Arc::new(AtomicUsize::new(0)),
                 mutable: RwLock::new(MutableState {
                     process_seed: 0,
@@ -109,22 +106,11 @@ impl WasiControlPlane {
         self.state.task_count.load(Ordering::SeqCst)
     }
 
-    /// Returns the configuration for this control plane
-    pub(crate) fn config(&self) -> &ControlPlaneConfig {
-        &self.state.config
-    }
-
     /// Register a new task.
     ///
     // Currently just increments the task counter.
     pub(crate) fn register_task(&self) -> Result<TaskCountGuard, ControlPlaneError> {
-        let count = self.state.task_count.fetch_add(1, Ordering::SeqCst);
-        if let Some(max) = self.state.config.max_task_count {
-            if count > max {
-                self.state.task_count.fetch_sub(1, Ordering::SeqCst);
-                return Err(ControlPlaneError::TaskLimitReached { max: count });
-            }
-        }
+        self.state.task_count.fetch_add(1, Ordering::SeqCst);
         Ok(TaskCountGuard(self.state.task_count.clone()))
     }
 
@@ -132,14 +118,6 @@ impl WasiControlPlane {
     // FIXME: De-register terminated processes!
     // Currently they just accumulate.
     pub fn new_process(&self, module_hash: ModuleHash) -> Result<WasiProcess, ControlPlaneError> {
-        if let Some(max) = self.state.config.max_task_count {
-            if self.active_task_count() >= max {
-                // NOTE: task count is not incremented here, only when new threads are spawned.
-                // A process will always have a main thread.
-                return Err(ControlPlaneError::TaskLimitReached { max });
-            }
-        }
-
         // Create the process first to do all the allocations before locking.
         let mut proc = WasiProcess::new(WasiProcessId::from(0), module_hash, self.handle());
 
@@ -184,8 +162,7 @@ impl MutableState {
 
 impl Default for WasiControlPlane {
     fn default() -> Self {
-        let config = ControlPlaneConfig::default();
-        Self::new(config)
+        Self::new()
     }
 }
 
@@ -207,66 +184,4 @@ pub enum ControlPlaneError {
         /// The maximum number of tasks.
         max: usize,
     },
-}
-
-#[cfg(test)]
-mod tests {
-    use wasmer_wasix_types::wasix::ThreadStartType;
-
-    use crate::{os::task::thread::WasiMemoryLayout, utils::xxhash_random};
-
-    use super::*;
-
-    /// Simple test to ensure task limits are respected.
-    #[test]
-    fn test_control_plane_task_limits() {
-        let p = WasiControlPlane::new(ControlPlaneConfig {
-            max_task_count: Some(2),
-            enable_asynchronous_threading: false,
-            enable_exponential_cpu_backoff: None,
-        });
-
-        let p1 = p.new_process(xxhash_random()).unwrap();
-        let _t1 = p1
-            .new_thread(WasiMemoryLayout::default(), ThreadStartType::MainThread)
-            .unwrap();
-        let _t2 = p1
-            .new_thread(WasiMemoryLayout::default(), ThreadStartType::MainThread)
-            .unwrap();
-
-        assert_eq!(
-            p.new_process(xxhash_random()).unwrap_err(),
-            ControlPlaneError::TaskLimitReached { max: 2 }
-        );
-    }
-
-    /// Simple test to ensure task limits are respected and that thread drop guards work.
-    #[test]
-    fn test_control_plane_task_limits_with_dropped_threads() {
-        let p = WasiControlPlane::new(ControlPlaneConfig {
-            max_task_count: Some(2),
-            enable_asynchronous_threading: false,
-            enable_exponential_cpu_backoff: None,
-        });
-
-        let p1 = p.new_process(xxhash_random()).unwrap();
-
-        for _ in 0..10 {
-            let _thread = p1
-                .new_thread(WasiMemoryLayout::default(), ThreadStartType::MainThread)
-                .unwrap();
-        }
-
-        let _t1 = p1
-            .new_thread(WasiMemoryLayout::default(), ThreadStartType::MainThread)
-            .unwrap();
-        let _t2 = p1
-            .new_thread(WasiMemoryLayout::default(), ThreadStartType::MainThread)
-            .unwrap();
-
-        assert_eq!(
-            p.new_process(xxhash_random()).unwrap_err(),
-            ControlPlaneError::TaskLimitReached { max: 2 }
-        );
-    }
 }

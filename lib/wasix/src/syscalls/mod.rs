@@ -4,10 +4,10 @@ pub mod types {
     pub use wasmer_wasix_types::{types::*, wasi};
 }
 
-pub mod wasm;
 pub mod journal;
 pub mod wasi;
 pub mod wasix;
+pub mod wasm;
 
 use bytes::{Buf, BufMut};
 use futures::{
@@ -91,23 +91,6 @@ pub(crate) use crate::os::task::{
     process::{WasiProcessId, WasiProcessWait},
     thread::{WasiThread, WasiThreadId},
 };
-pub(crate) use crate::{
-    bin_factory::spawn_exec_module,
-    import_object_for_all_wasi_versions, mem_error_to_wasi,
-    net::{
-        read_ip_port,
-        socket::{InodeHttpSocketType, InodeSocket, InodeSocketKind},
-        write_ip_port,
-    },
-    runtime::SpawnMemoryType,
-    state::{
-        self, iterate_poll_events, InodeGuard, InodeWeakGuard, PollEvent, PollEventBuilder,
-        WasiFutex, WasiState,
-    },
-    utils::{self, map_io_err},
-    Runtime, VirtualTaskManager, WasiEnv, WasiError, WasiFunctionEnv, WasiInstanceHandles,
-    WasiVFork,
-};
 use crate::{
     fs::{
         fs_error_into_wasi_err, virtual_file_type_to_wasi_file_type, Fd, InodeVal, Kind,
@@ -122,6 +105,22 @@ use crate::{
     utils::store::StoreSnapshot,
     DeepSleepWork, RewindPostProcess, RewindState, RewindStateOption, SpawnError, WasiInodes,
     WasiResult, WasiRuntimeError,
+};
+pub(crate) use crate::{
+    import_object_for_all_wasi_versions, mem_error_to_wasi,
+    net::{
+        read_ip_port,
+        socket::{InodeHttpSocketType, InodeSocket, InodeSocketKind},
+        write_ip_port,
+    },
+    runtime::SpawnMemoryType,
+    state::{
+        self, iterate_poll_events, InodeGuard, InodeWeakGuard, PollEvent, PollEventBuilder,
+        WasiFutex, WasiState,
+    },
+    utils::{self, map_io_err},
+    Runtime, VirtualTaskManager, WasiEnv, WasiError, WasiFunctionEnv, WasiInstanceHandles,
+    WasiVFork,
 };
 pub(crate) use crate::{net::net_error_into_wasi_err, utils::WasiParkingLot};
 
@@ -429,30 +428,12 @@ pub enum AsyncifyAction<'a, R> {
 /// generate excessively high CPU usage and need to be artificially
 /// throttled
 ///
+#[deprecated = "asyncify"]
 pub(crate) fn maybe_backoff<M: MemorySize>(
     mut ctx: FunctionEnvMut<'_, WasiEnv>,
 ) -> Result<Result<FunctionEnvMut<'_, WasiEnv>, Errno>, WasiError> {
     let env = ctx.data();
-
-    // Fast path that exits this high volume call if we do not have
-    // exponential backoff enabled
-    if env.enable_exponential_cpu_backoff.is_none() {
-        return Ok(Ok(ctx));
-    }
-
-    // Determine if we need to do a backoff, if so lets do one
-    if let Some(backoff) = env.process.acquire_cpu_backoff_token(env.tasks()) {
-        tracing::trace!("exponential CPU backoff {:?}", backoff.backoff_time());
-        if let AsyncifyAction::Finish(mut ctx, _) =
-            __asyncify_with_deep_sleep::<M, _, _>(ctx, backoff)?
-        {
-            Ok(Ok(ctx))
-        } else {
-            Ok(Err(Errno::Success))
-        }
-    } else {
-        Ok(Ok(ctx))
-    }
+    Ok(Ok(ctx))
 }
 
 /// Asyncify takes the current thread and blocks on the async runtime associated with it
@@ -463,7 +444,7 @@ pub(crate) fn maybe_backoff<M: MemorySize>(
 /// This will either return the `ctx` as the asyncify has completed successfully
 /// or it will return an WasiError which will exit the WASM call using asyncify
 /// and instead process it on a shared task
-///
+#[deprecated = "asyncify"]
 pub(crate) fn __asyncify_with_deep_sleep<M: MemorySize, T, Fut>(
     mut ctx: FunctionEnvMut<'_, WasiEnv>,
     work: Fut,
@@ -484,19 +465,7 @@ where
         let env = ctx.data();
 
         // Create the deep sleeper
-        let tasks_for_deep_sleep = if env.enable_deep_sleep {
-            Some(env.tasks().clone())
-        } else {
-            None
-        };
-
-        let deep_sleep_wait = async {
-            if let Some(tasks) = tasks_for_deep_sleep {
-                tasks.sleep_now(deep_sleep_time).await
-            } else {
-                InfiniteSleep::default().await
-            }
-        };
+        let deep_sleep_wait = async { InfiniteSleep::default().await };
 
         Ok(tokio::select! {
             // Inner wait with finializer
@@ -541,6 +510,7 @@ where
 /// thus allowed for asynchronous operations to execute. It has built in functionality
 /// to (optionally) timeout the IO, force exit the process, callback signals and pump
 /// synchronous IO engine
+#[deprecated = "asyncify light"]
 pub(crate) fn __asyncify_light<T, Fut>(
     env: &WasiEnv,
     timeout: Option<Duration>,

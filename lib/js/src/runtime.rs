@@ -1,18 +1,13 @@
 use std::sync::{atomic::AtomicBool, Arc, Mutex, Weak};
 
-use reqwest::header::HeaderValue;
 use lazy_static::lazy_static;
 use once_cell::sync::Lazy;
+use reqwest::header::HeaderValue;
 use virtual_net::VirtualNetworking;
-use wasmer_config::package::PackageSource;
 use wasmer_wasix::{
     http::{HttpClient, WebHttpClient},
     os::{TtyBridge, TtyOptions},
-    runtime::{
-        module_cache::ThreadLocalCache,
-        package_loader::PackageLoader,
-        resolver::{PackageSummary, QueryError, Source, BackendSource},
-    },
+    runtime::module_cache::ThreadLocalCache,
     VirtualTaskManager, WasiTtyState,
 };
 
@@ -32,9 +27,7 @@ static GLOBAL_RUNTIME: Lazy<Mutex<Weak<Runtime>>> = Lazy::new(Mutex::default);
 pub struct Runtime {
     task_manager: Option<Arc<dyn VirtualTaskManager>>,
     networking: Arc<dyn VirtualNetworking>,
-    source: Option<Arc<BackendSource>>,
     http_client: Arc<dyn HttpClient + Send + Sync>,
-    package_loader: Arc<crate::package_loader::PackageLoader>,
     module_cache: Arc<ThreadLocalCache>,
     tty: TtyOptions,
     connected_to_tty: Arc<AtomicBool>,
@@ -110,14 +103,11 @@ impl Runtime {
         let http_client = Arc::new(http_client);
 
         let module_cache = ThreadLocalCache::default();
-        let package_loader = crate::package_loader::PackageLoader::new(http_client.clone());
 
         Runtime {
             task_manager: None,
             networking: Arc::new(virtual_net::UnsupportedVirtualNetworking::default()),
-            source: None,
             http_client: Arc::new(http_client),
-            package_loader: Arc::new(package_loader),
             module_cache: Arc::new(module_cache),
             tty: TtyOptions::default(),
             connected_to_tty: Arc::new(AtomicBool::new(false)),
@@ -141,19 +131,8 @@ impl wasmer_wasix::runtime::Runtime for Runtime {
         &self.task_manager.as_ref().expect("Task manager not found")
     }
 
-    fn source(&self) -> Arc<dyn wasmer_wasix::runtime::resolver::Source + Send + Sync> {
-        match &self.source {
-            Some(wapm) => Arc::clone(wapm) as _,
-            None => Arc::new(UnsupportedSource),
-        }
-    }
-
     fn http_client(&self) -> Option<&wasmer_wasix::http::DynHttpClient> {
         Some(&self.http_client)
-    }
-
-    fn package_loader(&self) -> Arc<dyn PackageLoader + Send + Sync> {
-        self.package_loader.clone()
     }
 
     fn module_cache(
@@ -214,17 +193,6 @@ impl TtyBridge for Runtime {
         self.set_connected_to_tty(
             tty_state.stdin_tty || tty_state.stdout_tty || tty_state.stderr_tty,
         );
-    }
-}
-
-/// A [`Source`] that will always error out with [`QueryError::Unsupported`].
-#[derive(Debug, Clone)]
-struct UnsupportedSource;
-
-#[async_trait::async_trait]
-impl Source for UnsupportedSource {
-    async fn query(&self, package: &PackageSource) -> Result<Vec<PackageSummary>, QueryError> {
-        Err(QueryError::Unsupported { query: package.clone()})
     }
 }
 

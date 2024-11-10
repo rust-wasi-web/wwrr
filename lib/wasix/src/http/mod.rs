@@ -1,8 +1,8 @@
 mod client;
 mod web_http_client;
 
-pub use self::web_http_client::WebHttpClient;
 pub use self::client::*;
+pub use self::web_http_client::WebHttpClient;
 
 pub(crate) const USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "-", env!("CARGO_PKG_VERSION"));
 

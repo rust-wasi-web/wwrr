@@ -1,4 +1,3 @@
-
 mod clear_ethereal;
 mod do_checkpoint_from_outside;
 mod maybe_snapshot;

@@ -126,11 +126,6 @@ pub fn thread_spawn_internal_using_layout<M: MemorySize>(
     thread_env.thread = thread_handle.as_thread();
     thread_env.layout = layout;
 
-    // TODO: Currently asynchronous threading does not work with multi
-    //       threading in JS but it does work for the main thread. This will
-    //       require more work to find out why.
-    thread_env.enable_deep_sleep = false;
-
     // This next function gets a context for the local thread and then
     // calls into the process
     let mut execute_module = {

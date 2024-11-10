@@ -2,8 +2,8 @@ use crate::js::trap::Trap;
 use std::fmt;
 use std::sync::Arc;
 use thiserror::Error;
-use wasmer_types::{FrameInfo, TrapCode};
 use wasmer_types::ImportError;
+use wasmer_types::{FrameInfo, TrapCode};
 
 /// The WebAssembly.LinkError object indicates an error during
 /// module instantiation (besides traps from the start function).
@@ -11,8 +11,7 @@ use wasmer_types::ImportError;
 /// This is based on the [link error][link-error] API.
 ///
 /// [link-error]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/WebAssembly/LinkError
-#[derive(Debug, Clone)]
-#[derive(Error)]
+#[derive(Debug, Clone, Error)]
 #[error("Link error: {0}")]
 pub enum LinkError {
     /// An error occurred when checking the import types.
@@ -35,8 +34,7 @@ pub enum LinkError {
 /// Trap that occurs when calling the WebAssembly module
 /// start function, and an error when initializing the user's
 /// host environments.
-#[derive(Debug, Clone)]
-#[derive(Error)]
+#[derive(Debug, Clone, Error)]
 pub enum InstantiationError {
     /// A linking ocurred during instantiation.
     #[error(transparent)]

@@ -207,10 +207,7 @@ impl Drop for WasiProcessWait {
 
 impl WasiProcess {
     pub fn new(pid: WasiProcessId, module_hash: ModuleHash, plane: WasiControlPlaneHandle) -> Self {
-        let max_cpu_backoff_time = plane
-            .upgrade()
-            .and_then(|p| p.config().enable_exponential_cpu_backoff)
-            .unwrap_or(Duration::from_secs(30));
+        let max_cpu_backoff_time = Duration::from_secs(30);
         let max_cpu_cool_off_time = Duration::from_millis(500);
 
         let waiting = Arc::new(AtomicU32::new(0));

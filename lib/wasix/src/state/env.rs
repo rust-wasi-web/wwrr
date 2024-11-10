@@ -1,21 +1,14 @@
-use std::{
-    collections::HashMap,
-    ops::Deref,
-    path::{Path, PathBuf},
-    sync::Arc,
-    time::Duration,
-};
+use std::{ops::Deref, sync::Arc, time::Duration};
 
 use derivative::Derivative;
 use futures::future::BoxFuture;
 use rand::Rng;
-use virtual_fs::{FileSystem, FsError, StaticFile, VirtualFile};
+use virtual_fs::{FileSystem, FsError, VirtualFile};
 use virtual_net::DynVirtualNetworking;
 use wasmer::{
     AsStoreMut, AsStoreRef, FunctionEnvMut, Global, Imports, Instance, Memory, MemoryType,
     MemoryView, Module, TypedFunction,
 };
-use wasmer_config::package::PackageSource;
 use wasmer_wasix_types::{
     types::Signal,
     wasi::{Errno, ExitCode, Snapshot0Clockid},
@@ -23,8 +16,6 @@ use wasmer_wasix_types::{
 };
 
 use crate::{
-    bin_factory::{BinFactory, BinaryPackage},
-    capabilities::Capabilities,
     fs::{WasiFsRoot, WasiInodes},
     import_object_for_all_wasi_versions,
     os::task::{
@@ -246,10 +237,6 @@ impl WasiInstanceHandles {
 pub struct WasiEnvInit {
     pub(crate) state: WasiState,
     pub runtime: Arc<dyn Runtime + Send + Sync>,
-    pub webc_dependencies: Vec<BinaryPackage>,
-    pub mapped_commands: HashMap<String, PathBuf>,
-    pub bin_factory: BinFactory,
-    pub capabilities: Capabilities,
 
     pub control_plane: WasiControlPlane,
     pub memory_ty: Option<MemoryType>,
@@ -294,10 +281,6 @@ impl WasiEnvInit {
                 preopen: self.state.preopen.clone(),
             },
             runtime: self.runtime.clone(),
-            webc_dependencies: self.webc_dependencies.clone(),
-            mapped_commands: self.mapped_commands.clone(),
-            bin_factory: self.bin_factory.clone(),
-            capabilities: self.capabilities.clone(),
             control_plane: self.control_plane.clone(),
             memory_ty: None,
             process: None,
@@ -326,23 +309,11 @@ pub struct WasiEnv {
     /// Shared state of the WASI system. Manages all the data that the
     /// executing WASI program can see.
     pub(crate) state: Arc<WasiState>,
-    /// Binary factory attached to this environment
-    pub bin_factory: BinFactory,
     /// List of the handles that are owned by this context
     /// (this can be used to ensure that threads own themselves or others)
     pub owned_handles: Vec<WasiThreadHandle>,
     /// Implementation of the WASI runtime.
     pub runtime: Arc<dyn Runtime + Send + Sync + 'static>,
-
-    pub capabilities: Capabilities,
-
-    /// Is this environment capable and setup for deep sleeping
-    pub enable_deep_sleep: bool,
-
-    /// Enables an exponential backoff of the process CPU usage when there
-    /// are no active run tokens (when set holds the maximum amount of
-    /// time that it will pause the CPU)
-    pub enable_exponential_cpu_backoff: Option<Duration>,
 
     /// Flag that indicates the cleanup of the environment is to be disabled
     /// (this is normally used so that the instance can be reused later on)
@@ -371,13 +342,9 @@ impl Clone for WasiEnv {
             layout: self.layout.clone(),
             vfork: self.vfork.clone(),
             state: self.state.clone(),
-            bin_factory: self.bin_factory.clone(),
             inner: Default::default(),
             owned_handles: self.owned_handles.clone(),
             runtime: self.runtime.clone(),
-            capabilities: self.capabilities.clone(),
-            enable_deep_sleep: self.enable_deep_sleep,
-            enable_exponential_cpu_backoff: self.enable_exponential_cpu_backoff,
             disable_fs_cleanup: self.disable_fs_cleanup,
         }
     }
@@ -399,8 +366,6 @@ impl WasiEnv {
 
         let state = Arc::new(self.state.fork());
 
-        let bin_factory = self.bin_factory.clone();
-
         let new_env = Self {
             control_plane: self.control_plane.clone(),
             process,
@@ -408,14 +373,10 @@ impl WasiEnv {
             layout: self.layout.clone(),
             vfork: None,
             poll_seed: 0,
-            bin_factory,
             state,
             inner: Default::default(),
             owned_handles: Vec::new(),
             runtime: self.runtime.clone(),
-            capabilities: self.capabilities.clone(),
-            enable_deep_sleep: self.enable_deep_sleep,
-            enable_exponential_cpu_backoff: self.enable_exponential_cpu_backoff,
             disable_fs_cleanup: self.disable_fs_cleanup,
         };
         Ok((new_env, handle))
@@ -431,8 +392,9 @@ impl WasiEnv {
 
     /// Returns true if this WASM process will need and try to use
     /// asyncify while its running which normally means.
+    #[deprecated = "asyncify stuff"]
     pub fn will_use_asyncify(&self) -> bool {
-        self.enable_deep_sleep || unsafe { self.inner().has_stack_checkpoint }
+        false
     }
 
     /// Re-initializes this environment so that it can be executed again
@@ -490,14 +452,9 @@ impl WasiEnv {
     ///
     /// This function should only be called from within a syscall
     /// as it accessed objects that are a thread local (functions)
+    #[deprecated = "asyncify stuff"]
     pub unsafe fn capable_of_deep_sleep(&self) -> bool {
-        if !self.control_plane.config().enable_asynchronous_threading {
-            return false;
-        }
-        let inner = self.inner();
-        inner.asyncify_get_state.is_some()
-            && inner.asyncify_start_rewind.is_some()
-            && inner.asyncify_start_unwind.is_some()
+        false
     }
 
     /// Returns true if this thread can go into a deep sleep
@@ -533,22 +490,10 @@ impl WasiEnv {
             state: Arc::new(init.state),
             inner: Default::default(),
             owned_handles: Vec::new(),
-            enable_deep_sleep: init.capabilities.threading.enable_asynchronous_threading,
-            enable_exponential_cpu_backoff: init
-                .capabilities
-                .threading
-                .enable_exponential_cpu_backoff,
             runtime: init.runtime,
-            bin_factory: init.bin_factory,
-            capabilities: init.capabilities,
             disable_fs_cleanup: false,
         };
         env.owned_handles.push(thread);
-
-        // TODO: should not be here - should be callers responsibility!
-        for pkg in &init.webc_dependencies {
-            env.use_package(pkg)?;
-        }
 
         Ok(env)
     }
@@ -1007,130 +952,6 @@ impl WasiEnv {
         let state = self.state.deref();
         let inodes = &state.inodes;
         (state, inodes)
-    }
-
-    /// Make all the commands in a [`BinaryPackage`] available to the WASI
-    /// instance.
-    ///
-    /// The [`BinaryPackageCommand::atom()`][cmd-atom] will be saved to
-    /// `/bin/command`.
-    ///
-    /// This will also merge the command's filesystem
-    /// ([`BinaryPackage::webc_fs`][pkg-fs]) into the current filesystem.
-    ///
-    /// [cmd-atom]: crate::bin_factory::BinaryPackageCommand::atom()
-    /// [pkg-fs]: crate::bin_factory::BinaryPackage::webc_fs
-    pub fn use_package(&self, pkg: &BinaryPackage) -> Result<(), WasiStateCreationError> {
-        tracing::trace!(package=%pkg.id, "merging package dependency into wasi environment");
-        let root_fs = &self.state.fs.root_fs;
-
-        // We first need to merge the filesystem in the package into the
-        // main file system, if it has not been merged already.
-        if let Err(e) = InlineWaker::block_on(self.state.fs.conditional_union(pkg)) {
-            tracing::warn!(
-                error = &e as &dyn std::error::Error,
-                "Unable to merge the package's filesystem into the main one",
-            );
-        }
-
-        // Next, make sure all commands will be available
-
-        if !pkg.commands.is_empty() {
-            let _ = root_fs.create_dir(Path::new("/bin"));
-
-            for command in &pkg.commands {
-                let path = format!("/bin/{}", command.name());
-                let path = Path::new(path.as_str());
-
-                // FIXME(Michael-F-Bryan): This is pretty sketchy.
-                // We should be using some sort of reference-counted
-                // pointer to some bytes that are either on the heap
-                // or from a memory-mapped file. However, that's not
-                // possible here because things like memfs and
-                // WasiEnv are expecting a Cow<'static, [u8]>. It's
-                // too hard to refactor those at the moment, and we
-                // were pulling the same trick before by storing an
-                // "ownership" object in the BinaryPackageCommand,
-                // so as long as packages aren't removed from the
-                // module cache it should be fine.
-                // See https://github.com/wasmerio/wasmer/issues/3875
-                let atom: &'static [u8] = unsafe { std::mem::transmute(command.atom()) };
-
-                match root_fs {
-                    WasiFsRoot::Sandbox(root_fs) => {
-                        // As a short-cut, when we are using a TmpFileSystem
-                        // we can (unsafely) add the file to the filesystem
-                        // without any copying.
-                        if let Err(err) = root_fs
-                            .new_open_options_ext()
-                            .insert_ro_file(path, atom.into())
-                        {
-                            tracing::debug!(
-                                "failed to add package [{}] command [{}] - {}",
-                                pkg.id,
-                                command.name(),
-                                err
-                            );
-                            continue;
-                        }
-                    }
-                    WasiFsRoot::Backing(fs) => {
-                        let mut f = fs.new_open_options().create(true).write(true).open(path)?;
-                        if let Err(e) =
-                            InlineWaker::block_on(f.copy_reference(Box::new(StaticFile::new(atom))))
-                        {
-                            tracing::warn!(
-                                error = &e as &dyn std::error::Error,
-                                "Unable to copy file reference",
-                            );
-                        }
-                    }
-                }
-
-                let mut package = pkg.clone();
-                package.entrypoint_cmd = Some(command.name().to_string());
-                self.bin_factory
-                    .set_binary(path.as_os_str().to_string_lossy().as_ref(), package);
-
-                tracing::debug!(
-                    package=%pkg.id,
-                    command_name=command.name(),
-                    path=%path.display(),
-                    "Injected a command into the filesystem",
-                );
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Given a list of packages, load them from the registry and make them
-    /// available.
-    pub fn uses<I>(&self, uses: I) -> Result<(), WasiStateCreationError>
-    where
-        I: IntoIterator<Item = String>,
-    {
-        let rt = self.runtime();
-
-        for package_name in uses {
-            let specifier = package_name.parse::<PackageSource>().map_err(|e| {
-                WasiStateCreationError::WasiIncludePackageError(format!(
-                    "package_name={package_name}, {}",
-                    e
-                ))
-            })?;
-            let pkg = InlineWaker::block_on(BinaryPackage::from_registry(&specifier, rt)).map_err(
-                |e| {
-                    WasiStateCreationError::WasiIncludePackageError(format!(
-                        "package_name={package_name}, {}",
-                        e
-                    ))
-                },
-            )?;
-            self.use_package(&pkg)?;
-        }
-
-        Ok(())
     }
 
     /// Cleans up all the open files (if this is the main thread)

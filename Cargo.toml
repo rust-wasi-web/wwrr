@@ -2,7 +2,6 @@
 members = [
     "lib/api",
     "lib/api/macro-wasmer-universal-test",
-    "lib/config",
     "lib/derive",
     "lib/journal",
     "lib/js",

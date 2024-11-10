@@ -19,7 +19,7 @@ use wasmer_wasix::{
         package_loader::BuiltinPackageLoader,
         task_manager::tokio::TokioTaskManager,
     },
-    PluggableRuntime, Runtime,
+    Runtime,
 };
 use webc::Container;
 
@@ -247,6 +247,127 @@ fn sanitze_name_for_path(name: &str) -> String {
 #[cfg(target_os = "windows")]
 fn sanitze_name_for_path(name: &str) -> String {
     name.replace(":", "_")
+}
+
+#[derive(Clone, Derivative)]
+#[derivative(Debug)]
+pub struct PluggableRuntime {
+    pub rt: Arc<dyn VirtualTaskManager>,
+    pub networking: DynVirtualNetworking,
+    pub http_client: Option<DynHttpClient>,
+    pub source: Arc<dyn Source + Send + Sync>,
+    pub engine: Option<wasmer::Engine>,
+    pub module_cache: Arc<dyn ModuleCache + Send + Sync>,
+    #[derivative(Debug = "ignore")]
+    pub tty: Option<Arc<dyn TtyBridge + Send + Sync>>,
+}
+
+impl PluggableRuntime {
+    pub fn new(rt: Arc<dyn VirtualTaskManager>) -> Self {
+        // TODO: the cfg flags below should instead be handled by separate implementations.
+        let networking = Arc::new(virtual_net::UnsupportedVirtualNetworking::default());
+
+        let http_client =
+            crate::http::default_http_client().map(|client| Arc::new(client) as DynHttpClient);
+
+        let mut source = MultiSource::new();
+        if let Some(client) = &http_client {
+            source.add_source(BackendSource::new(
+                BackendSource::WASMER_PROD_ENDPOINT.parse().unwrap(),
+                client.clone(),
+            ));
+        }
+
+        Self {
+            rt,
+            networking,
+            http_client,
+            engine: None,
+            tty: None,
+            source: Arc::new(source),
+            module_cache: Arc::new(module_cache::in_memory()),
+        }
+    }
+
+    pub fn set_networking_implementation<I>(&mut self, net: I) -> &mut Self
+    where
+        I: VirtualNetworking + Sync,
+    {
+        self.networking = Arc::new(net);
+        self
+    }
+
+    pub fn set_engine(&mut self, engine: Option<wasmer::Engine>) -> &mut Self {
+        self.engine = engine;
+        self
+    }
+
+    pub fn set_tty(&mut self, tty: Arc<dyn TtyBridge + Send + Sync>) -> &mut Self {
+        self.tty = Some(tty);
+        self
+    }
+
+    pub fn set_module_cache(
+        &mut self,
+        module_cache: impl ModuleCache + Send + Sync + 'static,
+    ) -> &mut Self {
+        self.module_cache = Arc::new(module_cache);
+        self
+    }
+
+    pub fn set_source(&mut self, source: impl Source + Send + Sync + 'static) -> &mut Self {
+        self.source = Arc::new(source);
+        self
+    }
+
+    pub fn set_http_client(
+        &mut self,
+        client: impl HttpClient + Send + Sync + 'static,
+    ) -> &mut Self {
+        self.http_client = Some(Arc::new(client));
+        self
+    }
+}
+
+impl Runtime for PluggableRuntime {
+    fn networking(&self) -> &DynVirtualNetworking {
+        &self.networking
+    }
+
+    fn http_client(&self) -> Option<&DynHttpClient> {
+        self.http_client.as_ref()
+    }
+
+    fn source(&self) -> Arc<dyn Source + Send + Sync> {
+        Arc::clone(&self.source)
+    }
+
+    fn engine(&self) -> wasmer::Engine {
+        if let Some(engine) = self.engine.clone() {
+            engine
+        } else {
+            wasmer::Engine::default()
+        }
+    }
+
+    fn new_store(&self) -> wasmer::Store {
+        self.engine
+            .clone()
+            .map(wasmer::Store::new)
+            .unwrap_or_default()
+    }
+
+    fn task_manager(&self) -> &Arc<dyn VirtualTaskManager> {
+        &self.rt
+    }
+
+    fn tty(&self) -> Option<&(dyn TtyBridge + Send + Sync)> {
+        self.tty.as_deref()
+    }
+
+    fn module_cache(&self) -> Arc<dyn ModuleCache + Send + Sync> {
+        self.module_cache.clone()
+    }
 }
 
 fn runtime() -> (impl Runtime + Send + Sync, Arc<TokioTaskManager>) {

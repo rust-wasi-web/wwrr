@@ -27,7 +27,6 @@ use serde_derive::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
 use tracing::{debug, trace};
 use virtual_fs::{copy_reference, FileSystem, FsError, OpenOptions, VirtualFile};
-use wasmer_config::package::PackageId;
 use wasmer_wasix_types::{
     types::{__WASI_STDERR_FILENO, __WASI_STDIN_FILENO, __WASI_STDOUT_FILENO},
     wasi::{
@@ -43,7 +42,7 @@ pub(crate) use self::inode_guard::{
 };
 pub use self::notification::NotificationInner;
 use crate::syscalls::map_io_err;
-use crate::{bin_factory::BinaryPackage, state::PreopenedDir, ALL_RIGHTS};
+use crate::{state::PreopenedDir, ALL_RIGHTS};
 
 /// the fd value of the virtual root
 ///
@@ -524,7 +523,6 @@ pub struct WasiFs {
     #[cfg_attr(feature = "enable-serde", serde(skip, default))]
     pub root_fs: WasiFsRoot,
     pub root_inode: InodeGuard,
-    pub has_unioned: Arc<Mutex<HashSet<PackageId>>>,
 
     // TODO: remove
     // using an atomic is a hack to enable customization after construction,
@@ -562,7 +560,6 @@ impl WasiFs {
             is_wasix: AtomicBool::new(self.is_wasix.load(Ordering::Acquire)),
             root_fs: self.root_fs.clone(),
             root_inode: self.root_inode.clone(),
-            has_unioned: Arc::new(Mutex::new(HashSet::new())),
             init_preopens: self.init_preopens.clone(),
             init_vfs_preopens: self.init_vfs_preopens.clone(),
         }
@@ -600,23 +597,6 @@ impl WasiFs {
         if let Ok(mut map) = self.fd_map.write() {
             map.clear();
         }
-    }
-
-    /// Will conditionally union the binary file system with this one
-    /// if it has not already been unioned
-    pub async fn conditional_union(
-        &self,
-        binary: &BinaryPackage,
-    ) -> Result<(), virtual_fs::FsError> {
-        let needs_to_be_unioned = self.has_unioned.lock().unwrap().insert(binary.id.clone());
-
-        if !needs_to_be_unioned {
-            return Ok(());
-        }
-
-        self.root_fs.merge(&binary.webc_fs).await?;
-
-        Ok(())
     }
 
     /// Created for the builder API. like `new` but with more information
@@ -678,7 +658,6 @@ impl WasiFs {
             is_wasix: AtomicBool::new(false),
             root_fs: fs_backing,
             root_inode,
-            has_unioned: Arc::new(Mutex::new(HashSet::new())),
             init_preopens: Default::default(),
             init_vfs_preopens: Default::default(),
         };

@@ -213,8 +213,12 @@ impl FileSystem for Directory {
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    fn mount(&self, name: String, path: &Path, fs: Box<dyn FileSystem + Send + Sync>)
-            -> virtual_fs::Result<()> {
+    fn mount(
+        &self,
+        name: String,
+        path: &Path,
+        fs: Box<dyn FileSystem + Send + Sync>,
+    ) -> virtual_fs::Result<()> {
         self.0.mount(name, path, fs)
     }
 }

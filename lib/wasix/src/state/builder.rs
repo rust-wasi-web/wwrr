@@ -10,11 +10,8 @@ use rand::Rng;
 use thiserror::Error;
 use virtual_fs::{ArcFile, FileSystem, FsError, TmpFileSystem, VirtualFile};
 use wasmer::{AsStoreMut, Extern, Imports, Instance, Module, Store};
-use wasmer_config::package::PackageId;
 
 use crate::{
-    bin_factory::{BinFactory, BinaryPackage},
-    capabilities::Capabilities,
     fs::{WasiFs, WasiFsRoot, WasiInodes},
     os::task::control_plane::{ControlPlaneConfig, ControlPlaneError, WasiControlPlane},
     state::WasiState,
@@ -64,18 +61,7 @@ pub struct WasiEnvBuilder {
     pub(super) fs: Option<WasiFsRoot>,
     pub(super) runtime: Option<Arc<dyn crate::Runtime + Send + Sync + 'static>>,
     pub(super) current_dir: Option<PathBuf>,
-
-    /// List of webc dependencies to be injected.
-    pub(super) uses: Vec<BinaryPackage>,
-
-    pub(super) included_packages: HashSet<PackageId>,
-
     pub(super) module_hash: Option<ModuleHash>,
-
-    /// List of host commands to map into the WASI instance.
-    pub(super) map_commands: HashMap<String, PathBuf>,
-
-    pub(super) capabilites: Capabilities,
     pub(super) additional_imports: Imports,
 }
 
@@ -86,7 +72,6 @@ impl std::fmt::Debug for WasiEnvBuilder {
             .field("args", &self.args)
             .field("envs", &self.envs)
             .field("preopens", &self.preopens)
-            .field("uses", &self.uses)
             .field("setup_fs_fn exists", &self.setup_fs_fn.is_some())
             .field("stdout_override exists", &self.stdout.is_some())
             .field("stderr_override exists", &self.stderr.is_some())
@@ -278,103 +263,12 @@ impl WasiEnvBuilder {
         &mut self.args
     }
 
-    /// Adds a container this module inherits from.
-    ///
-    /// This will make all of the container's files and commands available to the
-    /// resulting WASI instance.
-    pub fn use_webc(mut self, pkg: BinaryPackage) -> Self {
-        self.add_webc(pkg);
-        self
-    }
-
     /// Sets the module hash for the running process. This ensures that the journal
     /// can restore the records for the right module. If no module hash is supplied
     /// then the process will start with a random module hash.
     pub fn set_module_hash(&mut self, hash: ModuleHash) -> &mut Self {
         self.module_hash.replace(hash);
         self
-    }
-
-    /// Adds a container this module inherits from.
-    ///
-    /// This will make all of the container's files and commands available to the
-    /// resulting WASI instance.
-    pub fn add_webc(&mut self, pkg: BinaryPackage) -> &mut Self {
-        self.uses.push(pkg);
-        self
-    }
-
-    /// Adds a package that is already included in the [`WasiEnvBuilder`] filesystem.
-    /// These packages will not be merged to the final filesystem since they are already included.
-    pub fn include_package(&mut self, pkg_id: PackageId) -> &mut Self {
-        self.included_packages.insert(pkg_id);
-        self
-    }
-
-    /// Adds packages that is already included in the [`WasiEnvBuilder`] filesystem.
-    /// These packages will not be merged to the final filesystem since they are already included.
-    pub fn include_packages(&mut self, pkg_ids: impl IntoIterator<Item = PackageId>) -> &mut Self {
-        self.included_packages.extend(pkg_ids.into_iter());
-
-        self
-    }
-
-    /// Adds a list of other containers this module inherits from.
-    ///
-    /// This will make all of the container's files and commands available to the
-    /// resulting WASI instance.
-    pub fn uses<I>(mut self, uses: I) -> Self
-    where
-        I: IntoIterator<Item = BinaryPackage>,
-    {
-        for pkg in uses {
-            self.add_webc(pkg);
-        }
-        self
-    }
-
-    /// Map an atom to a local binary
-    pub fn map_command<Name, Target>(mut self, name: Name, target: Target) -> Self
-    where
-        Name: AsRef<str>,
-        Target: AsRef<str>,
-    {
-        self.add_mapped_command(name, target);
-        self
-    }
-
-    /// Map an atom to a local binary
-    pub fn add_mapped_command<Name, Target>(&mut self, name: Name, target: Target)
-    where
-        Name: AsRef<str>,
-        Target: AsRef<str>,
-    {
-        let path_buf = PathBuf::from(target.as_ref().to_string());
-        self.map_commands
-            .insert(name.as_ref().to_string(), path_buf);
-    }
-
-    /// Maps a series of atoms to the local binaries
-    pub fn map_commands<I, Name, Target>(mut self, map_commands: I) -> Self
-    where
-        I: IntoIterator<Item = (Name, Target)>,
-        Name: AsRef<str>,
-        Target: AsRef<str>,
-    {
-        self.add_mapped_commands(map_commands);
-        self
-    }
-
-    /// Maps a series of atoms to local binaries.
-    pub fn add_mapped_commands<I, Name, Target>(&mut self, map_commands: I)
-    where
-        I: IntoIterator<Item = (Name, Target)>,
-        Name: AsRef<str>,
-        Target: AsRef<str>,
-    {
-        for (alias, target) in map_commands {
-            self.add_mapped_command(alias, target);
-        }
     }
 
     /// Preopen a directory
@@ -614,19 +508,6 @@ impl WasiEnvBuilder {
         self.runtime = Some(runtime);
     }
 
-    pub fn capabilities(mut self, capabilities: Capabilities) -> Self {
-        self.set_capabilities(capabilities);
-        self
-    }
-
-    pub fn capabilities_mut(&mut self) -> &mut Capabilities {
-        &mut self.capabilites
-    }
-
-    pub fn set_capabilities(&mut self, capabilities: Capabilities) {
-        self.capabilites = capabilities;
-    }
-
     /// Add an item to the list of importable items provided to the instance.
     pub fn import(
         mut self,
@@ -813,10 +694,6 @@ impl WasiEnvBuilder {
             wasi_fs.set_current_dir(s);
         }
 
-        for id in &self.included_packages {
-            wasi_fs.has_unioned.lock().unwrap().insert(id.clone());
-        }
-
         let state = WasiState {
             fs: wasi_fs,
             secret: rand::thread_rng().gen::<[u8; 32]>(),
@@ -832,28 +709,12 @@ impl WasiEnvBuilder {
                 panic!("this build does not support a default runtime - specify one with WasiEnvBuilder::runtime()");
         });
 
-        let uses = self.uses;
-        let map_commands = self.map_commands;
-
-        let bin_factory = BinFactory::new(runtime.clone());
-
-        let capabilities = self.capabilites;
-
-        let plane_config = ControlPlaneConfig {
-            max_task_count: capabilities.threading.max_threads,
-            enable_asynchronous_threading: capabilities.threading.enable_asynchronous_threading,
-            enable_exponential_cpu_backoff: capabilities.threading.enable_exponential_cpu_backoff,
-        };
-        let control_plane = WasiControlPlane::new(plane_config);
+        let control_plane = WasiControlPlane::new();
 
         let init = WasiEnvInit {
             state,
             runtime,
-            webc_dependencies: uses,
-            mapped_commands: map_commands,
             control_plane,
-            bin_factory,
-            capabilities,
             memory_ty: None,
             process: None,
             thread: None,
@@ -939,12 +800,6 @@ impl WasiEnvBuilder {
         module_hash: ModuleHash,
         store: &mut Store,
     ) -> Result<(), WasiRuntimeError> {
-        if self.capabilites.threading.enable_asynchronous_threading {
-            tracing::warn!(
-                "The enable_asynchronous_threading capability is enabled. Use WasiEnvBuilder::run_with_store_async() to avoid spurious errors.",
-            );
-        }
-
         let (instance, env) = self.instantiate_ext(module, module_hash, store)?;
 
         // Bootstrap the process

@@ -236,7 +236,8 @@ impl OptionalRuntime {
         if js_value.is_undefined() {
             None
         } else {
-            let rt = JsRuntime::try_from_js_value(js_value.clone()).expect_throw("Expected a runtime");
+            let rt =
+                JsRuntime::try_from_js_value(js_value.clone()).expect_throw("Expected a runtime");
             Some(rt)
         }
     }

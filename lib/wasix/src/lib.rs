@@ -13,24 +13,19 @@
 //! for an example of how to extend WASI using the WASI FS API.
 
 #[cfg(not(target_arch = "wasm32"))]
-compile_error!(
-    "The target must be `wasm32-unknown-unknown`."
-);
+compile_error!("The target must be `wasm32-unknown-unknown`.");
 
 #[cfg(all(test, target_arch = "wasm32"))]
 wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
 
 #[macro_use]
 mod macros;
-pub mod bin_factory;
 pub mod os;
 // TODO: should this be pub?
-pub mod net;
-// TODO: should this be pub?
-pub mod capabilities;
 pub mod fs;
 pub mod http;
 pub mod journal;
+pub mod net;
 mod rewind;
 pub mod runtime;
 mod state;
@@ -71,7 +66,7 @@ pub use crate::{
         WasiTtyState,
     },
     rewind::*,
-    runtime::{task_manager::VirtualTaskManager, PluggableRuntime, Runtime},
+    runtime::{task_manager::VirtualTaskManager, Runtime},
     state::{
         WasiEnv, WasiEnvBuilder, WasiEnvInit, WasiFunctionEnv, WasiInstanceHandles,
         WasiStateCreationError, ALL_RIGHTS,
@@ -138,10 +133,6 @@ pub enum SpawnError {
     /// the binary name was not found.
     #[error("could not find binary '{binary}'")]
     BinaryNotFound { binary: String },
-    #[error("could not find an entrypoint in the package '{package_id}'")]
-    MissingEntrypoint {
-        package_id: wasmer_config::package::PackageId,
-    },
     #[error("could not load ")]
     ModuleLoad { message: String },
     /// Bad request
@@ -217,7 +208,7 @@ impl SpawnError {
     /// [`NotFound`]: SpawnError::NotFound
     #[must_use]
     pub fn is_not_found(&self) -> bool {
-        matches!(self, Self::NotFound { .. } | Self::MissingEntrypoint { .. })
+        matches!(self, Self::NotFound { .. })
     }
 }
 
@@ -515,14 +506,10 @@ fn wasix_exports_32(mut store: &mut impl AsStoreMut, env: &FunctionEnv<WasiEnv>)
         "path_unlink_file" => Function::new_typed_with_env(&mut store, env, path_unlink_file::<Memory32>),
         "poll_oneoff" => Function::new_typed_with_env(&mut store, env, poll_oneoff::<Memory32>),
         "proc_exit" => Function::new_typed_with_env(&mut store, env, proc_exit::<Memory32>),
-        "proc_fork" => Function::new_typed_with_env(&mut store, env, proc_fork::<Memory32>),
         "proc_join" => Function::new_typed_with_env(&mut store, env, proc_join::<Memory32>),
         "proc_signal" => Function::new_typed_with_env(&mut store, env, proc_signal::<Memory32>),
-        "proc_exec" => Function::new_typed_with_env(&mut store, env, proc_exec::<Memory32>),
-        "proc_exec2" => Function::new_typed_with_env(&mut store, env, proc_exec2::<Memory32>),
         "proc_raise" => Function::new_typed_with_env(&mut store, env, proc_raise),
         "proc_raise_interval" => Function::new_typed_with_env(&mut store, env, proc_raise_interval),
-        "proc_spawn" => Function::new_typed_with_env(&mut store, env, proc_spawn::<Memory32>),
         "proc_id" => Function::new_typed_with_env(&mut store, env, proc_id::<Memory32>),
         "proc_parent" => Function::new_typed_with_env(&mut store, env, proc_parent::<Memory32>),
         "random_get" => Function::new_typed_with_env(&mut store, env, random_get::<Memory32>),
@@ -637,14 +624,10 @@ fn wasix_exports_64(mut store: &mut impl AsStoreMut, env: &FunctionEnv<WasiEnv>)
         "path_unlink_file" => Function::new_typed_with_env(&mut store, env, path_unlink_file::<Memory64>),
         "poll_oneoff" => Function::new_typed_with_env(&mut store, env, poll_oneoff::<Memory64>),
         "proc_exit" => Function::new_typed_with_env(&mut store, env, proc_exit::<Memory64>),
-        "proc_fork" => Function::new_typed_with_env(&mut store, env, proc_fork::<Memory64>),
         "proc_join" => Function::new_typed_with_env(&mut store, env, proc_join::<Memory64>),
         "proc_signal" => Function::new_typed_with_env(&mut store, env, proc_signal::<Memory64>),
-        "proc_exec" => Function::new_typed_with_env(&mut store, env, proc_exec::<Memory64>),
-        "proc_exec2" => Function::new_typed_with_env(&mut store, env, proc_exec2::<Memory64>),
         "proc_raise" => Function::new_typed_with_env(&mut store, env, proc_raise),
         "proc_raise_interval" => Function::new_typed_with_env(&mut store, env, proc_raise_interval),
-        "proc_spawn" => Function::new_typed_with_env(&mut store, env, proc_spawn::<Memory64>),
         "proc_id" => Function::new_typed_with_env(&mut store, env, proc_id::<Memory64>),
         "proc_parent" => Function::new_typed_with_env(&mut store, env, proc_parent::<Memory64>),
         "random_get" => Function::new_typed_with_env(&mut store, env, random_get::<Memory64>),

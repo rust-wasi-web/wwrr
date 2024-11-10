@@ -8,7 +8,6 @@ pub use wasmer_types::{OnCalledAction, StoreId};
 
 pub use crate::js::store::{StoreHandle, StoreObjects};
 
-
 /// Call handler for a store.
 // TODO: better documentation!
 pub type OnCalledHandler = Box<

@@ -3772,28 +3772,6 @@ dependencies = [
 [[package]]
 name = "wasmer-config"
 version = "0.8.0"
-dependencies = [
- "anyhow",
- "bytesize",
- "ciborium",
- "derive_builder",
- "hex",
- "indexmap 2.6.0",
- "pretty_assertions",
- "schemars",
- "semver",
- "serde",
- "serde_json",
- "serde_yaml",
- "tempfile",
- "thiserror",
- "toml",
- "url",
-]
-
-[[package]]
-name = "wasmer-config"
-version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "644b7e3547bd7e796d92220f60bf57734914254c6cee56607e80177a3e8a28da"
 dependencies = [
@@ -3883,7 +3861,6 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
  "wasmer",
- "wasmer-config 0.8.0",
  "wasmer-types",
  "wasmer-wasix",
  "web-sys",
@@ -3972,7 +3949,6 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
  "wasmer",
- "wasmer-config 0.8.0",
  "wasmer-journal",
  "wasmer-types",
  "wasmer-wasix-types",
@@ -4090,7 +4066,7 @@ dependencies = [
  "thiserror",
  "toml",
  "url",
- "wasmer-config 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "wasmer-config",
 ]
 
 [[package]]

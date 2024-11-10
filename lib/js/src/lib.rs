@@ -8,7 +8,6 @@ mod instance;
 mod js_runtime;
 mod logging;
 mod options;
-mod package_loader;
 mod run;
 mod runtime;
 mod streams;

@@ -1,5 +1,2 @@
-#[derive(Debug, Clone)]
-#[deprecated = "no journal"]
-pub struct JournalEffector {}
-
+#[deprecated = "journal stuff"]
 pub use wasmer_journal::*;
