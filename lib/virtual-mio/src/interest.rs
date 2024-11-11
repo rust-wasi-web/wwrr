@@ -20,6 +20,7 @@ pub struct WakerInterestHandler {
     set: HashSet<InterestType>,
     waker: Waker,
 }
+
 impl WakerInterestHandler {
     pub fn new(waker: &Waker) -> Box<Self> {
         Box::new(WakerInterestHandler {
@@ -28,6 +29,7 @@ impl WakerInterestHandler {
         })
     }
 }
+
 impl InterestHandler for WakerInterestHandler {
     fn push_interest(&mut self, interest: InterestType) {
         self.set.insert(interest);
@@ -47,6 +49,7 @@ impl InterestHandler for WakerInterestHandler {
 pub struct SharedWakerInterestHandler {
     inner: Arc<Mutex<Box<WakerInterestHandler>>>,
 }
+
 impl SharedWakerInterestHandler {
     pub fn new(waker: &Waker) -> Box<Self> {
         Box::new(Self {
@@ -54,6 +57,7 @@ impl SharedWakerInterestHandler {
         })
     }
 }
+
 impl InterestHandler for SharedWakerInterestHandler {
     fn push_interest(&mut self, interest: InterestType) {
         let mut inner = self.inner.lock().unwrap();
@@ -108,6 +112,7 @@ pub struct InterestHandlerWaker {
     handler: Arc<Mutex<Box<dyn InterestHandler + Send + Sync>>>,
     interest: InterestType,
 }
+
 impl InterestHandlerWaker {
     pub fn wake_now(&self) {
         let mut handler = self.handler.lock().unwrap();

@@ -1,18 +1,5 @@
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 
-pub mod composite;
-pub mod loopback;
-pub mod meta;
-pub mod tcp_pair;
-#[cfg(feature = "tokio")]
-#[cfg(test)]
-mod tests;
-
-pub use composite::CompositeTcpListener;
-pub use loopback::LoopbackNetworking;
-use pin_project_lite::pin_project;
-#[cfg(feature = "rkyv")]
-use rkyv::{Archive, CheckBytes, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 use std::fmt;
 use std::mem::MaybeUninit;
 use std::net::IpAddr;
@@ -26,10 +13,15 @@ use std::task::Context;
 use std::task::Poll;
 use std::time::Duration;
 use thiserror::Error;
+
 #[cfg(feature = "tokio")]
 use tokio::io::AsyncRead;
 #[cfg(feature = "tokio")]
 use tokio::io::AsyncWrite;
+
+use pin_project_lite::pin_project;
+#[cfg(feature = "rkyv")]
+use rkyv::{Archive, CheckBytes, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 
 pub use bytes::Bytes;
 pub use bytes::BytesMut;
@@ -406,6 +398,7 @@ impl<R: VirtualConnectedSocket + ?Sized> VirtualConnectedSocketExt for R {
         {
             socket: &'a mut R,
         }
+
         impl<'a, R> std::future::Future for Poller<'a, R>
         where
             R: VirtualConnectedSocket + ?Sized,
@@ -423,6 +416,7 @@ impl<R: VirtualConnectedSocket + ?Sized> VirtualConnectedSocketExt for R {
                 }
             }
         }
+
         Poller { socket: self }.await
     }
 }
@@ -835,34 +829,6 @@ pub fn io_err_into_net_error(net_error: std::io::Error) -> NetworkError {
         ErrorKind::WouldBlock => NetworkError::WouldBlock,
         ErrorKind::WriteZero => NetworkError::WriteZero,
         ErrorKind::Unsupported => NetworkError::Unsupported,
-
-        #[cfg(all(target_family = "unix", feature = "libc"))]
-        _ => {
-            if let Some(code) = net_error.raw_os_error() {
-                match code {
-                    libc::EPERM => NetworkError::PermissionDenied,
-                    libc::EBADF => NetworkError::InvalidFd,
-                    libc::ECHILD => NetworkError::InvalidFd,
-                    libc::EMFILE => NetworkError::TooManyOpenFiles,
-                    libc::EINTR => NetworkError::Interrupted,
-                    libc::EIO => NetworkError::IOError,
-                    libc::ENXIO => NetworkError::IOError,
-                    libc::EAGAIN => NetworkError::WouldBlock,
-                    libc::ENOMEM => NetworkError::InsufficientMemory,
-                    libc::EACCES => NetworkError::PermissionDenied,
-                    libc::ENODEV => NetworkError::NoDevice,
-                    libc::EINVAL => NetworkError::InvalidInput,
-                    libc::EPIPE => NetworkError::BrokenPipe,
-                    err => {
-                        tracing::trace!("unknown os error {}", err);
-                        NetworkError::UnknownError
-                    }
-                }
-            } else {
-                NetworkError::UnknownError
-            }
-        }
-        #[cfg(not(all(target_family = "unix", feature = "libc")))]
         _ => NetworkError::UnknownError,
     }
 }
@@ -893,15 +859,6 @@ pub fn net_error_into_io_err(net_error: NetworkError) -> std::io::Error {
         NetworkError::Unsupported => ErrorKind::Unsupported.into(),
         NetworkError::UnknownError => ErrorKind::BrokenPipe.into(),
         NetworkError::InsufficientMemory => ErrorKind::OutOfMemory.into(),
-        NetworkError::TooManyOpenFiles => {
-            #[cfg(all(target_family = "unix", feature = "libc"))]
-            {
-                std::io::Error::from_raw_os_error(libc::EMFILE)
-            }
-            #[cfg(not(all(target_family = "unix", feature = "libc")))]
-            {
-                ErrorKind::Other.into()
-            }
-        }
+        NetworkError::TooManyOpenFiles => ErrorKind::Other.into(),
     }
 }

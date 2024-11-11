@@ -5,12 +5,10 @@ members = [
     "lib/js",
     "lib/types",
     "lib/virtual-fs",
-    "lib/virtual-io",
+    "lib/virtual-mio",
     "lib/virtual-net",
-    "lib/wai-bindgen-wasmer",
-    "lib/wasi-types",
+    "lib/wasix-types",
     "lib/wasix",
-    "lib/wasm-interface",
 ]
 resolver = "2"
 

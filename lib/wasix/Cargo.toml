@@ -13,12 +13,12 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-virtual-fs = { path = "../virtual-fs", default-features = false, features = ["no-time"] }
-virtual-mio = { path = "../virtual-io", default-features = false, features = ["js"] }
-virtual-net = { path = "../virtual-net", default-features = false, features = ["rkyv"] }
-wasmer = { path = "../api", default-features = false, features = ["wat"] }
+virtual-fs = { path = "../virtual-fs", features = ["no-time"] }
+virtual-mio = { path = "../virtual-mio" }
+virtual-net = { path = "../virtual-net", features = ["rkyv"] }
+wasmer = { path = "../api", features = ["wat"] }
 wasmer-types = { path = "../types", default-features = false }
-wasmer-wasix-types = { path = "../wasi-types", features = ["enable-serde"] }
+wasmer-wasix-types = { path = "../wasix-types", features = ["enable-serde"] }
 
 http.workspace = true
 dashmap.workspace = true

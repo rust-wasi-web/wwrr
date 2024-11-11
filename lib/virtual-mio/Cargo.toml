@@ -18,6 +18,3 @@ derivative = { version = "^2" }
 futures = { version = "0.3" }
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 
-[features]
-default = ["js"]
-js = []

@@ -22,8 +22,7 @@ impl InlineWaker {
         // Note: This guard should be there to prevent race conditions however in the
         // browser it causes a lock up - some strange browser issue. What I suspect
         // is that the Condvar::wait call is not releasing the mutex lock
-        #[cfg(not(feature = "js"))]
-        let _guard = self.lock.lock().unwrap();
+        // let _guard = self.lock.lock().unwrap();
 
         self.condvar.notify_all();
     }
