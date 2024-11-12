@@ -308,7 +308,6 @@ mod tests {
             }),
             env,
             module,
-            false,
         ))
         .unwrap();
         let msg = match msg {

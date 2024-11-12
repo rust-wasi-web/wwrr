@@ -9,8 +9,6 @@ pub fn tty_get<M: MemorySize>(
     tty_state: WasmPtr<Tty, M>,
 ) -> Errno {
     let env = ctx.data();
-
-    let env = ctx.data();
     let bridge = if let Some(t) = env.runtime.tty() {
         t
     } else {

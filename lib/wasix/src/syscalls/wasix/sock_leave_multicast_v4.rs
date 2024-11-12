@@ -34,7 +34,6 @@ pub(crate) fn sock_leave_multicast_v4_internal(
     multiaddr: Ipv4Addr,
     iface: Ipv4Addr,
 ) -> Result<Result<(), Errno>, WasiError> {
-    let env = ctx.data();
     wasi_try_ok_ok!(__sock_actor_mut(ctx, sock, Rights::empty(), |socket, _| {
         socket.leave_multicast_v4(multiaddr, iface)
     }));

@@ -21,7 +21,6 @@ pub fn futex_wake<M: MemorySize>(
     let pointer: u64 = wasi_try!(futex_ptr.offset().try_into().map_err(|_| Errno::Overflow));
     Span::current().record("futex_idx", pointer);
 
-    let mut woken = false;
     let woken = {
         let mut guard = state.futexs.lock().unwrap();
         if let Some(futex) = guard.futexes.get_mut(&pointer) {

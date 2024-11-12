@@ -1,9 +1,6 @@
-use std::f32::consts::E;
-
 use super::*;
 use crate::{
     capture_store_snapshot,
-    os::task::thread::WasiMemoryLayout,
     runtime::{
         task_manager::{TaskWasm, TaskWasmRunProperties},
         TaintReason,
@@ -12,7 +9,6 @@ use crate::{
     WasiThreadHandle,
 };
 
-use wasmer::Memory;
 use wasmer_wasix_types::wasi::ThreadStart;
 
 /// ### `thread_spawn()`
@@ -56,42 +52,17 @@ pub fn thread_spawn_internal_from_wasi<M: MemorySize>(
 ) -> Result<Tid, Errno> {
     // Now we use the environment and memory references
     let env = ctx.data();
-    let memory = unsafe { env.memory_view(&ctx) };
-    let runtime = env.runtime.clone();
-    let tasks = env.tasks().clone();
     let start_ptr_offset = start_ptr.offset();
-
-    // Read the properties about the stack which we will use for asyncify
-    let layout = {
-        let start: ThreadStart<M> = start_ptr.read(&memory).map_err(mem_error_to_wasi)?;
-        let stack_upper: u64 = start.stack_upper.try_into().map_err(|_| Errno::Overflow)?;
-        let stack_size: u64 = start.stack_size.try_into().map_err(|_| Errno::Overflow)?;
-        let guard_size: u64 = start.guard_size.try_into().map_err(|_| Errno::Overflow)?;
-        let tls_base: u64 = start.tls_base.try_into().map_err(|_| Errno::Overflow)?;
-        let stack_lower = stack_upper - stack_size;
-
-        WasiMemoryLayout {
-            stack_upper,
-            stack_lower,
-            guard_size,
-            stack_size,
-        }
-    };
-    tracing::trace!(
-        from_tid = env.thread.id().raw(),
-        "thread_spawn with layout {:?}",
-        layout
-    );
 
     // Create the handle that represents this thread
     let thread_start = ThreadStartType::ThreadSpawn {
         start_ptr: start_ptr_offset.into(),
     };
-    let mut thread_handle = match env.process.new_thread(layout.clone(), thread_start) {
+    let thread_handle = match env.process.new_thread(thread_start) {
         Ok(h) => Arc::new(h),
         Err(err) => {
             error!(
-                stack_base = layout.stack_lower,
+                err = %err,
                 "failed to create thread handle",
             );
             // TODO: evaluate the appropriate error code, document it in the spec.
@@ -102,7 +73,7 @@ pub fn thread_spawn_internal_from_wasi<M: MemorySize>(
     Span::current().record("tid", thread_id);
 
     // Spawn the thread
-    thread_spawn_internal_using_layout::<M>(ctx, thread_handle, layout, start_ptr_offset)?;
+    thread_spawn_internal_using_layout::<M>(ctx, thread_handle, start_ptr_offset)?;
 
     // Success
     Ok(thread_id)
@@ -111,7 +82,6 @@ pub fn thread_spawn_internal_from_wasi<M: MemorySize>(
 pub fn thread_spawn_internal_using_layout<M: MemorySize>(
     ctx: &mut FunctionEnvMut<'_, WasiEnv>,
     thread_handle: Arc<WasiThreadHandle>,
-    layout: WasiMemoryLayout,
     start_ptr_offset: M::Offset,
 ) -> Result<(), Errno> {
     // We extract the memory which will be passed to the thread
@@ -120,16 +90,14 @@ pub fn thread_spawn_internal_using_layout<M: MemorySize>(
     let thread_memory = unsafe { env.inner() }.memory_clone();
 
     // We capture some local variables
-    let state = env.state.clone();
     let mut thread_env = env.clone();
     thread_env.thread = thread_handle.as_thread();
-    thread_env.layout = layout;
 
     // This next function gets a context for the local thread and then
     // calls into the process
-    let mut execute_module = {
+    let execute_module = {
         let thread_handle = thread_handle;
-        move |ctx: WasiFunctionEnv, mut store: Store| {
+        move |ctx: WasiFunctionEnv, store: Store| {
             // Call the thread
             call_module::<M>(ctx, store, start_ptr_offset, thread_handle)
         }
@@ -137,7 +105,7 @@ pub fn thread_spawn_internal_using_layout<M: MemorySize>(
 
     // If the process does not export a thread spawn function then obviously
     // we can't spawn a background thread
-    if unsafe { env.inner() }.thread_spawn.is_none() {
+    if unsafe { env.inner() }.thread_start.is_none() {
         warn!("thread failed - the program does not export a `wasi_thread_start` function");
         return Err(Errno::Notcapable);
     }
@@ -149,11 +117,11 @@ pub fn thread_spawn_internal_using_layout<M: MemorySize>(
     // Now spawn a thread
     trace!("threading: spawning background thread");
     let run = move |props: TaskWasmRunProperties| {
-        execute_module(props.ctx, props.store);
+        let _ = execute_module(props.ctx, props.store);
     };
     tasks
         .task_wasm(
-            TaskWasm::new(Box::new(run), thread_env, thread_module, false)
+            TaskWasm::new(Box::new(run), thread_env, thread_module)
                 .with_globals(&globals)
                 .with_memory(spawn_type),
         )
@@ -165,7 +133,7 @@ pub fn thread_spawn_internal_using_layout<M: MemorySize>(
 
 /// Calls the module
 fn call_module<M: MemorySize>(
-    mut env: WasiFunctionEnv,
+    env: WasiFunctionEnv,
     mut store: Store,
     start_ptr_offset: M::Offset,
     thread_handle: Arc<WasiThreadHandle>,
@@ -173,7 +141,7 @@ fn call_module<M: MemorySize>(
     // We either call the reactor callback or the thread spawn callback
     //trace!("threading: invoking thread callback (reactor={})", reactor);
     let spawn = unsafe { env.data(&store).inner() }
-        .thread_spawn
+        .thread_start
         .clone()
         .unwrap();
     let tid = env.data(&store).tid();

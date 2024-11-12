@@ -17,9 +17,8 @@ pub fn futex_wake_all<M: MemorySize>(
     let state = env.state.deref();
 
     let pointer: u64 = wasi_try!(futex_ptr.offset().try_into().map_err(|_| Errno::Overflow));
-    //Span::current().record("futex_idx", pointer);
+    Span::current().record("futex_idx", pointer);
 
-    let mut woken = false;
     let woken = {
         let mut guard = state.futexs.lock().unwrap();
         if let Some(futex) = guard.futexes.remove(&pointer) {
@@ -35,7 +34,7 @@ pub fn futex_wake_all<M: MemorySize>(
             true
         }
     };
-    //Span::current().record("woken", woken);
+    Span::current().record("woken", woken);
 
     let woken = match woken {
         false => Bool::False,

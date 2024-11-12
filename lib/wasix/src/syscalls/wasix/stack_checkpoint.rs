@@ -6,9 +6,9 @@ use crate::syscalls::*;
 /// later using its stack hash.
 #[instrument(level = "trace", skip_all, ret)]
 pub fn stack_checkpoint<M: MemorySize>(
-    mut ctx: FunctionEnvMut<'_, WasiEnv>,
-    snapshot_ptr: WasmPtr<StackSnapshot, M>,
-    ret_val: WasmPtr<Longsize, M>,
+    _ctx: FunctionEnvMut<'_, WasiEnv>,
+    _snapshot_ptr: WasmPtr<StackSnapshot, M>,
+    _ret_val: WasmPtr<Longsize, M>,
 ) -> Result<Errno, WasiError> {
     Ok(Errno::Notsup)
 }

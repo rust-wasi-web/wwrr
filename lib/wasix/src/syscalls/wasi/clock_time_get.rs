@@ -1,4 +1,3 @@
-use super::*;
 use crate::syscalls::*;
 
 // NOTE: This syscall is not instrumented since it will be logged too much,
@@ -19,7 +18,7 @@ use crate::syscalls::*;
     tracing::instrument(level = "trace", skip_all, ret)
 )]
 pub fn clock_time_get<M: MemorySize>(
-    mut ctx: FunctionEnvMut<'_, WasiEnv>,
+    ctx: FunctionEnvMut<'_, WasiEnv>,
     clock_id: Snapshot0Clockid,
     precision: Timestamp,
     time: WasmPtr<Timestamp, M>,

@@ -10,12 +10,12 @@ use crate::syscalls::*;
 ///     The size of the environment variable string data.
 #[instrument(level = "trace", skip_all, ret)]
 pub fn environ_sizes_get<M: MemorySize>(
-    mut ctx: FunctionEnvMut<'_, WasiEnv>,
+    ctx: FunctionEnvMut<'_, WasiEnv>,
     environ_count: WasmPtr<M::Offset, M>,
     environ_buf_size: WasmPtr<M::Offset, M>,
 ) -> Result<Errno, WasiError> {
     let env = ctx.data();
-    let (memory, mut state) = unsafe { env.get_memory_and_wasi_state(&ctx, 0) };
+    let (memory, state) = unsafe { env.get_memory_and_wasi_state(&ctx, 0) };
 
     let environ_count = environ_count.deref(&memory);
     let environ_buf_size = environ_buf_size.deref(&memory);

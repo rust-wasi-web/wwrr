@@ -15,8 +15,6 @@ pub fn fd_filestat_set_size(
     st_size: Filesize,
 ) -> Result<Errno, WasiError> {
     wasi_try_ok!(fd_filestat_set_size_internal(&mut ctx, fd, st_size));
-    let env = ctx.data();
-
     Ok(Errno::Success)
 }
 
@@ -26,7 +24,7 @@ pub(crate) fn fd_filestat_set_size_internal(
     st_size: Filesize,
 ) -> Result<(), Errno> {
     let env = ctx.data();
-    let (_, mut state) = unsafe { env.get_memory_and_wasi_state(&ctx, 0) };
+    let (_, state) = unsafe { env.get_memory_and_wasi_state(&ctx, 0) };
     let fd_entry = state.fs.get_fd(fd)?;
     let inode = fd_entry.inode;
 

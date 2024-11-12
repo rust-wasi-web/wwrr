@@ -12,12 +12,12 @@ use crate::syscalls::*;
 ///
 #[instrument(level = "trace", skip_all, ret)]
 pub fn args_get<M: MemorySize>(
-    mut ctx: FunctionEnvMut<'_, WasiEnv>,
+    ctx: FunctionEnvMut<'_, WasiEnv>,
     argv: WasmPtr<WasmPtr<u8, M>, M>,
     argv_buf: WasmPtr<u8, M>,
 ) -> Errno {
     let env = ctx.data();
-    let (memory, mut state) = unsafe { env.get_memory_and_wasi_state(&ctx, 0) };
+    let (memory, state) = unsafe { env.get_memory_and_wasi_state(&ctx, 0) };
 
     let args = state
         .args

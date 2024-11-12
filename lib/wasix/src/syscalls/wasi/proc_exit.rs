@@ -10,7 +10,7 @@ use crate::syscalls::*;
 ///   Exit code to return to the operating system
 #[instrument(level = "trace", skip_all)]
 pub fn proc_exit<M: MemorySize>(
-    mut ctx: FunctionEnvMut<'_, WasiEnv>,
+    _ctx: FunctionEnvMut<'_, WasiEnv>,
     code: ExitCode,
 ) -> Result<(), WasiError> {
     debug!(%code);

@@ -1,5 +1,3 @@
-use std::{mem::MaybeUninit, task::Waker};
-
 use super::*;
 use crate::{net::socket::TimeType, syscalls::*};
 
@@ -36,7 +34,6 @@ pub fn sock_send<M: MemorySize>(
     let bytes_written = if use_write {
         let offset = {
             let state = env.state.clone();
-            let inodes = state.inodes.clone();
 
             let fd_entry = wasi_try_ok!(state.fs.get_fd(fd));
             fd_entry.offset.load(Ordering::Acquire) as usize
@@ -79,11 +76,10 @@ pub(crate) fn sock_send_internal<M: MemorySize>(
     ctx: &FunctionEnvMut<'_, WasiEnv>,
     sock: WasiFd,
     si_data: FdWriteSource<'_, M>,
-    si_flags: SiFlags,
+    _si_flags: SiFlags,
 ) -> Result<Result<usize, Errno>, WasiError> {
     let env = ctx.data();
     let memory = unsafe { env.memory_view(&ctx) };
-    let runtime = env.runtime.clone();
 
     let bytes_written = wasi_try_ok_ok!(block_on_sock(
         env,

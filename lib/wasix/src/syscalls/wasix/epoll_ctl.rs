@@ -1,24 +1,19 @@
-use serde::{Deserialize, Serialize};
-use tokio::sync::{mpsc::UnboundedSender, watch};
+use tokio::sync::watch;
 use virtual_mio::{InterestHandler, InterestType};
 use virtual_net::net_error_into_io_err;
-use wasmer_wasix_types::wasi::{
-    EpollCtl, EpollEvent, EpollEventCtl, EpollType, SubscriptionClock, SubscriptionUnion, Userdata,
-};
+use wasmer_wasix_types::wasi::{EpollCtl, EpollEvent, EpollEventCtl, EpollType, SubscriptionUnion};
 
-use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
+use std::task::{Context, RawWaker, RawWakerVTable, Waker};
 
 use futures::Future;
 
 use super::*;
 use crate::{
     fs::{
-        EpollFd, EpollInterest, EpollJoinGuard, InodeValFilePollGuard, InodeValFilePollGuardJoin,
-        InodeValFilePollGuardMode, POLL_GUARD_MAX_RET,
+        EpollFd, EpollInterest, EpollJoinGuard, InodeValFilePollGuardJoin,
+        InodeValFilePollGuardMode,
     },
-    state::PollEventSet,
     syscalls::*,
-    WasiInodes,
 };
 
 /// ### `epoll_ctl()`
@@ -58,7 +53,6 @@ pub fn epoll_ctl<M: MemorySize + 'static>(
         fd,
         event_ctl.as_ref()
     )?);
-    let env = ctx.data();
 
     Ok(Errno::Success)
 }
@@ -73,8 +67,7 @@ pub(crate) fn epoll_ctl_internal(
     let env = ctx.data();
     let fd_entry = wasi_try_ok_ok!(env.state.fs.get_fd(epfd));
 
-    let tasks = env.tasks().clone();
-    let mut inode_guard = fd_entry.inode.read();
+    let inode_guard = fd_entry.inode.read();
     match inode_guard.deref() {
         Kind::Epoll {
             subscriptions, tx, ..
@@ -186,7 +179,7 @@ impl InterestHandler for EpollHandler {
             InterestType::Error => EpollType::EPOLLERR,
         };
         let mut ret = false;
-        self.tx.send_modify(move |i| {
+        self.tx.send_modify(|i| {
             ret = i.interest.iter().any(|(_, b)| *b == readiness);
             i.interest.retain(|(_, b)| *b != readiness);
         });
@@ -201,7 +194,7 @@ impl InterestHandler for EpollHandler {
             InterestType::Error => EpollType::EPOLLERR,
         };
         let mut ret = false;
-        self.tx.send_modify(move |i| {
+        self.tx.send_modify(|i| {
             ret = i.interest.iter().any(|(_, b)| *b == readiness);
         });
         ret

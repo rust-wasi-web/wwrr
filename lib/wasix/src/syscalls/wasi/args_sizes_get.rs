@@ -10,12 +10,12 @@ use crate::syscalls::*;
 ///     The size of the argument string data.
 #[instrument(level = "trace", skip_all, ret)]
 pub fn args_sizes_get<M: MemorySize>(
-    mut ctx: FunctionEnvMut<'_, WasiEnv>,
+    ctx: FunctionEnvMut<'_, WasiEnv>,
     argc: WasmPtr<M::Offset, M>,
     argv_buf_size: WasmPtr<M::Offset, M>,
 ) -> Errno {
     let env = ctx.data();
-    let (memory, mut state) = unsafe { env.get_memory_and_wasi_state(&ctx, 0) };
+    let (memory, state) = unsafe { env.get_memory_and_wasi_state(&ctx, 0) };
 
     let argc = argc.deref(&memory);
     let argv_buf_size = argv_buf_size.deref(&memory);

@@ -1,11 +1,7 @@
-use std::task::Waker;
-
 use serde::{Deserialize, Serialize};
-use wasmer::FromToNativeWasmType;
 use wasmer_wasix_types::wasi::{JoinFlags, JoinStatus, JoinStatusType, JoinStatusUnion, OptionPid};
 
-use super::*;
-use crate::{syscalls::*, WasiProcess};
+use crate::syscalls::*;
 
 #[derive(Serialize, Deserialize)]
 enum JoinStatusResult {
@@ -174,7 +170,6 @@ pub(super) fn proc_join_internal<M: MemorySize + 'static>(
             }
         } else {
             // Wait for the process to finish
-            let process2 = process.clone();
             let res = block_on(async move {
                 let exit_code = process.join().await.unwrap_or_else(|_| Errno::Child.into());
                 tracing::trace!(%exit_code, "triggered child join");

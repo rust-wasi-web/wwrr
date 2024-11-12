@@ -225,10 +225,8 @@ pub struct ThreadStart<M: MemorySize> {
     pub tls_base: M::Offset,
     pub start_funct: M::Offset,
     pub start_args: M::Offset,
-    pub reserved: [M::Offset; 10],
-    pub stack_size: M::Offset,
-    pub guard_size: M::Offset,
 }
+
 impl<M: MemorySize> core::fmt::Debug for ThreadStart<M> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("ThreadStart")
@@ -236,8 +234,6 @@ impl<M: MemorySize> core::fmt::Debug for ThreadStart<M> {
             .field("tls-base", &self.tls_base)
             .field("start-funct", &self.start_funct)
             .field("start-args", &self.start_args)
-            .field("stack_size", &self.stack_size)
-            .field("guard_size", &self.guard_size)
             .finish()
     }
 }

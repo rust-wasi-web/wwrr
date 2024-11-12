@@ -1,5 +1,3 @@
-use std::task::Waker;
-
 use super::*;
 use crate::{net::socket::TimeType, syscalls::*};
 
@@ -25,7 +23,7 @@ pub fn sock_accept<M: MemorySize>(
     wasi_try_ok!(WasiEnv::process_signals_and_exit(&mut ctx)?);
 
     let env = ctx.data();
-    let (memory, state, _) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
+    let (memory, _state, _) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
 
     let nonblocking = fd_flags.contains(Fdflags::NONBLOCK);
 
@@ -66,11 +64,11 @@ pub fn sock_accept_v2<M: MemorySize>(
     wasi_try_ok!(WasiEnv::process_signals_and_exit(&mut ctx)?);
 
     let env = ctx.data();
-    let (memory, state, _) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
+    let (_memory, _state, _) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
 
     let nonblocking = fd_flags.contains(Fdflags::NONBLOCK);
 
-    let (fd, local_addr, peer_addr) = wasi_try_ok!(sock_accept_internal(
+    let (fd, _local_addr, peer_addr) = wasi_try_ok!(sock_accept_internal(
         env,
         sock,
         fd_flags,
@@ -79,7 +77,7 @@ pub fn sock_accept_v2<M: MemorySize>(
     )?);
 
     let env = ctx.data();
-    let (memory, state, _) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
+    let (memory, _state, _) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
     wasi_try_mem_ok!(ro_fd.write(&memory, fd));
     wasi_try_ok!(crate::net::write_ip_port(
         &memory,

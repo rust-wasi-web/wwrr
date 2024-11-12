@@ -33,7 +33,6 @@ pub(crate) fn sock_join_multicast_v6_internal(
     multiaddr: Ipv6Addr,
     iface: u32,
 ) -> Result<Result<(), Errno>, WasiError> {
-    let env = ctx.data();
     wasi_try_ok_ok!(__sock_actor_mut(ctx, sock, Rights::empty(), |socket, _| {
         socket.join_multicast_v6(multiaddr, iface)
     }));

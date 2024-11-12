@@ -18,8 +18,6 @@ pub fn thread_signal(
         ctx.data().process.signal_thread(&tid, sig);
     }
 
-    let env = ctx.data();
-
     wasi_try_ok!(WasiEnv::process_signals_and_exit(&mut ctx)?);
 
     Ok(Errno::Success)

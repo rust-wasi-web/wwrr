@@ -24,10 +24,10 @@ pub fn path_symlink<M: MemorySize>(
     new_path_len: M::Offset,
 ) -> Result<Errno, WasiError> {
     let env = ctx.data();
-    let (memory, mut state, inodes) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
-    let mut old_path_str = unsafe { get_input_str_ok!(&memory, old_path, old_path_len) };
+    let (memory, _state, _inodes) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
+    let mut old_path_str = get_input_str_ok!(&memory, old_path, old_path_len);
     Span::current().record("old_path", old_path_str.as_str());
-    let mut new_path_str = unsafe { get_input_str_ok!(&memory, new_path, new_path_len) };
+    let mut new_path_str = get_input_str_ok!(&memory, new_path, new_path_len);
     Span::current().record("new_path", new_path_str.as_str());
     old_path_str = ctx.data().state.fs.relative_path_to_absolute(old_path_str);
     new_path_str = ctx.data().state.fs.relative_path_to_absolute(new_path_str);
@@ -38,7 +38,6 @@ pub fn path_symlink<M: MemorySize>(
         fd,
         &new_path_str
     ));
-    let env = ctx.data();
 
     Ok(Errno::Success)
 }
@@ -50,7 +49,7 @@ pub fn path_symlink_internal(
     new_path: &str,
 ) -> Result<(), Errno> {
     let env = ctx.data();
-    let (memory, mut state, inodes) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
+    let (_memory, state, inodes) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
 
     let base_fd = state.fs.get_fd(fd)?;
     if !base_fd.rights.contains(Rights::PATH_SYMLINK) {
@@ -96,7 +95,7 @@ pub fn path_symlink_internal(
         }
     }
 
-    let mut source_path = std::path::Path::new(old_path);
+    let source_path = std::path::Path::new(old_path);
     let mut relative_path = std::path::PathBuf::new();
     for _ in 0..depth {
         relative_path.push("..");

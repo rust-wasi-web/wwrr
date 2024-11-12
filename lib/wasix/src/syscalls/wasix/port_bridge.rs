@@ -21,10 +21,10 @@ pub fn port_bridge<M: MemorySize>(
     let env = ctx.data();
     let memory = unsafe { env.memory_view(&ctx) };
 
-    let network = unsafe { get_input_str_ok!(&memory, network, network_len) };
+    let network = get_input_str_ok!(&memory, network, network_len);
     Span::current().record("network", network.as_str());
 
-    let token = unsafe { get_input_str_ok!(&memory, token, token_len) };
+    let token = get_input_str_ok!(&memory, token, token_len);
     let security = match security {
         Streamsecurity::Unencrypted => StreamSecurity::Unencrypted,
         Streamsecurity::AnyEncryption => StreamSecurity::AnyEncyption,

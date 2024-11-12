@@ -128,4 +128,4 @@ pub use thread_spawn::*;
 pub use tty_get::*;
 pub use tty_set::*;
 
-use tracing::{debug_span, field, instrument, trace_span, Span};
+use tracing::{field, instrument, Span};

@@ -1,5 +1,3 @@
-use std::task::Waker;
-
 use super::*;
 use crate::syscalls::*;
 
@@ -8,6 +6,7 @@ struct FutexPoller {
     state: Arc<WasiState>,
     poller_idx: u64,
     futex_idx: u64,
+    #[allow(dead_code)]
     expected: u32,
     timeout: Option<Pin<Box<dyn Future<Output = ()> + Send + Sync + 'static>>>,
 }
@@ -93,7 +92,7 @@ pub(super) fn futex_wait_internal<M: MemorySize + 'static>(
     wasi_try_ok!(WasiEnv::process_signals_and_exit(&mut ctx)?);
 
     // Determine the timeout
-    let mut env = ctx.data();
+    let env = ctx.data();
     let timeout = {
         let memory = unsafe { env.memory_view(&ctx) };
         wasi_try_mem_ok!(timeout.read(&memory))
@@ -104,7 +103,6 @@ pub(super) fn futex_wait_internal<M: MemorySize + 'static>(
     };
     Span::current().record("timeout", &format!("{:?}", timeout));
 
-    let state = env.state.clone();
     let futex_idx: u64 = wasi_try_ok!(futex_ptr.offset().try_into().map_err(|_| Errno::Overflow));
     Span::current().record("futex_idx", futex_idx);
 

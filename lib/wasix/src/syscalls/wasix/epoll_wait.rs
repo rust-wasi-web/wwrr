@@ -1,14 +1,9 @@
-use serde::{Deserialize, Serialize};
-use wasmer_wasix_types::wasi::{
-    EpollCtl, EpollData, EpollEvent, EpollType, SubscriptionClock, Userdata,
-};
+use wasmer_wasix_types::wasi::{EpollData, EpollEvent, EpollType};
 
 use super::*;
 use crate::{
-    fs::{EpollFd, InodeValFilePollGuard, InodeValFilePollGuardJoin, POLL_GUARD_MAX_RET},
-    state::PollEventSet,
+    fs::{EpollFd, POLL_GUARD_MAX_RET},
     syscalls::*,
-    WasiInodes,
 };
 
 const TIMEOUT_FOREVER: u64 = u64::MAX;
@@ -34,7 +29,7 @@ pub fn epoll_wait<'a, M: MemorySize + 'static>(
 
     let (rx, tx, subscriptions) = {
         let fd_entry = wasi_try_ok!(ctx.data().state.fs.get_fd(epfd));
-        let mut inode_guard = fd_entry.inode.read();
+        let inode_guard = fd_entry.inode.read();
         match inode_guard.deref() {
             Kind::Epoll {
                 rx,
@@ -50,7 +45,6 @@ pub fn epoll_wait<'a, M: MemorySize + 'static>(
     // epoll events until something of interest needs to be returned to the
     // caller or a timeout happens
     let work = {
-        let state = ctx.data().state.clone();
         async move {
             let mut ret: Vec<(EpollFd, EpollType)> = Vec::new();
 

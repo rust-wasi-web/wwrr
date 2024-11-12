@@ -1,6 +1,3 @@
-use std::task::Waker;
-
-use super::*;
 use crate::syscalls::*;
 
 /// ### `thread_join()`
@@ -28,7 +25,7 @@ pub(super) fn thread_join_internal<M: MemorySize + 'static>(
     let tid: WasiThreadId = join_tid.into();
     let other_thread = env.process.get_thread(&tid);
     if let Some(other_thread) = other_thread {
-        let res = block_on(async move {
+        let exit_code = block_on(async move {
             other_thread
                 .join()
                 .await
@@ -37,9 +34,8 @@ pub(super) fn thread_join_internal<M: MemorySize + 'static>(
                         .unwrap_or(ExitCode::Errno(Errno::Unknown))
                 })
                 .unwrap_or_else(|a| a)
-                .raw()
         });
-        Ok(Errno::Success)
+        Ok(exit_code.into())
     } else {
         Ok(Errno::Success)
     }

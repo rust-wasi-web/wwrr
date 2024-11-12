@@ -5,7 +5,7 @@ use crate::syscalls::*;
 /// Yields execution of the thread
 #[instrument(level = "trace", skip_all, ret)]
 pub fn sched_yield<M: MemorySize + 'static>(
-    mut ctx: FunctionEnvMut<'_, WasiEnv>,
+    ctx: FunctionEnvMut<'_, WasiEnv>,
 ) -> Result<Errno, WasiError> {
     //trace!("wasi[{}:{}]::sched_yield", ctx.data().pid(), ctx.data().tid());
     thread_sleep_internal::<M>(ctx, 0)

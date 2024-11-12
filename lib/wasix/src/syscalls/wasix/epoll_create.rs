@@ -1,13 +1,5 @@
-use serde::{Deserialize, Serialize};
-use wasmer_wasix_types::wasi::{SubscriptionClock, Userdata};
-
 use super::*;
-use crate::{
-    fs::{InodeValFilePollGuard, InodeValFilePollGuardJoin},
-    state::PollEventSet,
-    syscalls::*,
-    WasiInodes,
-};
+use crate::syscalls::*;
 use std::sync::Mutex as StdMutex;
 use tokio::sync::Mutex as AsyncMutex;
 
@@ -19,12 +11,11 @@ pub fn epoll_create<M: MemorySize + 'static>(
     ret_fd: WasmPtr<WasiFd, M>,
 ) -> Result<Errno, WasiError> {
     let fd = wasi_try_ok!(epoll_create_internal(&mut ctx, None)?);
-    let env = ctx.data();
 
     Span::current().record("fd", fd);
 
     let env = ctx.data();
-    let (memory, state, inodes) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
+    let (memory, _state, _inodes) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
     wasi_try_mem_ok!(ret_fd.write(&memory, fd));
 
     Ok(Errno::Success)
@@ -37,7 +28,7 @@ pub fn epoll_create_internal(
     wasi_try_ok_ok!(WasiEnv::process_signals_and_exit(ctx)?);
 
     let env = ctx.data();
-    let (memory, state, inodes) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
+    let (_memory, state, inodes) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
 
     let (tx, rx) = tokio::sync::watch::channel(Default::default());
 

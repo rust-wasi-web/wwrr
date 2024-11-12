@@ -30,7 +30,6 @@ use super::{
     control_plane::{ControlPlaneError, WasiControlPlaneHandle},
     signal::{SignalDeliveryError, SignalHandlerAbi},
     task_join_handle::OwnedTaskStatus,
-    thread::WasiMemoryLayout,
     TaskStatus,
 };
 
@@ -280,7 +279,6 @@ impl WasiProcess {
     /// Creates a a thread and returns it
     pub fn new_thread(
         &self,
-        layout: WasiMemoryLayout,
         start: ThreadStartType,
     ) -> Result<WasiThreadHandle, ControlPlaneError> {
         let control_plane = self.compute.must_upgrade();
@@ -297,13 +295,12 @@ impl WasiProcess {
             tid.into()
         };
 
-        self.new_thread_with_id(layout, start, tid)
+        self.new_thread_with_id(start, tid)
     }
 
     /// Creates a a thread and returns it
     pub fn new_thread_with_id(
         &self,
-        layout: WasiMemoryLayout,
         start: ThreadStartType,
         tid: WasiThreadId,
     ) -> Result<WasiThreadHandle, ControlPlaneError> {
@@ -321,15 +318,7 @@ impl WasiProcess {
         };
 
         // Insert the thread into the pool
-        let ctrl = WasiThread::new(
-            self.pid(),
-            tid,
-            is_main,
-            finished,
-            task_count_guard,
-            layout,
-            start,
-        );
+        let ctrl = WasiThread::new(self.pid(), tid, is_main, finished, task_count_guard, start);
         inner.threads.insert(tid, ctrl.clone());
         inner.thread_count += 1;
 

@@ -75,11 +75,10 @@ pub struct TaskWasm<'a, 'b> {
     pub globals: Option<&'b StoreSnapshot>,
     pub spawn_type: SpawnMemoryType<'a>,
     pub trigger: Option<Box<WasmResumeTrigger>>,
-    pub update_layout: bool,
 }
 
 impl<'a, 'b> TaskWasm<'a, 'b> {
-    pub fn new(run: Box<TaskWasmRun>, env: WasiEnv, module: Module, update_layout: bool) -> Self {
+    pub fn new(run: Box<TaskWasmRun>, env: WasiEnv, module: Module) -> Self {
         let shared_memory = module.imports().memories().next().map(|a| *a.ty());
         Self {
             run,
@@ -91,7 +90,6 @@ impl<'a, 'b> TaskWasm<'a, 'b> {
                 None => SpawnMemoryType::CreateMemory,
             },
             trigger: None,
-            update_layout,
             recycle: None,
         }
     }
@@ -367,7 +365,6 @@ impl dyn VirtualTaskManager {
                 }),
                 env.clone(),
                 module,
-                false,
             )
             .with_memory(SpawnMemoryType::ShareMemory(memory, store.as_store_ref()))
             .with_globals(&snapshot)

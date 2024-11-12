@@ -48,7 +48,6 @@ pub(crate) fn sock_send_file_internal(
     mut count: Filesize,
 ) -> Result<Result<Filesize, Errno>, WasiError> {
     let mut env = ctx.data();
-    let net = env.net();
     let tasks = env.tasks().clone();
     let state = env.state.clone();
 
@@ -61,12 +60,11 @@ pub(crate) fn sock_send_file_internal(
 
     // Enter a loop that will process all the data
     let mut total_written: Filesize = 0;
-    while (count > 0) {
+    while count > 0 {
         let sub_count = count.min(4096);
         count -= sub_count;
 
         let fd_entry = wasi_try_ok_ok!(state.fs.get_fd(in_fd));
-        let fd_flags = fd_entry.flags;
 
         let data = {
             match in_fd {
@@ -98,8 +96,10 @@ pub(crate) fn sock_send_file_internal(
                         match guard.deref_mut() {
                             Kind::File { handle, .. } => {
                                 if let Some(handle) = handle {
-                                    let data =
-                                        wasi_try_ok_ok!(block_on_with_signals(ctx, None, async move {
+                                    let data = wasi_try_ok_ok!(block_on_with_signals(
+                                        ctx,
+                                        None,
+                                        async move {
                                             let mut buf = vec![0u8; sub_count as usize];
 
                                             let mut handle = handle.write().unwrap();
@@ -113,7 +113,8 @@ pub(crate) fn sock_send_file_internal(
                                                 .map_err(map_io_err)?;
                                             buf.truncate(amt);
                                             Ok(buf)
-                                        })?);
+                                        }
+                                    )?);
                                     env = ctx.data();
                                     data
                                 } else {
@@ -131,35 +132,47 @@ pub(crate) fn sock_send_file_internal(
                                     .flatten()
                                     .unwrap_or(Duration::from_secs(30));
 
-                                let data = wasi_try_ok_ok!(block_on_with_signals(ctx, None, async {
-                                    let mut buf = Vec::with_capacity(sub_count as usize);
-                                    unsafe {
-                                        buf.set_len(sub_count as usize);
-                                    }
-                                    socket
-                                        .recv(tasks.deref(), &mut buf, Some(read_timeout), false)
-                                        .await
-                                        .map(|amt| {
-                                            unsafe {
-                                                buf.set_len(amt);
-                                            }
-                                            let buf: Vec<u8> = unsafe { std::mem::transmute(buf) };
-                                            buf
-                                        })
-                                })?);
+                                let data =
+                                    wasi_try_ok_ok!(block_on_with_signals(ctx, None, async {
+                                        let mut buf = Vec::with_capacity(sub_count as usize);
+                                        unsafe {
+                                            buf.set_len(sub_count as usize);
+                                        }
+                                        socket
+                                            .recv(
+                                                tasks.deref(),
+                                                &mut buf,
+                                                Some(read_timeout),
+                                                false,
+                                            )
+                                            .await
+                                            .map(|amt| {
+                                                unsafe {
+                                                    buf.set_len(amt);
+                                                }
+                                                let buf: Vec<u8> =
+                                                    unsafe { std::mem::transmute(buf) };
+                                                buf
+                                            })
+                                    })?);
                                 env = ctx.data();
                                 data
                             }
                             Kind::Pipe { ref mut pipe, .. } => {
-                                let data = wasi_try_ok_ok!(block_on_with_signals(ctx, None, async move {
-                                    // TODO: optimize with MaybeUninit
-                                    let mut buf = vec![0u8; sub_count as usize];
-                                    let amt = virtual_fs::AsyncReadExt::read(pipe, &mut buf[..])
-                                        .await
-                                        .map_err(map_io_err)?;
-                                    buf.truncate(amt);
-                                    Ok(buf)
-                                })?);
+                                let data = wasi_try_ok_ok!(block_on_with_signals(
+                                    ctx,
+                                    None,
+                                    async move {
+                                        // TODO: optimize with MaybeUninit
+                                        let mut buf = vec![0u8; sub_count as usize];
+                                        let amt =
+                                            virtual_fs::AsyncReadExt::read(pipe, &mut buf[..])
+                                                .await
+                                                .map_err(map_io_err)?;
+                                        buf.truncate(amt);
+                                        Ok(buf)
+                                    }
+                                )?);
                                 env = ctx.data();
                                 data
                             }
@@ -207,7 +220,7 @@ pub(crate) fn sock_send_file_internal(
             env,
             sock,
             Rights::SOCK_SEND,
-            |socket, fd| async move {
+            |socket, _fd| async move {
                 let write_timeout = socket
                     .opt_time(TimeType::ReadTimeout)
                     .ok()

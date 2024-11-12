@@ -101,11 +101,6 @@ impl WasiControlPlane {
         WasiControlPlaneHandle::new(&self.state)
     }
 
-    /// Get the current count of active tasks (threads).
-    fn active_task_count(&self) -> usize {
-        self.state.task_count.load(Ordering::SeqCst)
-    }
-
     /// Register a new task.
     ///
     // Currently just increments the task counter.

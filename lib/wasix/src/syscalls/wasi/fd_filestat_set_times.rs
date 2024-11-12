@@ -1,5 +1,3 @@
-use std::borrow::BorrowMut;
-
 use super::*;
 use crate::syscalls::*;
 
@@ -23,8 +21,6 @@ pub fn fd_filestat_set_times(
     wasi_try_ok!(fd_filestat_set_times_internal(
         &mut ctx, fd, st_atim, st_mtim, fst_flags
     ));
-    let env = ctx.data();
-
     Ok(Errno::Success)
 }
 
@@ -36,7 +32,7 @@ pub(crate) fn fd_filestat_set_times_internal(
     fst_flags: Fstflags,
 ) -> Result<(), Errno> {
     let env = ctx.data();
-    let (_, mut state) = unsafe { env.get_memory_and_wasi_state(&ctx, 0) };
+    let (_, state) = unsafe { env.get_memory_and_wasi_state(&ctx, 0) };
     let fd_entry = state.fs.get_fd(fd)?;
 
     if !fd_entry.rights.contains(Rights::FD_FILESTAT_SET_TIMES) {
@@ -80,8 +76,7 @@ pub(crate) fn fd_filestat_set_times_internal(
     } = inode.kind.write().unwrap().deref()
     {
         let mut handle = handle.write().unwrap();
-
-        handle.set_times(atime, mtime);
+        let _ = handle.set_times(atime, mtime);
     }
 
     Ok(())

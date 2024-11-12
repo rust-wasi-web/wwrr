@@ -1,5 +1,3 @@
-use std::task::Waker;
-
 use super::*;
 use crate::syscalls::*;
 
@@ -11,7 +9,7 @@ use crate::syscalls::*;
 /// * `duration` - Amount of time that the thread should sleep
 #[instrument(level = "trace", skip_all, fields(%duration), ret)]
 pub fn thread_sleep<M: MemorySize + 'static>(
-    mut ctx: FunctionEnvMut<'_, WasiEnv>,
+    ctx: FunctionEnvMut<'_, WasiEnv>,
     duration: Timestamp,
 ) -> Result<Errno, WasiError> {
     thread_sleep_internal::<M>(ctx, duration)

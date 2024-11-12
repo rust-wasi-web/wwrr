@@ -38,7 +38,6 @@ pub fn tty_set<M: MemorySize>(
         #[allow(clippy::redundant_clone)]
         tty_set_internal(&mut ctx, state.clone())
     });
-    let env = ctx.data();
 
     Ok(Errno::Success)
 }

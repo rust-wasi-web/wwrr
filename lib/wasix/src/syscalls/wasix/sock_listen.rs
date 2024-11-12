@@ -19,7 +19,6 @@ pub fn sock_listen<M: MemorySize>(
     sock: WasiFd,
     backlog: M::Offset,
 ) -> Result<Errno, WasiError> {
-    let env = ctx.data();
     let backlog: usize = wasi_try_ok!(backlog.try_into().map_err(|_| Errno::Inval));
 
     wasi_try_ok!(sock_listen_internal(&mut ctx, sock, backlog)?);

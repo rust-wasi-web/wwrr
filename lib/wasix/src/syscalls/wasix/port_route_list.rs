@@ -16,14 +16,14 @@ pub fn port_route_list<M: MemorySize>(
     routes_ptr: WasmPtr<Route, M>,
     nroutes_ptr: WasmPtr<M::Offset, M>,
 ) -> Result<Errno, WasiError> {
-    let mut env = ctx.data();
-    let mut memory = unsafe { env.memory_view(&ctx) };
+    let env = ctx.data();
+    let memory = unsafe { env.memory_view(&ctx) };
     let ref_nroutes = nroutes_ptr.deref(&memory);
     let max_routes: usize = wasi_try_ok!(wasi_try_mem_ok!(ref_nroutes.read())
         .try_into()
         .map_err(|_| Errno::Inval));
     Span::current().record("max_routes", max_routes);
-    let ref_routes =
+    let _ref_routes =
         wasi_try_mem_ok!(routes_ptr.slice(&memory, wasi_try_ok!(to_offset::<M>(max_routes))));
 
     let net = env.net().clone();
@@ -46,7 +46,7 @@ pub fn port_route_list<M: MemorySize>(
         wasi_try_mem_ok!(routes_ptr.slice(&memory, wasi_try_ok!(to_offset::<M>(max_routes))));
     for n in 0..routes.len() {
         let nroute = ref_routes.index(n as u64);
-        crate::net::write_route(
+        let _ = crate::net::write_route(
             &memory,
             nroute.as_ptr::<M>(),
             routes.get(n).unwrap().clone(),

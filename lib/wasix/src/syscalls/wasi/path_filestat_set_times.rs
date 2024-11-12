@@ -30,9 +30,9 @@ pub fn path_filestat_set_times<M: MemorySize>(
     fst_flags: Fstflags,
 ) -> Result<Errno, WasiError> {
     let env = ctx.data();
-    let (memory, mut state, inodes) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
+    let (memory, _state, _inodes) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
 
-    let mut path_string = unsafe { get_input_str_ok!(&memory, path, path_len) };
+    let mut path_string = get_input_str_ok!(&memory, path, path_len);
     Span::current().record("path", path_string.as_str());
 
     // Convert relative paths into absolute paths
@@ -52,7 +52,6 @@ pub fn path_filestat_set_times<M: MemorySize>(
         st_mtim,
         fst_flags
     ));
-    let env = ctx.data();
 
     Ok(Errno::Success)
 }
@@ -67,7 +66,7 @@ pub(crate) fn path_filestat_set_times_internal(
     fst_flags: Fstflags,
 ) -> Result<(), Errno> {
     let env = ctx.data();
-    let (memory, mut state, inodes) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
+    let (_memory, state, inodes) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
     let fd_entry = state.fs.get_fd(fd)?;
     let fd_inode = fd_entry.inode;
     if !fd_entry.rights.contains(Rights::PATH_FILESTAT_SET_TIMES) {
@@ -83,7 +82,7 @@ pub(crate) fn path_filestat_set_times_internal(
         state
             .fs
             .get_inode_at_path(inodes, fd, path, flags & __WASI_LOOKUP_SYMLINK_FOLLOW != 0)?;
-    let stat = {
+    let _stat = {
         let guard = file_inode.read();
         state.fs.get_stat_for_kind(guard.deref())?
     };

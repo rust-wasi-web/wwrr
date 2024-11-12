@@ -16,11 +16,10 @@ pub fn fd_dup<M: MemorySize>(
     ret_fd: WasmPtr<WasiFd, M>,
 ) -> Result<Errno, WasiError> {
     let copied_fd = wasi_try_ok!(fd_dup_internal(&mut ctx, fd));
-    let env = ctx.data();
 
     Span::current().record("ret_fd", copied_fd);
     let env = ctx.data();
-    let (memory, state) = unsafe { env.get_memory_and_wasi_state(&ctx, 0) };
+    let (memory, _state) = unsafe { env.get_memory_and_wasi_state(&ctx, 0) };
     wasi_try_mem_ok!(ret_fd.write(&memory, copied_fd));
 
     Ok(Errno::Success)
@@ -31,7 +30,7 @@ pub(crate) fn fd_dup_internal(
     fd: WasiFd,
 ) -> Result<WasiFd, Errno> {
     let env = ctx.data();
-    let (memory, state) = unsafe { env.get_memory_and_wasi_state(&ctx, 0) };
+    let (_memory, state) = unsafe { env.get_memory_and_wasi_state(&ctx, 0) };
     let fd = state.fs.clone_fd(fd)?;
     Ok(fd)
 }

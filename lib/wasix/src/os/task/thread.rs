@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::{
     collections::HashMap,
     ops::{Deref, DerefMut},
@@ -98,7 +97,6 @@ pub struct ThreadStack {
 #[derive(Clone, Debug)]
 pub struct WasiThread {
     state: Arc<WasiThreadState>,
-    layout: WasiMemoryLayout,
     start: ThreadStartType,
 }
 
@@ -110,17 +108,6 @@ impl WasiThread {
     /// Gets the thread start type for this thread
     pub fn thread_start_type(&self) -> ThreadStartType {
         self.start
-    }
-
-    /// Gets the memory layout for this thread
-    #[allow(dead_code)]
-    pub(crate) fn memory_layout(&self) -> &WasiMemoryLayout {
-        &self.layout
-    }
-
-    /// Gets the memory layout for this thread
-    pub(crate) fn set_memory_layout(&mut self, layout: WasiMemoryLayout) {
-        self.layout = layout;
     }
 }
 
@@ -149,29 +136,6 @@ impl Drop for WasiThreadRunGuard {
     }
 }
 
-/// Represents the memory layout of the parts that the thread itself uses
-pub use wasmer_wasix_types::wasix::WasiMemoryLayout;
-
-#[derive(Clone, Debug)]
-pub enum RewindResultType {
-    // The rewind must restart the operation it had already started
-    RewindRestart,
-    // The rewind has been triggered and should be handled but has not result
-    RewindWithoutResult,
-    // The rewind has been triggered and should be handled with the supplied result
-    RewindWithResult(Bytes),
-}
-
-// Contains the result of a rewind operation
-#[derive(Clone, Debug)]
-pub(crate) struct RewindResult {
-    /// Memory stack used to restore the memory stack (thing that holds local variables) back to where it was
-    pub memory_stack: Option<Bytes>,
-    /// Generic serialized object passed back to the rewind resumption code
-    /// (uses the bincode serializer)
-    pub rewind_result: RewindResultType,
-}
-
 #[derive(Debug)]
 struct WasiThreadState {
     is_main: bool,
@@ -195,7 +159,6 @@ impl WasiThread {
         is_main: bool,
         status: Arc<OwnedTaskStatus>,
         guard: TaskCountGuard,
-        layout: WasiMemoryLayout,
         start: ThreadStartType,
     ) -> Self {
         Self {
@@ -208,7 +171,6 @@ impl WasiThread {
                 stack: Mutex::new(ThreadStack::default()),
                 _task_count_guard: guard,
             }),
-            layout,
             start,
         }
     }

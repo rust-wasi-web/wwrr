@@ -1,16 +1,11 @@
-use std::mem;
-
 use chrono::prelude::*;
 use wasmer::WasmRef;
 
-use crate::syscalls::types::{
-    wasi::{Errno, Snapshot0Clockid, Timestamp},
-    *,
-};
+use crate::syscalls::types::wasi::{Errno, Snapshot0Clockid, Timestamp};
 
 pub fn platform_clock_res_get(
     clock_id: Snapshot0Clockid,
-    resolution: WasmRef<Timestamp>,
+    _resolution: WasmRef<Timestamp>,
 ) -> Result<i64, Errno> {
     let t_out = match clock_id {
         Snapshot0Clockid::Monotonic => 10_000_000,
@@ -23,8 +18,8 @@ pub fn platform_clock_res_get(
 }
 
 pub fn platform_clock_time_get(
-    clock_id: Snapshot0Clockid,
-    precision: Timestamp,
+    _clock_id: Snapshot0Clockid,
+    _precision: Timestamp,
 ) -> Result<i64, Errno> {
     Local::now()
         .timestamp_nanos_opt()

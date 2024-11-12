@@ -26,13 +26,11 @@ pub fn port_route_add<M: MemorySize>(
     let preferred_until = match preferred_until.tag {
         OptionTag::None => None,
         OptionTag::Some => Some(Duration::from_nanos(preferred_until.u)),
-        _ => return Ok(Errno::Inval),
     };
     let expires_at = wasi_try_mem_ok!(expires_at.read(&memory));
     let expires_at = match expires_at.tag {
         OptionTag::None => None,
         OptionTag::Some => Some(Duration::from_nanos(expires_at.u)),
-        _ => return Ok(Errno::Inval),
     };
 
     wasi_try_ok!(port_route_add_internal(

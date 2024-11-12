@@ -42,13 +42,12 @@ pub use self::{
     func_env::WasiFunctionEnv,
     types::*,
 };
-pub use crate::fs::{InodeGuard, InodeWeakGuard};
+pub use crate::fs::InodeGuard;
 use crate::{
     fs::{fs_error_into_wasi_err, WasiFs, WasiFsRoot, WasiInodes, WasiStateFileGuard},
     syscalls::types::*,
     utils::WasiParkingLot,
 };
-pub(crate) use handles::*;
 
 /// all the rights enabled
 pub const ALL_RIGHTS: Rights = Rights::all();

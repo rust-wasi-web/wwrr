@@ -1,15 +1,12 @@
-use tracing::{field, instrument, trace_span};
-use wasmer::{AsStoreMut, AsStoreRef, FunctionEnvMut, Memory, WasmPtr};
+use tracing::{field, instrument};
+use wasmer::{FunctionEnvMut, WasmPtr};
 use wasmer_wasix_types::wasi::{
-    Errno, Event, EventFdReadwrite, Eventrwflags, Eventtype, ExitCode, Fd, Filesize, Filestat,
-    Filetype, Snapshot0Event, Snapshot0Filestat, Snapshot0Subscription, Snapshot0Whence,
-    Subscription, Whence,
+    Errno, Event, EventFdReadwrite, Eventrwflags, Eventtype, Fd, Filesize, Snapshot0Event,
+    Snapshot0Filestat, Snapshot0Subscription, Snapshot0Whence, Subscription, Whence,
 };
 
 use crate::{
-    mem_error_to_wasi,
-    os::task::thread::WasiThread,
-    state::{PollEventBuilder, PollEventSet},
+    state::PollEventSet,
     syscalls::{self, types},
     Memory32, MemorySize, WasiEnv, WasiError,
 };
@@ -21,8 +18,6 @@ pub fn fd_filestat_get(
     fd: Fd,
     buf: WasmPtr<Snapshot0Filestat, Memory32>,
 ) -> Errno {
-    let env = ctx.data();
-    let memory = unsafe { env.memory_view(&ctx) };
     let result = syscalls::fd_filestat_get_old::<Memory32>(ctx.as_mut(), fd, buf);
 
     result
@@ -38,9 +33,6 @@ pub fn path_filestat_get(
     path_len: u32,
     buf: WasmPtr<Snapshot0Filestat, Memory32>,
 ) -> Errno {
-    let env = ctx.data();
-    let memory = unsafe { env.memory_view(&ctx) };
-
     let result =
         syscalls::path_filestat_get_old::<Memory32>(ctx.as_mut(), fd, flags, path, path_len, buf);
 

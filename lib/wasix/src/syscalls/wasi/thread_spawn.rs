@@ -1,7 +1,6 @@
 use super::*;
 use crate::syscalls::*;
 
-use wasmer::Memory;
 use wasmer_wasix_types::wasi::ThreadStart;
 
 /// ### `thread_spawn()`

@@ -13,7 +13,7 @@ pub fn fd_event<M: MemorySize>(
     let fd = wasi_try_ok!(fd_event_internal(&mut ctx, initial_val, flags, None)?);
 
     let env = ctx.data();
-    let (memory, state, _) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
+    let (memory, _state, _) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
     Span::current().record("ret_fd", fd);
     wasi_try_mem_ok!(ret_fd.write(&memory, fd));
 
@@ -27,7 +27,7 @@ pub fn fd_event_internal(
     with_fd: Option<WasiFd>,
 ) -> Result<Result<WasiFd, Errno>, WasiError> {
     let env = ctx.data();
-    let (memory, state, mut inodes) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
+    let (_memory, state, inodes) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
 
     let is_semaphore = flags & EVENT_FD_FLAGS_SEMAPHORE != 0;
     let kind = Kind::EventNotifications {

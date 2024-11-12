@@ -18,13 +18,13 @@ pub fn path_unlink_file<M: MemorySize>(
     path_len: M::Offset,
 ) -> Result<Errno, WasiError> {
     let env = ctx.data();
-    let (memory, mut state, inodes) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
+    let (memory, state, _inodes) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
 
     let base_dir = wasi_try_ok!(state.fs.get_fd(fd));
     if !base_dir.rights.contains(Rights::PATH_UNLINK_FILE) {
         return Ok(Errno::Access);
     }
-    let mut path_str = unsafe { get_input_str_ok!(&memory, path, path_len) };
+    let mut path_str = get_input_str_ok!(&memory, path, path_len);
     Span::current().record("path", path_str.as_str());
 
     // Convert relative paths into absolute paths
@@ -33,7 +33,6 @@ pub fn path_unlink_file<M: MemorySize>(
     }
 
     let ret = path_unlink_file_internal(&mut ctx, fd, &path_str)?;
-    let env = ctx.data();
 
     Ok(ret)
 }
@@ -44,7 +43,7 @@ pub(crate) fn path_unlink_file_internal(
     path: &str,
 ) -> Result<Errno, WasiError> {
     let env = ctx.data();
-    let (memory, mut state, inodes) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
+    let (_memory, state, inodes) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
 
     let inode = wasi_try_ok!(state.fs.get_inode_at_path(inodes, fd, path, false));
     let (parent_inode, childs_name) = wasi_try_ok!(state.fs.get_parent_inode_at_path(
@@ -80,7 +79,7 @@ pub(crate) fn path_unlink_file_internal(
     };
     if st_nlink == 0 {
         {
-            let mut guard = removed_inode.read();
+            let guard = removed_inode.read();
             match guard.deref() {
                 Kind::File { handle, path, .. } => {
                     if let Some(h) = handle {

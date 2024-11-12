@@ -1,5 +1,3 @@
-use std::task::Waker;
-
 use super::*;
 use crate::{net::socket::TimeType, syscalls::*};
 
@@ -30,7 +28,6 @@ pub fn fd_write<M: MemorySize>(
     let env = ctx.data();
     let offset = {
         let state = env.state.clone();
-        let inodes = state.inodes.clone();
 
         let fd_entry = wasi_try_ok!(state.fs.get_fd(fd));
         fd_entry.offset.load(Ordering::Acquire) as usize
@@ -46,7 +43,7 @@ pub fn fd_write<M: MemorySize>(
 
     Span::current().record("nwritten", bytes_written);
 
-    let mut env = ctx.data();
+    let env = ctx.data();
     let memory = unsafe { env.memory_view(&ctx) };
     let nwritten_ref = nwritten.deref(&memory);
     let bytes_written: M::Offset =
@@ -91,7 +88,7 @@ pub fn fd_pwrite<M: MemorySize>(
 
     Span::current().record("nwritten", bytes_written);
 
-    let mut env = ctx.data();
+    let env = ctx.data();
     let memory = unsafe { env.memory_view(&ctx) };
     let nwritten_ref = nwritten.deref(&memory);
     let bytes_written: M::Offset =
@@ -106,6 +103,7 @@ pub(crate) enum FdWriteSource<'a, M: MemorySize> {
         iovs: WasmPtr<__wasi_ciovec_t<M>, M>,
         iovs_len: M::Offset,
     },
+    #[allow(dead_code)]
     Buffer(Cow<'a, [u8]>),
 }
 
@@ -117,7 +115,7 @@ pub(crate) fn fd_write_internal<M: MemorySize>(
     offset: u64,
     should_update_cursor: bool,
 ) -> Result<Result<usize, Errno>, WasiError> {
-    let mut env = ctx.data();
+    let env = ctx.data();
     let state = env.state.clone();
 
     let fd_entry = wasi_try_ok_ok!(state.fs.get_fd(fd));
@@ -129,10 +127,9 @@ pub(crate) fn fd_write_internal<M: MemorySize>(
         }
 
         let fd_flags = fd_entry.flags;
-        let mut memory = unsafe { env.memory_view(&ctx) };
 
-        let (bytes_written, is_file, can_snapshot) = {
-            let (mut memory, _) = unsafe { env.get_memory_and_wasi_state(&ctx, 0) };
+        let (bytes_written, is_file, _can_snapshot) = {
+            let (memory, _) = unsafe { env.get_memory_and_wasi_state(&ctx, 0) };
             let mut guard = fd_entry.inode.write();
             match guard.deref_mut() {
                 Kind::File { handle, .. } => {
@@ -388,8 +385,8 @@ pub(crate) fn fd_write_internal<M: MemorySize>(
             }
         };
 
-        env = ctx.data();
-        memory = unsafe { env.memory_view(&ctx) };
+        // env = ctx.data();
+        // memory = unsafe { env.memory_view(&ctx) };
 
         // reborrow and update the size
         if !is_stdio {
@@ -408,8 +405,7 @@ pub(crate) fn fd_write_internal<M: MemorySize>(
 
             // we set the size but we don't return any errors if it fails as
             // pipes and sockets will not do anything with this
-            let (mut memory, _, inodes) =
-                unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
+            // let (memory, _, inodes) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
             if is_file {
                 let mut stat = fd_entry.inode.stat.write().unwrap();
                 if should_update_cursor {

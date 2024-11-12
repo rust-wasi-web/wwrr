@@ -15,8 +15,6 @@ pub fn fd_renumber(
     to: WasiFd,
 ) -> Result<Errno, WasiError> {
     let ret = fd_renumber_internal(&mut ctx, from, to);
-    let env = ctx.data();
-
     Ok(ret)
 }
 
@@ -29,7 +27,7 @@ pub(crate) fn fd_renumber_internal(
         return Errno::Success;
     }
     let env = ctx.data();
-    let (_, mut state) = unsafe { env.get_memory_and_wasi_state(&ctx, 0) };
+    let (_, state) = unsafe { env.get_memory_and_wasi_state(&ctx, 0) };
 
     let mut fd_map = state.fs.fd_map.write().unwrap();
     let fd_entry = wasi_try!(fd_map.get_mut(&from).ok_or(Errno::Badf));

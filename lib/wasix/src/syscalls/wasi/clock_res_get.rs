@@ -11,7 +11,7 @@ use crate::syscalls::*;
 ///     The resolution of the clock in nanoseconds
 #[instrument(level = "trace", skip_all, ret)]
 pub fn clock_res_get<M: MemorySize>(
-    mut ctx: FunctionEnvMut<'_, WasiEnv>,
+    ctx: FunctionEnvMut<'_, WasiEnv>,
     clock_id: Snapshot0Clockid,
     resolution: WasmPtr<Timestamp, M>,
 ) -> Errno {

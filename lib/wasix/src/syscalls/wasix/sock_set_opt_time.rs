@@ -22,7 +22,6 @@ pub fn sock_set_opt_time<M: MemorySize>(
     let time = match time.tag {
         OptionTag::None => None,
         OptionTag::Some => Some(Duration::from_nanos(time.u)),
-        _ => return Ok(Errno::Inval),
     };
     Span::current().record("time", &format!("{:?}", time));
 

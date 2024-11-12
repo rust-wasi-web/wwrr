@@ -42,8 +42,7 @@ pub fn path_open<M: MemorySize>(
         Span::current().record("follow_symlinks", true);
     }
     let env = ctx.data();
-    let (memory, mut state, mut inodes) =
-        unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
+    let (memory, _state, _inodes) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
     /* TODO: find actual upper bound on name size (also this is a path, not a name :think-fish:) */
     let path_len64: u64 = path_len.into();
     if path_len64 > 1024u64 * 1024u64 {
@@ -60,7 +59,7 @@ pub fn path_open<M: MemorySize>(
     // - __WASI_O_EXCL (fail if file exists)
     // - __WASI_O_TRUNC (truncate size to 0)
 
-    let mut path_string = unsafe { get_input_str_ok!(&memory, path, path_len) };
+    let mut path_string = get_input_str_ok!(&memory, path, path_len);
     Span::current().record("path", path_string.as_str());
 
     // Convert relative paths into absolute paths
@@ -82,11 +81,9 @@ pub fn path_open<M: MemorySize>(
         fs_flags,
         None,
     )?);
-    let env = ctx.data();
 
     let env = ctx.data();
-    let (memory, mut state, mut inodes) =
-        unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
+    let (memory, _state, _inodes) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
 
     Span::current().record("ret_fd", out_fd);
 
@@ -108,8 +105,7 @@ pub(crate) fn path_open_internal(
     with_fd: Option<WasiFd>,
 ) -> Result<Result<WasiFd, Errno>, WasiError> {
     let env = ctx.data();
-    let (memory, mut state, mut inodes) =
-        unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
+    let (_memory, state, inodes) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
 
     let path_arg = std::path::PathBuf::from(&path);
     let maybe_inode = state.fs.get_inode_at_path(
@@ -268,11 +264,7 @@ pub(crate) fn path_open_internal(
             | Kind::Pipe { .. }
             | Kind::EventNotifications { .. }
             | Kind::Epoll { .. } => {}
-            Kind::Symlink {
-                base_po_dir,
-                path_to_symlink,
-                relative_path,
-            } => {
+            Kind::Symlink { .. } => {
                 // I think this should return an error (because symlinks should be resolved away by the path traversal)
                 // TODO: investigate this
                 unimplemented!("SYMLINKS IN PATH_OPEN");

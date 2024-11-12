@@ -65,8 +65,8 @@ pub fn poll_oneoff<M: MemorySize + 'static>(
     wasi_try_ok!(WasiEnv::process_signals_and_exit(&mut ctx)?);
 
     ctx.data_mut().poll_seed += 1;
-    let mut env = ctx.data();
-    let mut memory = unsafe { env.memory_view(&ctx) };
+    let env = ctx.data();
+    let memory = unsafe { env.memory_view(&ctx) };
 
     let subscription_array = wasi_try_mem_ok!(in_.slice(&memory, nsubscriptions));
     let mut subscriptions = Vec::with_capacity(subscription_array.len() as usize);
@@ -82,8 +82,8 @@ pub fn poll_oneoff<M: MemorySize + 'static>(
 
     // Function to invoke once the poll is finished
     let process_events = |ctx: &FunctionEnvMut<'_, WasiEnv>, triggered_events: Vec<Event>| {
-        let mut env = ctx.data();
-        let mut memory = unsafe { env.memory_view(&ctx) };
+        let env = ctx.data();
+        let memory = unsafe { env.memory_view(&ctx) };
 
         // Process all the events that were triggered
         let mut events_seen: u32 = 0;
@@ -103,11 +103,15 @@ pub fn poll_oneoff<M: MemorySize + 'static>(
 }
 
 struct PollBatch {
+    #[allow(dead_code)]
     pid: WasiProcessId,
+    #[allow(dead_code)]
     tid: WasiThreadId,
+    #[allow(dead_code)]
     evts: Vec<Event>,
     joins: Vec<InodeValFilePollGuardJoin>,
 }
+
 impl PollBatch {
     fn new(pid: WasiProcessId, tid: WasiThreadId, fds: Vec<InodeValFilePollGuard>) -> Self {
         Self {
@@ -121,18 +125,15 @@ impl PollBatch {
         }
     }
 }
+
 impl Future for PollBatch {
     type Output = Result<Vec<EventResult>, Errno>;
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let pid = self.pid;
-        let tid = self.tid;
-        let mut done = false;
-
         let mut evts = Vec::new();
-        for mut join in self.joins.iter_mut() {
+        for join in self.joins.iter_mut() {
             let fd = join.fd();
             let peb = join.peb();
-            let mut guard = Pin::new(join);
+            let guard = Pin::new(join);
             match guard.poll(cx) {
                 Poll::Pending => {}
                 Poll::Ready(e) => {
@@ -217,29 +218,18 @@ where
 
     let pid = ctx.data().pid();
     let tid = ctx.data().tid();
-    let subs_len = subs.len();
-
-    // Determine if we are in silent polling mode
-    let mut env = ctx.data();
-    let state = ctx.data().state.deref();
-    let memory = unsafe { env.memory_view(&ctx) };
 
     // These are used when we capture what clocks (timeouts) are being
     // subscribed too
-    let clock_cnt = subs
-        .iter()
-        .filter(|a| a.2.type_ == Eventtype::Clock)
-        .count();
     let mut clock_subs: Vec<(SubscriptionClock, u64)> = Vec::with_capacity(subs.len());
     let mut time_to_sleep = Duration::MAX;
 
     // First we extract all the subscriptions into an array so that they
     // can be processed
-    let mut env = ctx.data();
+    let env = ctx.data();
     let state = ctx.data().state.deref();
-    let mut memory = unsafe { env.memory_view(&ctx) };
     for (fd, peb, s) in subs.iter_mut() {
-        let fd = match s.type_ {
+        match s.type_ {
             Eventtype::FdRead => {
                 let file_descriptor = unsafe { s.data.fd_readwrite.file_descriptor };
                 match file_descriptor {
@@ -255,8 +245,7 @@ where
                     }
                 }
                 *fd = Some(file_descriptor);
-                *peb |= (PollEvent::PollIn as PollEventSet);
-                file_descriptor
+                *peb |= PollEvent::PollIn as PollEventSet;
             }
             Eventtype::FdWrite => {
                 let file_descriptor = unsafe { s.data.fd_readwrite.file_descriptor };
@@ -273,8 +262,7 @@ where
                     }
                 }
                 *fd = Some(file_descriptor);
-                *peb |= (PollEvent::PollOut as PollEventSet);
-                file_descriptor
+                *peb |= PollEvent::PollOut as PollEventSet;
             }
             Eventtype::Clock => {
                 let clock_info = unsafe { s.data.clock };
@@ -329,13 +317,10 @@ where
         };
     }
 
-    let mut events_seen: u32 = 0;
-
     let batch = {
         // Build the batch of things we are going to poll
         let state = ctx.data().state.clone();
-        let tasks = ctx.data().tasks().clone();
-        let mut guards = {
+        let guards = {
             // We start by building a list of files we are going to poll
             // and open a read lock on them all
             let mut fd_guards = Vec::with_capacity(subs.len());
@@ -381,7 +366,7 @@ where
     // Function to process a timeout
     let process_timeout = {
         let clock_subs = clock_subs.clone();
-        |ctx: &FunctionEnvMut<'a, WasiEnv>| {
+        |_ctx: &FunctionEnvMut<'a, WasiEnv>| {
             // The timeout has triggered so lets add that event
             if clock_subs.is_empty() {
                 tracing::warn!("triggered_timeout (without any clock subscriptions)",);
@@ -426,7 +411,6 @@ where
     // We replace the process events callback with another callback
     // which will interpret the error codes
     let process_events = {
-        let clock_subs = clock_subs.clone();
         |ctx: &FunctionEnvMut<'a, WasiEnv>, events: Result<Vec<Event>, Errno>| {
             // Process the result
             match events {

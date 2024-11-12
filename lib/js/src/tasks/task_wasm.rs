@@ -30,7 +30,6 @@ pub(crate) fn to_scheduler_message(
         module,
         spawn_type,
         trigger,
-        update_layout,
         recycle,
         globals,
     } = task;
@@ -94,7 +93,6 @@ pub(crate) fn to_scheduler_message(
         run_type,
         env,
         module_bytes,
-        update_layout,
         result: None,
         recycle,
         store_snapshot,
@@ -196,7 +194,6 @@ pub(crate) struct SpawnWasm {
     /// returned value is used in [`wasmer_wasix::rewind()`] or instant
     /// responses.
     trigger: Option<WasmRunTrigger>,
-    update_layout: bool,
     /// The result of running the trigger.
     result: Option<Result<Bytes, ExitCode>>,
     #[derivative(Debug(format_with = "crate::utils::hidden"))]
@@ -242,7 +239,6 @@ impl ReadySpawnWasm {
             run_type,
             env,
             module_bytes,
-            update_layout,
             result,
             trigger: _,
             recycle,
@@ -257,7 +253,6 @@ impl ReadySpawnWasm {
             env,
             store_snapshot,
             run_type,
-            update_layout,
         )
         .context("Unable to initialize the context and store")?;
 
@@ -280,7 +275,6 @@ fn build_ctx_and_store(
     env: WasiEnv,
     store_snapshot: Option<StoreSnapshot>,
     run_type: WasmMemoryType,
-    update_layout: bool,
 ) -> Option<(WasiFunctionEnv, Store)> {
     // Compile the web assembly module
     let module: Module = (module, module_bytes).into();
@@ -302,21 +296,16 @@ fn build_ctx_and_store(
         }
     };
 
-    let (ctx, store) = match WasiFunctionEnv::new_with_store(
-        module,
-        env,
-        store_snapshot.as_ref(),
-        spawn_type,
-        update_layout,
-    ) {
-        Ok(a) => a,
-        Err(err) => {
-            tracing::error!(
-                error = &err as &dyn std::error::Error,
-                "Failed to crate wasi context",
-            );
-            return None;
-        }
-    };
+    let (ctx, store) =
+        match WasiFunctionEnv::new_with_store(module, env, store_snapshot.as_ref(), spawn_type) {
+            Ok(a) => a,
+            Err(err) => {
+                tracing::error!(
+                    error = &err as &dyn std::error::Error,
+                    "Failed to crate wasi context",
+                );
+                return None;
+            }
+        };
     Some((ctx, store))
 }

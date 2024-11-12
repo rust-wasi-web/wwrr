@@ -11,10 +11,10 @@ pub fn path_remove_directory<M: MemorySize>(
 ) -> Errno {
     // TODO check if fd is a dir, ensure it's within sandbox, etc.
     let env = ctx.data();
-    let (memory, mut state, inodes) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
+    let (memory, state, _inodes) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
 
-    let base_dir = wasi_try!(state.fs.get_fd(fd));
-    let mut path_str = unsafe { get_input_str!(&memory, path, path_len) };
+    let _base_dir = wasi_try!(state.fs.get_fd(fd));
+    let mut path_str = get_input_str!(&memory, path, path_len);
     Span::current().record("path", path_str.as_str());
 
     // Convert relative paths into absolute paths
@@ -26,7 +26,6 @@ pub fn path_remove_directory<M: MemorySize>(
     }
 
     wasi_try!(path_remove_directory_internal(&mut ctx, fd, &path_str));
-    let env = ctx.data();
 
     Errno::Success
 }
@@ -37,7 +36,7 @@ pub(crate) fn path_remove_directory_internal(
     path: &str,
 ) -> Result<(), Errno> {
     let env = ctx.data();
-    let (memory, state, inodes) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
+    let (_memory, state, inodes) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
     let working_dir = state.fs.get_fd(fd)?;
 
     let path = std::path::PathBuf::from(path);
@@ -55,7 +54,7 @@ pub(crate) fn path_remove_directory_internal(
         return Err(Errno::Inval);
     }
 
-    let (child, parent) = path_vec.split_last().unwrap();
+    let (child, _parent) = path_vec.split_last().unwrap();
 
     // if path only contains one component (the root), operation is not permitted
     if child.is_empty() {
@@ -85,14 +84,12 @@ pub(crate) fn path_remove_directory_internal(
                 if let Some(child) = entries.get(comp) {
                     cur_dir_inode = child.clone();
                 } else {
-                    let parent_path = path.clone();
                     let mut adjusted_path = path.clone();
                     drop(guard);
 
                     // TODO: double check this doesn't risk breaking the sandbox
                     adjusted_path.push(comp);
                     if let Ok(adjusted_path_stat) = path_filestat_get_internal(
-                        &memory,
                         state,
                         inodes,
                         fd,
@@ -142,13 +139,13 @@ pub(crate) fn path_remove_directory_internal(
     if let Kind::Dir {
         parent,
         path: child_path,
-        entries,
+        ..
     } = cur_dir_inode.write().deref_mut()
     {
         let parent = parent.upgrade().ok_or(Errno::Noent)?;
 
         if let Kind::Dir { entries, .. } = parent.write().deref_mut() {
-            let child_inode = entries.remove(child).ok_or(Errno::Noent)?;
+            let _child_inode = entries.remove(child).ok_or(Errno::Noent)?;
 
             if let Err(e) = state.fs_remove_dir(&child_path) {
                 tracing::warn!(path = ?child_path, error = ?e, "failed to remove directory");

@@ -12,11 +12,11 @@ use wasmer::{AsStoreMut, Extern, Imports, Instance, Module, Store};
 
 use crate::{
     fs::{WasiFs, WasiFsRoot, WasiInodes},
-    os::task::control_plane::{ControlPlaneConfig, ControlPlaneError, WasiControlPlane},
+    os::task::control_plane::{ControlPlaneError, WasiControlPlane},
     state::WasiState,
     syscalls::types::{__WASI_STDERR_FILENO, __WASI_STDIN_FILENO, __WASI_STDOUT_FILENO},
     utils::xxhash_random,
-    Runtime, WasiEnv, WasiError, WasiFunctionEnv, WasiRuntimeError,
+    Runtime, WasiEnv, WasiFunctionEnv, WasiRuntimeError,
 };
 use wasmer_types::ModuleHash;
 

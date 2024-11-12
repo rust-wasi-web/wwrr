@@ -24,13 +24,12 @@ pub fn fd_seek<M: MemorySize>(
     wasi_try_ok!(WasiEnv::process_signals_and_exit(&mut ctx)?);
 
     let new_offset = wasi_try_ok!(fd_seek_internal(&mut ctx, fd, offset, whence)?);
-    let env = ctx.data();
 
     // reborrow
     let env = ctx.data();
     let memory = unsafe { env.memory_view(&ctx) };
     let new_offset_ref = newoffset.deref(&memory);
-    let fd_entry = wasi_try_ok!(env.state.fs.get_fd(fd));
+    let _fd_entry = wasi_try_ok!(env.state.fs.get_fd(fd));
     wasi_try_mem_ok!(new_offset_ref.write(new_offset));
 
     trace!(
@@ -48,7 +47,6 @@ pub(crate) fn fd_seek_internal(
 ) -> Result<Result<Filesize, Errno>, WasiError> {
     let env = ctx.data();
     let state = env.state.clone();
-    let (memory, _) = unsafe { env.get_memory_and_wasi_state(&ctx, 0) };
     let fd_entry = wasi_try_ok_ok!(state.fs.get_fd(fd));
 
     if !fd_entry.rights.contains(Rights::FD_SEEK) {

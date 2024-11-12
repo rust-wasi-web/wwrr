@@ -1,14 +1,7 @@
-use std::{collections::VecDeque, task::Waker};
-
-use virtual_fs::{AsyncReadExt, ReadBuf};
+use virtual_fs::AsyncReadExt;
 
 use super::*;
-use crate::{
-    fs::NotificationInner,
-    net::socket::TimeType,
-    os::task::process::{MaybeCheckpointResult, WasiProcessCheckpoint, WasiProcessInner},
-    syscalls::*,
-};
+use crate::{fs::NotificationInner, net::socket::TimeType, syscalls::*};
 
 /// ### `fd_read()`
 /// Read data from file descriptor
@@ -31,19 +24,15 @@ pub fn fd_read<M: MemorySize>(
     iovs_len: M::Offset,
     nread: WasmPtr<M::Offset, M>,
 ) -> Result<Errno, WasiError> {
-    let pid = ctx.data().pid();
-    let tid = ctx.data().tid();
-
     let offset = {
-        let mut env = ctx.data();
+        let env = ctx.data();
         let state = env.state.clone();
-        let inodes = state.inodes.clone();
 
         let fd_entry = wasi_try_ok!(state.fs.get_fd(fd));
         fd_entry.offset.load(Ordering::Acquire) as usize
     };
 
-    let res = fd_read_internal::<M>(&mut ctx, fd, iovs, iovs_len, offset, nread, true)?;
+    let res = fd_read_internal::<M>(&mut ctx, fd, iovs, iovs_len, offset, true)?;
     fd_read_internal_handler(ctx, res, nread)
 }
 
@@ -71,15 +60,12 @@ pub fn fd_pread<M: MemorySize>(
     offset: Filesize,
     nread: WasmPtr<M::Offset, M>,
 ) -> Result<Errno, WasiError> {
-    let pid = ctx.data().pid();
-    let tid = ctx.data().tid();
-
-    let res = fd_read_internal::<M>(&mut ctx, fd, iovs, iovs_len, offset as usize, nread, false)?;
+    let res = fd_read_internal::<M>(&mut ctx, fd, iovs, iovs_len, offset as usize, false)?;
     fd_read_internal_handler::<M>(ctx, res, nread)
 }
 
 pub(crate) fn fd_read_internal_handler<M: MemorySize>(
-    mut ctx: FunctionEnvMut<'_, WasiEnv>,
+    ctx: FunctionEnvMut<'_, WasiEnv>,
     res: Result<usize, Errno>,
     nread: WasmPtr<M::Offset, M>,
 ) -> Result<Errno, WasiError> {
@@ -97,9 +83,6 @@ pub(crate) fn fd_read_internal_handler<M: MemorySize>(
 
     let env = ctx.data();
     let memory = unsafe { env.memory_view(&ctx) };
-
-    let env = ctx.data();
-    let memory = unsafe { env.memory_view(&ctx) };
     let nread_ref = nread.deref(&memory);
     wasi_try_mem_ok!(nread_ref.write(bytes_read));
 
@@ -113,7 +96,6 @@ pub(crate) fn fd_read_internal<M: MemorySize>(
     iovs: WasmPtr<__wasi_iovec_t<M>, M>,
     iovs_len: M::Offset,
     offset: usize,
-    nread: WasmPtr<M::Offset, M>,
     should_update_cursor: bool,
 ) -> WasiResult<usize> {
     wasi_try_ok_ok!(WasiEnv::process_signals_and_exit(ctx)?);
@@ -355,15 +337,13 @@ pub(crate) fn fd_read_internal<M: MemorySize>(
                     }
 
                     // Yield until the notifications are triggered
-                    let tasks_inner = env.tasks().clone();
-
                     let res = block_on(poller).map_err(|err| match err {
                         Errno::Timedout => Errno::Again,
                         a => a,
                     });
                     let val = wasi_try_ok_ok!(res);
 
-                    let mut memory = unsafe { env.memory_view(ctx) };
+                    let memory = unsafe { env.memory_view(ctx) };
                     let reader = val.to_ne_bytes();
                     let iovs_arr = wasi_try_mem_ok_ok!(iovs.slice(&memory, iovs_len));
                     let ret = wasi_try_ok_ok!(read_bytes(&reader[..], &memory, iovs_arr));
@@ -385,7 +365,7 @@ pub(crate) fn fd_read_internal<M: MemorySize>(
             // reborrow
             let mut fd_map = state.fs.fd_map.write().unwrap();
             let fd_entry = wasi_try_ok_ok!(fd_map.get_mut(&fd).ok_or(Errno::Badf));
-            let old = fd_entry
+            fd_entry
                 .offset
                 .fetch_add(bytes_read as u64, Ordering::AcqRel);
         }

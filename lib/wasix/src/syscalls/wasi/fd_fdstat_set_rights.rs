@@ -23,8 +23,6 @@ pub fn fd_fdstat_set_rights(
         fs_rights_base,
         fs_rights_inheriting
     ));
-    let env = ctx.data();
-
     Ok(Errno::Success)
 }
 
@@ -35,7 +33,7 @@ pub(crate) fn fd_fdstat_set_rights_internal(
     fs_rights_inheriting: Rights,
 ) -> Result<(), Errno> {
     let env = ctx.data();
-    let (_, mut state) = unsafe { env.get_memory_and_wasi_state(&ctx, 0) };
+    let (_, state) = unsafe { env.get_memory_and_wasi_state(&ctx, 0) };
     let mut fd_map = state.fs.fd_map.write().unwrap();
     let fd_entry = fd_map.get_mut(&fd).ok_or(Errno::Badf)?;
 

@@ -28,13 +28,13 @@ pub fn path_readlink<M: MemorySize>(
     buf_used: WasmPtr<M::Offset, M>,
 ) -> Errno {
     let env = ctx.data();
-    let (memory, mut state, inodes) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
+    let (memory, state, inodes) = unsafe { env.get_memory_and_wasi_state_and_inodes(&ctx, 0) };
 
     let base_dir = wasi_try!(state.fs.get_fd(dir_fd));
     if !base_dir.rights.contains(Rights::PATH_READLINK) {
         return Errno::Access;
     }
-    let mut path_str = unsafe { get_input_str!(&memory, path, path_len) };
+    let mut path_str = get_input_str!(&memory, path, path_len);
     Span::current().record("path", path_str.as_str());
 
     // Convert relative paths into absolute paths

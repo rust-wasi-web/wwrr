@@ -15,7 +15,6 @@ pub(crate) fn port_dhcp_acquire_internal(
 ) -> Result<Result<(), Errno>, WasiError> {
     let env = ctx.data();
     let net = env.net().clone();
-    let tasks = env.tasks().clone();
     wasi_try_ok_ok!(block_on_with_signals(ctx, None, async move {
         net.dhcp_acquire().await.map_err(net_error_into_wasi_err)
     })?);

@@ -10,19 +10,18 @@ pub fn chdir<M: MemorySize>(
     path_len: M::Offset,
 ) -> Result<Errno, WasiError> {
     let env = ctx.data();
-    let (memory, mut state) = unsafe { env.get_memory_and_wasi_state(&ctx, 0) };
-    let path = unsafe { get_input_str_ok!(&memory, path, path_len) };
+    let (memory, _state) = unsafe { env.get_memory_and_wasi_state(&ctx, 0) };
+    let path = get_input_str_ok!(&memory, path, path_len);
     Span::current().record("path", path.as_str());
 
     wasi_try_ok!(chdir_internal(&mut ctx, &path,));
-    let env = ctx.data();
 
     Ok(Errno::Success)
 }
 
 pub fn chdir_internal(ctx: &mut FunctionEnvMut<'_, WasiEnv>, path: &str) -> Result<(), Errno> {
     let env = ctx.data();
-    let (memory, mut state) = unsafe { env.get_memory_and_wasi_state(ctx, 0) };
+    let (_memory, state) = unsafe { env.get_memory_and_wasi_state(ctx, 0) };
 
     // Check if the directory exists
     if state.fs.root_fs.read_dir(Path::new(path)).is_err() {

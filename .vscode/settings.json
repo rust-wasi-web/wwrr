@@ -6,4 +6,7 @@
         "Cargo.toml",
     ],
     "rust-analyzer.checkOnSave": true,
+    "rust-analyzer.diagnostics.warningsAsHint": [],
+    "rust-analyzer.diagnostics.warningsAsInfo": [],
+
 }

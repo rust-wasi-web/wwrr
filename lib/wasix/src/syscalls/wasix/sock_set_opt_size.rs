@@ -1,5 +1,5 @@
 use super::*;
-use crate::{net::socket::TimeType, syscalls::*};
+use crate::syscalls::*;
 
 /// ### `sock_set_opt_size()
 /// Set size of particular option for this socket
@@ -28,16 +28,6 @@ pub(crate) fn sock_set_opt_size_internal(
     opt: Sockoption,
     size: Filesize,
 ) -> Result<Result<(), Errno>, WasiError> {
-    let ty = match opt {
-        Sockoption::RecvTimeout => TimeType::ReadTimeout,
-        Sockoption::SendTimeout => TimeType::WriteTimeout,
-        Sockoption::ConnectTimeout => TimeType::ConnectTimeout,
-        Sockoption::AcceptTimeout => TimeType::AcceptTimeout,
-        Sockoption::Linger => TimeType::Linger,
-        _ => return Ok(Err(Errno::Inval)),
-    };
-
-    let option: crate::net::socket::WasiSocketOption = opt.into();
     wasi_try_ok_ok!(__sock_actor_mut(
         ctx,
         sock,

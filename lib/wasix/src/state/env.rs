@@ -3,11 +3,11 @@ use std::{ops::Deref, sync::Arc, time::Duration};
 use derivative::Derivative;
 use futures::future::BoxFuture;
 use rand::Rng;
-use virtual_fs::{FileSystem, FsError, VirtualFile};
+use virtual_fs::{FsError, VirtualFile};
 use virtual_net::DynVirtualNetworking;
 use wasmer::{
-    AsStoreMut, AsStoreRef, FunctionEnvMut, Global, Imports, Instance, Memory, MemoryType,
-    MemoryView, Module, TypedFunction,
+    AsStoreMut, AsStoreRef, FunctionEnvMut, Imports, Instance, Memory, MemoryType, MemoryView,
+    Module, TypedFunction,
 };
 use wasmer_wasix_types::{
     types::Signal,
@@ -21,12 +21,12 @@ use crate::{
     os::task::{
         control_plane::ControlPlaneError,
         process::{WasiProcess, WasiProcessId},
-        thread::{WasiMemoryLayout, WasiThread, WasiThreadHandle, WasiThreadId},
+        thread::{WasiThread, WasiThreadHandle, WasiThreadId},
     },
     runtime::{task_manager::InlineWaker, SpawnMemoryType},
     syscalls::platform_clock_time_get,
     Runtime, VirtualTaskManager, WasiControlPlane, WasiEnvBuilder, WasiError, WasiFunctionEnv,
-    WasiResult, WasiRuntimeError, WasiStateCreationError, WasiVFork,
+    WasiResult, WasiRuntimeError, WasiVFork,
 };
 use wasmer_types::ModuleHash;
 
@@ -46,18 +46,6 @@ pub struct WasiInstanceHandles {
     pub(crate) memory: Memory,
     pub(crate) instance: wasmer::Instance,
 
-    /// Points to the current location of the memory stack pointer
-    pub(crate) stack_pointer: Option<Global>,
-
-    /// Points to the end of the data section
-    pub(crate) data_end: Option<Global>,
-
-    /// Points to the lower end of the stack
-    pub(crate) stack_low: Option<Global>,
-
-    /// Points to the higher end of the stack
-    pub(crate) stack_high: Option<Global>,
-
     /// Main function that will be invoked (name = "_start")
     #[derivative(Debug = "ignore")]
     pub(crate) start: Option<TypedFunction<(), ()>>,
@@ -68,11 +56,11 @@ pub struct WasiInstanceHandles {
     #[allow(dead_code)]
     pub(crate) initialize: Option<TypedFunction<(), ()>>,
 
-    /// Represents the callback for spawning a thread (name = "wasi_thread_start")
+    /// Represents the callback for starting a thread (name = "wasi_thread_start")
     /// (due to limitations with i64 in browsers the parameters are broken into i32 pairs)
     /// [this takes a user_data field]
     #[derivative(Debug = "ignore")]
-    pub(crate) thread_spawn: Option<TypedFunction<(i32, i32), ()>>,
+    pub(crate) thread_start: Option<TypedFunction<(i32, i32), ()>>,
 
     /// Represents the callback for signals (name = "__wasm_signal")
     /// Signals are triggered asynchronously at idle times of the process
@@ -83,91 +71,18 @@ pub struct WasiInstanceHandles {
     /// process - if it has not been set then the runtime behaves differently
     /// when a CTRL-C is pressed.
     pub(crate) signal_set: bool,
-
-    /// Flag that indicates if the stack capture exports are being used by
-    /// this WASM process which means that it will be using asyncify
-    pub(crate) has_stack_checkpoint: bool,
-
-    /// asyncify_start_unwind(data : i32): call this to start unwinding the
-    /// stack from the current location. "data" must point to a data
-    /// structure as described above (with fields containing valid data).
-    #[derivative(Debug = "ignore")]
-    // TODO: review allow...
-    #[allow(dead_code)]
-    pub(crate) asyncify_start_unwind: Option<TypedFunction<i32, ()>>,
-
-    /// asyncify_stop_unwind(): call this to note that unwinding has
-    /// concluded. If no other code will run before you start to rewind,
-    /// this is not strictly necessary, however, if you swap between
-    /// coroutines, or even just want to run some normal code during a
-    /// "sleep", then you must call this at the proper time. Otherwise,
-    /// the code will think it is still unwinding when it should not be,
-    /// which means it will keep unwinding in a meaningless way.
-    #[derivative(Debug = "ignore")]
-    // TODO: review allow...
-    #[allow(dead_code)]
-    pub(crate) asyncify_stop_unwind: Option<TypedFunction<(), ()>>,
-
-    /// asyncify_start_rewind(data : i32): call this to start rewinding the
-    /// stack vack up to the location stored in the provided data. This prepares
-    /// for the rewind; to start it, you must call the first function in the
-    /// call stack to be unwound.
-    #[derivative(Debug = "ignore")]
-    // TODO: review allow...
-    #[allow(dead_code)]
-    pub(crate) asyncify_start_rewind: Option<TypedFunction<i32, ()>>,
-
-    /// asyncify_stop_rewind(): call this to note that rewinding has
-    /// concluded, and normal execution can resume.
-    #[derivative(Debug = "ignore")]
-    // TODO: review allow...
-    #[allow(dead_code)]
-    pub(crate) asyncify_stop_rewind: Option<TypedFunction<(), ()>>,
-
-    /// asyncify_get_state(): call this to get the current value of the
-    /// internal "__asyncify_state" variable as described above.
-    /// It can be used to distinguish between unwinding/rewinding and normal
-    /// calls, so that you know when to start an asynchronous operation and
-    /// when to propagate results back.
-    #[allow(dead_code)]
-    #[derivative(Debug = "ignore")]
-    pub(crate) asyncify_get_state: Option<TypedFunction<(), i32>>,
 }
 
 impl WasiInstanceHandles {
     pub fn new(memory: Memory, store: &impl AsStoreRef, instance: Instance) -> Self {
-        let has_stack_checkpoint = instance
-            .module()
-            .imports()
-            .any(|f| f.name() == "stack_checkpoint");
         WasiInstanceHandles {
             memory,
-            stack_pointer: instance
-                .exports
-                .get_global("__stack_pointer")
-                .map(|a| a.clone())
-                .ok(),
-            data_end: instance
-                .exports
-                .get_global("__data_end")
-                .map(|a| a.clone())
-                .ok(),
-            stack_low: instance
-                .exports
-                .get_global("__stack_low")
-                .map(|a| a.clone())
-                .ok(),
-            stack_high: instance
-                .exports
-                .get_global("__stack_high")
-                .map(|a| a.clone())
-                .ok(),
             start: instance.exports.get_typed_function(store, "_start").ok(),
             initialize: instance
                 .exports
                 .get_typed_function(store, "_initialize")
                 .ok(),
-            thread_spawn: instance
+            thread_start: instance
                 .exports
                 .get_typed_function(store, "wasi_thread_start")
                 .ok(),
@@ -175,28 +90,7 @@ impl WasiInstanceHandles {
                 .exports
                 .get_typed_function(&store, "__wasm_signal")
                 .ok(),
-            has_stack_checkpoint,
             signal_set: false,
-            asyncify_start_unwind: instance
-                .exports
-                .get_typed_function(store, "asyncify_start_unwind")
-                .ok(),
-            asyncify_stop_unwind: instance
-                .exports
-                .get_typed_function(store, "asyncify_stop_unwind")
-                .ok(),
-            asyncify_start_rewind: instance
-                .exports
-                .get_typed_function(store, "asyncify_start_rewind")
-                .ok(),
-            asyncify_stop_rewind: instance
-                .exports
-                .get_typed_function(store, "asyncify_stop_rewind")
-                .ok(),
-            asyncify_get_state: instance
-                .exports
-                .get_typed_function(store, "asyncify_get_state")
-                .ok(),
             instance,
         }
     }
@@ -300,8 +194,6 @@ pub struct WasiEnv {
     pub process: WasiProcess,
     /// Represents the thread this environment is attached to
     pub thread: WasiThread,
-    /// Represents the layout of the memory
-    pub layout: WasiMemoryLayout,
     /// Represents a fork of the process that is currently in play
     pub vfork: Option<WasiVFork>,
     /// Seed used to rotate around the events returned by `poll_oneoff`
@@ -339,7 +231,6 @@ impl Clone for WasiEnv {
             process: self.process.clone(),
             poll_seed: self.poll_seed,
             thread: self.thread.clone(),
-            layout: self.layout.clone(),
             vfork: self.vfork.clone(),
             state: self.state.clone(),
             inner: Default::default(),
@@ -359,7 +250,7 @@ impl WasiEnv {
     /// Forking the WasiState is used when either fork or vfork is called
     pub fn fork(&self) -> Result<(Self, WasiThreadHandle), ControlPlaneError> {
         let process = self.control_plane.new_process(self.process.module_hash)?;
-        let handle = process.new_thread(self.layout.clone(), ThreadStartType::MainThread)?;
+        let handle = process.new_thread(ThreadStartType::MainThread)?;
 
         let thread = handle.as_thread();
         thread.copy_stack_from(&self.thread);
@@ -370,7 +261,6 @@ impl WasiEnv {
             control_plane: self.control_plane.clone(),
             process,
             thread,
-            layout: self.layout.clone(),
             vfork: None,
             poll_seed: 0,
             state,
@@ -390,78 +280,6 @@ impl WasiEnv {
         self.thread.tid()
     }
 
-    /// Returns true if this WASM process will need and try to use
-    /// asyncify while its running which normally means.
-    #[deprecated = "asyncify stuff"]
-    pub fn will_use_asyncify(&self) -> bool {
-        false
-    }
-
-    /// Re-initializes this environment so that it can be executed again
-    pub fn reinit(&mut self) -> Result<(), WasiStateCreationError> {
-        // If the cleanup logic is enabled then we need to rebuild the
-        // file descriptors which would have been destroyed when the
-        // main thread exited
-        if !self.disable_fs_cleanup {
-            // First we clear any open files as the descriptors would
-            // otherwise clash
-            if let Ok(mut map) = self.state.fs.fd_map.write() {
-                map.clear();
-            }
-            self.state.fs.preopen_fds.write().unwrap().clear();
-            self.state.fs.next_fd.set_val(3);
-            *self.state.fs.current_dir.lock().unwrap() = "/".to_string();
-
-            // We need to rebuild the basic file descriptors
-            self.state.fs.create_stdin(&self.state.inodes);
-            self.state.fs.create_stdout(&self.state.inodes);
-            self.state.fs.create_stderr(&self.state.inodes);
-            self.state
-                .fs
-                .create_rootfd()
-                .map_err(WasiStateCreationError::WasiFsSetupError)?;
-            self.state
-                .fs
-                .create_preopens(&self.state.inodes, true)
-                .map_err(WasiStateCreationError::WasiFsSetupError)?;
-        }
-
-        // The process and thread state need to be reset
-        self.process = WasiProcess::new(
-            self.process.pid,
-            self.process.module_hash,
-            self.process.compute.clone(),
-        );
-        self.thread = WasiThread::new(
-            self.thread.pid(),
-            self.thread.tid(),
-            self.thread.is_main(),
-            self.process.finished.clone(),
-            self.process.compute.must_upgrade().register_task()?,
-            self.thread.memory_layout().clone(),
-            self.thread.thread_start_type(),
-        );
-
-        Ok(())
-    }
-
-    /// Returns true if this module is capable of deep sleep
-    /// (needs asyncify to unwind and rewin)
-    ///
-    /// # Safety
-    ///
-    /// This function should only be called from within a syscall
-    /// as it accessed objects that are a thread local (functions)
-    #[deprecated = "asyncify stuff"]
-    pub unsafe fn capable_of_deep_sleep(&self) -> bool {
-        false
-    }
-
-    /// Returns true if this thread can go into a deep sleep
-    pub fn layout(&self) -> &WasiMemoryLayout {
-        &self.layout
-    }
-
     #[allow(clippy::result_large_err)]
     pub(crate) fn from_init(
         init: WasiEnvInit,
@@ -473,18 +291,16 @@ impl WasiEnv {
             init.control_plane.new_process(module_hash)?
         };
 
-        let layout = WasiMemoryLayout::default();
         let thread = if let Some(t) = init.thread {
             t
         } else {
-            process.new_thread(layout.clone(), ThreadStartType::MainThread)?
+            process.new_thread(ThreadStartType::MainThread)?
         };
 
         let mut env = Self {
             control_plane: init.control_plane,
             process,
             thread: thread.as_thread(),
-            layout,
             vfork: None,
             poll_seed: 0,
             state: Arc::new(init.state),
@@ -579,7 +395,7 @@ impl WasiEnv {
 
         // Initialize the WASI environment
         if let Err(err) =
-            func_env.initialize_with_memory(&mut store, instance.clone(), imported_memory, true)
+            func_env.initialize_with_memory(&mut store, instance.clone(), imported_memory)
         {
             tracing::error!(
                 %pid,
@@ -946,12 +762,6 @@ impl WasiEnv {
         let state = self.state.deref();
         let inodes = &state.inodes;
         (memory, state, inodes)
-    }
-
-    pub(crate) fn get_wasi_state_and_inodes(&self) -> (&WasiState, &WasiInodes) {
-        let state = self.state.deref();
-        let inodes = &state.inodes;
-        (state, inodes)
     }
 
     /// Cleans up all the open files (if this is the main thread)

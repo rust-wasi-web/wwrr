@@ -1,4 +1,4 @@
-use std::{mem::MaybeUninit, task::Waker};
+use std::mem::MaybeUninit;
 
 use super::*;
 use crate::{net::socket::TimeType, syscalls::*};
@@ -51,7 +51,7 @@ pub(super) fn sock_recv_from_internal<M: MemorySize>(
 ) -> Result<Errno, WasiError> {
     wasi_try_ok!(WasiEnv::process_signals_and_exit(&mut ctx)?);
 
-    let mut env = ctx.data();
+    let env = ctx.data();
     let memory = unsafe { env.memory_view(&ctx) };
     let iovs_arr = wasi_try_mem_ok!(ri_data.slice(&memory, ri_data_len));
 
@@ -125,7 +125,7 @@ pub(super) fn sock_recv_from_internal<M: MemorySize>(
 
             let data_len = data.len();
             if data_len > 0 {
-                let mut reader = &data[..];
+                let reader = &data[..];
                 wasi_try_ok!(read_bytes(reader, &memory, iovs_arr).map(|_| (data_len, peer)))
             } else {
                 (0, peer)

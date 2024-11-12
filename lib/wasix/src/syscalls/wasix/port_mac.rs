@@ -8,8 +8,7 @@ pub fn port_mac<M: MemorySize>(
     mut ctx: FunctionEnvMut<'_, WasiEnv>,
     ret_mac: WasmPtr<__wasi_hardwareaddress_t, M>,
 ) -> Result<Errno, WasiError> {
-    let mut env = ctx.data();
-    let mut memory = unsafe { env.memory_view(&ctx) };
+    let env = ctx.data();
 
     let net = env.net().clone();
     let mac = wasi_try_ok!(block_on_with_signals(&mut ctx, None, async {

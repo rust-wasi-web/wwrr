@@ -20,7 +20,6 @@ pub fn sock_set_opt_flag(
     let flag = match flag {
         Bool::False => false,
         Bool::True => true,
-        _ => return Ok(Errno::Inval),
     };
 
     wasi_try_ok!(sock_set_opt_flag_internal(&mut ctx, sock, opt, flag)?);

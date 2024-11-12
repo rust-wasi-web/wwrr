@@ -1,5 +1,3 @@
-use std::task::Waker;
-
 use super::*;
 use crate::{net::socket::TimeType, syscalls::*};
 
@@ -19,7 +17,7 @@ use crate::{net::socket::TimeType, syscalls::*};
 /// Number of bytes transmitted.
 #[instrument(level = "trace", skip_all, fields(%sock, ?addr, nsent = field::Empty), ret)]
 pub fn sock_send_to<M: MemorySize>(
-    mut ctx: FunctionEnvMut<'_, WasiEnv>,
+    ctx: FunctionEnvMut<'_, WasiEnv>,
     sock: WasiFd,
     si_data: WasmPtr<__wasi_ciovec_t<M>, M>,
     si_data_len: M::Offset,
@@ -29,7 +27,7 @@ pub fn sock_send_to<M: MemorySize>(
 ) -> Result<Errno, WasiError> {
     let env = ctx.data();
     let memory = unsafe { env.memory_view(&ctx) };
-    let iovs_arr = wasi_try_mem_ok!(si_data.slice(&memory, si_data_len));
+    let _iovs_arr = wasi_try_mem_ok!(si_data.slice(&memory, si_data_len));
 
     let (addr_ip, addr_port) = {
         let memory = unsafe { env.memory_view(&ctx) };

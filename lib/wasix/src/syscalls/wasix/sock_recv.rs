@@ -1,5 +1,3 @@
-use std::{mem::MaybeUninit, task::Waker};
-
 use super::*;
 use crate::{net::socket::TimeType, syscalls::*};
 
@@ -34,25 +32,14 @@ pub fn sock_recv<M: MemorySize>(
     if use_read {
         fd_read(ctx, sock, ri_data, ri_data_len, ro_data_len)
     } else {
-        let pid = ctx.data().pid();
-        let tid = ctx.data().tid();
-
-        let res = sock_recv_internal::<M>(
-            &mut ctx,
-            sock,
-            ri_data,
-            ri_data_len,
-            ri_flags,
-            ro_data_len,
-            ro_flags,
-        )?;
+        let res = sock_recv_internal::<M>(&mut ctx, sock, ri_data, ri_data_len, ri_flags)?;
 
         sock_recv_internal_handler(ctx, res, ro_data_len, ro_flags)
     }
 }
 
 pub(super) fn sock_recv_internal_handler<M: MemorySize>(
-    mut ctx: FunctionEnvMut<'_, WasiEnv>,
+    ctx: FunctionEnvMut<'_, WasiEnv>,
     res: Result<usize, Errno>,
     ro_data_len: WasmPtr<M::Offset, M>,
     ro_flags: WasmPtr<RoFlags, M>,
@@ -105,15 +92,14 @@ pub(super) fn sock_recv_internal<M: MemorySize>(
     ri_data: WasmPtr<__wasi_iovec_t<M>, M>,
     ri_data_len: M::Offset,
     ri_flags: RiFlags,
-    ro_data_len: WasmPtr<M::Offset, M>,
-    ro_flags: WasmPtr<RoFlags, M>,
 ) -> WasiResult<usize> {
     wasi_try_ok_ok!(WasiEnv::process_signals_and_exit(ctx)?);
 
-    let mut env = ctx.data();
+    let env = ctx.data();
     let memory = unsafe { env.memory_view(ctx) };
 
-    let peek = (ri_flags & __WASI_SOCK_RECV_INPUT_PEEK) != 0;
+    let _peek = (ri_flags & __WASI_SOCK_RECV_INPUT_PEEK) != 0;
+
     let data = wasi_try_ok_ok!(block_on_sock(
         env,
         sock,

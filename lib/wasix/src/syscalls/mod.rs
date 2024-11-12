@@ -8,13 +8,8 @@ pub mod wasi;
 pub mod wasix;
 pub mod wasm;
 
-use bytes::{Buf, BufMut};
 use futures::future;
-use futures::{
-    future::{BoxFuture, LocalBoxFuture},
-    Future,
-};
-use tracing::instrument;
+use futures::Future;
 pub use wasi::*;
 pub use wasix::*;
 use wasmer_wasix_types::wasix::ThreadStartType;
@@ -23,92 +18,60 @@ pub mod legacy;
 
 pub(crate) use std::{
     borrow::{Borrow, Cow},
-    cell::RefCell,
-    collections::{hash_map::Entry, HashMap, HashSet},
-    convert::{Infallible, TryInto},
-    io::{self, Read, Seek, Write},
-    mem::transmute,
+    collections::{HashMap, HashSet},
+    convert::TryInto,
+    io::Read,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
-    num::NonZeroU64,
     ops::{Deref, DerefMut},
     path::Path,
     pin::Pin,
-    sync::{
-        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
-        mpsc, Arc, Condvar, Mutex,
-    },
+    sync::{atomic::Ordering, Arc},
     task::{Context, Poll},
-    thread::LocalKey,
     time::Duration,
 };
-use std::{io::IoSlice, marker::PhantomData, mem::MaybeUninit, task::Waker, time::Instant};
 
-pub(crate) use bytes::{Bytes, BytesMut};
+pub(crate) use bytes::Bytes;
 pub(crate) use cooked_waker::IntoWaker;
-pub(crate) use sha2::Sha256;
 pub(crate) use tracing::{debug, error, trace, warn};
 pub use wasm::*;
 
-pub(crate) use virtual_fs::{
-    AsyncSeekExt, AsyncWriteExt, DuplexPipe, FileSystem, FsError, VirtualFile,
-};
+pub(crate) use virtual_fs::{AsyncSeekExt, AsyncWriteExt, FileSystem, FsError};
 pub(crate) use virtual_net::StreamSecurity;
 pub(crate) use wasmer::{
-    AsStoreMut, AsStoreRef, Extern, Function, FunctionEnv, FunctionEnvMut, Global, Instance,
-    Memory, Memory32, Memory64, MemoryAccessError, MemoryError, MemorySize, MemoryView, Module,
-    OnCalledAction, Pages, RuntimeError, Store, TypedFunction, Value, WasmPtr, WasmSlice,
+    AsStoreMut, AsStoreRef, Function, FunctionEnvMut, Memory32, Memory64, MemorySize, MemoryView,
+    Store, WasmPtr, WasmSlice,
 };
 pub(crate) use wasmer_wasix_types::wasi::EventUnion;
 
 pub(crate) use self::types::{
     wasi::{
         Addressfamily, Advice, Clockid, Dircookie, Dirent, Errno, Event, EventFdReadwrite,
-        Eventrwflags, Eventtype, ExitCode, Fd as WasiFd, Fdflags, Fdstat, Filesize, Filestat,
-        Filetype, Fstflags, Linkcount, Longsize, OptionFd, Pid, Prestat, Rights, Snapshot0Clockid,
-        Sockoption, Sockstatus, Socktype, StackSnapshot, StdioMode as WasiStdioMode,
-        Streamsecurity, Subscription, SubscriptionFsReadwrite, Tid, Timestamp, TlKey, TlUser,
-        TlVal, Tty, Whence,
+        Eventtype, ExitCode, Fd as WasiFd, Fdflags, Fdstat, Filesize, Filestat, Filetype, Fstflags,
+        Linkcount, Longsize, Pid, Prestat, Rights, Snapshot0Clockid, Sockoption, Sockstatus,
+        Socktype, StackSnapshot, Streamsecurity, Subscription, SubscriptionFsReadwrite, Tid,
+        Timestamp, Tty, Whence,
     },
     *,
 };
-use self::{
-    state::{conv_env_vars, WasiInstanceGuardMemory},
-    utils::WasiDummyWaker,
-};
-pub(crate) use crate::os::task::{
-    process::{WasiProcessId, WasiProcessWait},
-    thread::{WasiThread, WasiThreadId},
-};
+use self::{state::conv_env_vars, utils::WasiDummyWaker};
+pub(crate) use crate::net::net_error_into_wasi_err;
+pub(crate) use crate::os::task::{process::WasiProcessId, thread::WasiThreadId};
 use crate::{
-    fs::{
-        fs_error_into_wasi_err, virtual_file_type_to_wasi_file_type, Fd, InodeVal, Kind,
-        MAX_SYMLINKS,
-    },
-    os::task::{
-        process::{MaybeCheckpointResult, WasiProcessCheckpoint},
-        thread::{RewindResult, RewindResultType},
-    },
+    fs::{fs_error_into_wasi_err, virtual_file_type_to_wasi_file_type, Fd, Kind},
     runtime::task_manager::InlineWaker,
-    utils::store::StoreSnapshot,
-    SpawnError, WasiInodes, WasiResult, WasiRuntimeError,
+    WasiResult,
 };
 pub(crate) use crate::{
-    import_object_for_all_wasi_versions, mem_error_to_wasi,
+    mem_error_to_wasi,
     net::{
         read_ip_port,
-        socket::{InodeHttpSocketType, InodeSocket, InodeSocketKind},
+        socket::{InodeSocket, InodeSocketKind},
         write_ip_port,
     },
-    runtime::SpawnMemoryType,
-    state::{
-        self, iterate_poll_events, InodeGuard, InodeWeakGuard, PollEvent, PollEventBuilder,
-        WasiFutex, WasiState,
-    },
+    state::{self, InodeGuard, PollEvent, PollEventBuilder, WasiState},
     utils::{self, map_io_err},
-    Runtime, VirtualTaskManager, WasiEnv, WasiError, WasiFunctionEnv, WasiInstanceHandles,
-    WasiVFork,
+    VirtualTaskManager, WasiEnv, WasiError, WasiFunctionEnv,
 };
-pub(crate) use crate::{net::net_error_into_wasi_err, utils::WasiParkingLot};
 
 pub(crate) fn to_offset<M: MemorySize>(offset: usize) -> Result<M::Offset, Errno> {
     let ret: M::Offset = offset.try_into().map_err(|_| Errno::Inval)?;
@@ -118,35 +81,6 @@ pub(crate) fn to_offset<M: MemorySize>(offset: usize) -> Result<M::Offset, Errno
 pub(crate) fn from_offset<M: MemorySize>(offset: M::Offset) -> Result<usize, Errno> {
     let ret: usize = offset.try_into().map_err(|_| Errno::Inval)?;
     Ok(ret)
-}
-
-pub(crate) fn write_bytes_inner<T: Write, M: MemorySize>(
-    mut write_loc: T,
-    memory: &MemoryView,
-    iovs_arr_cell: WasmSlice<__wasi_ciovec_t<M>>,
-) -> Result<usize, Errno> {
-    let mut bytes_written = 0usize;
-    for iov in iovs_arr_cell.iter() {
-        let iov_inner = iov.read().map_err(mem_error_to_wasi)?;
-        let bytes = WasmPtr::<u8, M>::new(iov_inner.buf)
-            .slice(memory, iov_inner.buf_len)
-            .map_err(mem_error_to_wasi)?;
-        let bytes = bytes.read_to_vec().map_err(mem_error_to_wasi)?;
-        write_loc.write_all(&bytes).map_err(map_io_err)?;
-
-        bytes_written += from_offset::<M>(iov_inner.buf_len)?;
-    }
-    Ok(bytes_written)
-}
-
-pub(crate) fn write_bytes<T: Write, M: MemorySize>(
-    mut write_loc: T,
-    memory: &MemoryView,
-    iovs_arr: WasmSlice<__wasi_ciovec_t<M>>,
-) -> Result<usize, Errno> {
-    let result = write_bytes_inner::<_, M>(&mut write_loc, memory, iovs_arr);
-    write_loc.flush();
-    result
 }
 
 pub(crate) fn copy_from_slice<M: MemorySize>(
@@ -207,25 +141,6 @@ pub(crate) fn read_bytes<T: Read, M: MemorySize>(
     Ok(bytes_read)
 }
 
-/// Writes data to the stderr
-
-// TODO: remove allow once inodes are refactored (see comments on [`WasiState`])
-#[allow(clippy::await_holding_lock)]
-pub unsafe fn stderr_write<'a>(
-    ctx: &FunctionEnvMut<'_, WasiEnv>,
-    buf: &[u8],
-) -> LocalBoxFuture<'a, Result<(), Errno>> {
-    let env = ctx.data();
-    let (memory, state, inodes) = env.get_memory_and_wasi_state_and_inodes(ctx, 0);
-
-    let buf = buf.to_vec();
-    let fd_map = state.fs.fd_map.clone();
-    Box::pin(async move {
-        let mut stderr = WasiInodes::stderr_mut(&fd_map).map_err(fs_error_into_wasi_err)?;
-        stderr.write_all(&buf).await.map_err(map_io_err)
-    })
-}
-
 /// Future that will be polled by asyncify methods
 /// (the return value is what will be returned in rewind
 ///  or in the instant response)
@@ -282,7 +197,7 @@ where
     T: 'static,
     Fut: std::future::Future<Output = Result<T, Errno>>,
 {
-    let mut env = ctx.data();
+    let env = ctx.data();
 
     // Check if we need to exit the asynchronous loop
     if let Some(exit_code) = env.should_exit() {
@@ -318,7 +233,7 @@ where
     }
 
     // Block on the work
-    let mut pinned_work = Box::pin(work);
+    let pinned_work = Box::pin(work);
     let tasks = env.tasks().clone();
     let poller = SignalPoller { ctx, pinned_work };
 
@@ -367,9 +282,8 @@ where
         return Err(Errno::Access);
     }
 
-    let mut work = {
+    let work = {
         let inode = fd_entry.inode.clone();
-        let tasks = env.tasks().clone();
         let mut guard = inode.write();
         match guard.deref_mut() {
             Kind::Socket { socket } => {
@@ -402,7 +316,6 @@ where
     F: FnOnce(crate::net::socket::InodeSocket, Fd) -> Result<T, Errno>,
 {
     let env = ctx.data();
-    let tasks = env.tasks().clone();
 
     let fd_entry = env.state.fs.get_fd(sock)?;
     if !rights.is_empty() && !fd_entry.rights.contains(rights) {
@@ -411,7 +324,6 @@ where
 
     let inode = fd_entry.inode.clone();
 
-    let tasks = env.tasks().clone();
     let mut guard = inode.write();
     match guard.deref_mut() {
         Kind::Socket { socket } => {
@@ -439,7 +351,6 @@ where
     F: FnOnce(crate::net::socket::InodeSocket, Fd) -> Result<T, Errno>,
 {
     let env = ctx.data();
-    let tasks = env.tasks().clone();
 
     let fd_entry = env.state.fs.get_fd(sock)?;
     if !rights.is_empty() && !fd_entry.rights.contains(rights) {
@@ -487,51 +398,48 @@ where
         return Err(Errno::Access);
     }
 
-    let tasks = env.tasks().clone();
-    {
-        let inode = fd_entry.inode;
-        let mut guard = inode.write();
-        match guard.deref_mut() {
-            Kind::Socket { socket } => {
-                let socket = socket.clone();
-                drop(guard);
+    let inode = fd_entry.inode;
+    let mut guard = inode.write();
+    match guard.deref_mut() {
+        Kind::Socket { socket } => {
+            let socket = socket.clone();
+            drop(guard);
 
-                // Start the work using the socket
-                let work = actor(socket, fd_entry.flags);
+            // Start the work using the socket
+            let work = actor(socket, fd_entry.flags);
 
-                // Block on the work and process it
-                let res = InlineWaker::block_on(work);
-                let new_socket = res?;
+            // Block on the work and process it
+            let res = InlineWaker::block_on(work);
+            let new_socket = res?;
 
-                if let Some(mut new_socket) = new_socket {
-                    let mut guard = inode.write();
-                    match guard.deref_mut() {
-                        Kind::Socket { socket, .. } => {
-                            std::mem::swap(socket, &mut new_socket);
-                        }
-                        _ => {
-                            tracing::warn!(
-                                "wasi[{}:{}]::sock_upgrade(fd={}, rights={:?}) - failed - not a socket",
-                                ctx.data().pid(),
-                                ctx.data().tid(),
-                                sock,
-                                rights
-                            );
-                            return Err(Errno::Notsock);
-                        }
+            if let Some(mut new_socket) = new_socket {
+                let mut guard = inode.write();
+                match guard.deref_mut() {
+                    Kind::Socket { socket, .. } => {
+                        std::mem::swap(socket, &mut new_socket);
+                    }
+                    _ => {
+                        tracing::warn!(
+                            "wasi[{}:{}]::sock_upgrade(fd={}, rights={:?}) - failed - not a socket",
+                            ctx.data().pid(),
+                            ctx.data().tid(),
+                            sock,
+                            rights
+                        );
+                        return Err(Errno::Notsock);
                     }
                 }
             }
-            _ => {
-                tracing::warn!(
-                    "wasi[{}:{}]::sock_upgrade(fd={}, rights={:?}) - failed - not a socket",
-                    ctx.data().pid(),
-                    ctx.data().tid(),
-                    sock,
-                    rights
-                );
-                return Err(Errno::Notsock);
-            }
+        }
+        _ => {
+            tracing::warn!(
+                "wasi[{}:{}]::sock_upgrade(fd={}, rights={:?}) - failed - not a socket",
+                ctx.data().pid(),
+                ctx.data().tid(),
+                sock,
+                rights
+            );
+            return Err(Errno::Notsock);
         }
     }
 
@@ -548,7 +456,7 @@ pub(crate) fn write_buffer_array<M: MemorySize>(
     let ptrs = wasi_try_mem!(ptr_buffer.slice(memory, wasi_try!(to_offset::<M>(from.len()))));
 
     let mut current_buffer_offset = 0usize;
-    for ((i, sub_buffer), ptr) in from.iter().enumerate().zip(ptrs.iter()) {
+    for (sub_buffer, ptr) in from.iter().zip(ptrs.iter()) {
         let mut buf_offset = buffer.offset();
         buf_offset += wasi_try!(to_offset::<M>(current_buffer_offset));
         let new_ptr = WasmPtr::new(buf_offset);
@@ -571,10 +479,6 @@ pub(crate) fn write_buffer_array<M: MemorySize>(
 pub(crate) fn get_current_time_in_nanos() -> Result<Timestamp, Errno> {
     let now = platform_clock_time_get(Snapshot0Clockid::Monotonic, 1_000_000).unwrap() as u128;
     Ok(now as Timestamp)
-}
-
-pub fn anyhow_err_to_runtime_err(err: anyhow::Error) -> WasiRuntimeError {
-    WasiRuntimeError::Runtime(RuntimeError::user(err.into()))
 }
 
 // Function to prepare the WASI environment
@@ -628,7 +532,7 @@ pub(crate) fn _prepare_wasi(
             let preopen_fds = wasi_env.state.fs.preopen_fds.read().unwrap();
             preopen_fds.iter().copied().collect::<HashSet<_>>()
         };
-        let mut fd_map = wasi_env.state.fs.fd_map.read().unwrap();
+        let fd_map = wasi_env.state.fs.fd_map.read().unwrap();
         fd_map
             .keys()
             .filter_map(|a| match *a {
@@ -643,17 +547,4 @@ pub(crate) fn _prepare_wasi(
     for fd in close_fds {
         let _ = wasi_env.state.fs.close_fd(fd);
     }
-}
-
-pub(crate) fn conv_spawn_err_to_errno(err: &SpawnError) -> Errno {
-    match err {
-        SpawnError::AccessDenied => Errno::Access,
-        SpawnError::Unsupported => Errno::Noexec,
-        _ if err.is_not_found() => Errno::Noent,
-        _ => Errno::Inval,
-    }
-}
-
-pub(crate) fn conv_spawn_err_to_exit_code(err: &SpawnError) -> ExitCode {
-    conv_spawn_err_to_errno(err).into()
 }
