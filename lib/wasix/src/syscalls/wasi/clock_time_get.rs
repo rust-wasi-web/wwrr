@@ -24,8 +24,6 @@ pub fn clock_time_get<M: MemorySize>(
     precision: Timestamp,
     time: WasmPtr<Timestamp, M>,
 ) -> Result<Errno, WasiError> {
-    ctx = wasi_try_ok!(maybe_backoff::<M>(ctx)?);
-
     let env = ctx.data();
     let memory = unsafe { env.memory_view(&ctx) };
 

@@ -13,7 +13,7 @@ use crate::{
     runtime::SpawnMemoryType,
     state::WasiInstanceHandles,
     utils::{get_wasi_version, get_wasi_versions, store::restore_store_snapshot},
-    RewindStateOption, StoreSnapshot, WasiEnv, WasiError, WasiRuntimeError, WasiThreadError,
+    StoreSnapshot, WasiEnv, WasiError, WasiRuntimeError, WasiThreadError,
 };
 
 /// The default stack size for WASIX - the number itself is the default that compilers
@@ -213,19 +213,10 @@ impl WasiFunctionEnv {
                 // clang-16 and higher generate the `__stack_low` global, and it can be exported with
                 // `-Wl,--export=__stack_low`. clang-15 generates `__data_end`, which should be identical
                 // and can be exported if `__stack_low` is not available.
-                if self.data(store).will_use_asyncify() {
-                    tracing::warn!("Missing both __stack_low and __data_end exports, unwinding may cause memory corruption");
-                }
                 0
             };
 
             if stack_lower >= stack_base {
-                if self.data(store).will_use_asyncify() {
-                    tracing::warn!(
-                        "Detected lower end of stack to be above higher end, ignoring stack_lower; \
-                        unwinding may cause memory corruption"
-                    );
-                }
                 stack_lower = 0;
             }
 
@@ -291,30 +282,5 @@ impl WasiFunctionEnv {
 
         // Cleans up all the open files (if this is the main thread)
         self.data(store).blocking_on_exit(exit_code);
-    }
-
-    /// Bootstraps this main thread and context with any journals that
-    /// may be present
-    ///
-    /// # Safety
-    ///
-    /// This function manipulates the memory of the process and thus must be executed
-    /// by the WASM process thread itself.
-    ///
-    #[allow(clippy::result_large_err)]
-    #[allow(unused_variables, unused_mut)]
-    #[tracing::instrument(skip_all)]
-    pub unsafe fn bootstrap(
-        &self,
-        mut store: &'_ mut impl AsStoreMut,
-    ) -> Result<RewindStateOption, WasiRuntimeError> {
-        tracing::debug!("bootstrap start");
-
-        #[allow(unused_mut)]
-        let mut rewind_state = None;
-
-        tracing::debug!("bootstrap complete");
-
-        Ok(rewind_state)
     }
 }

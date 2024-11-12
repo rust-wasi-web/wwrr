@@ -77,14 +77,6 @@ pub(super) fn proc_join_internal<M: MemorySize + 'static>(
         }
     };
 
-    // If we were just restored the stack then we were woken after a deep sleep
-    // and the return calues are already set
-    if let Some(status) = unsafe { handle_rewind::<M, _>(&mut ctx) } {
-        let ret = ret_result(ctx, status);
-        tracing::trace!("rewound join ret={:?}", ret);
-        return ret;
-    }
-
     let env = ctx.data();
     let memory = unsafe { env.memory_view(&ctx) };
     let option_pid = wasi_try_mem_ok!(pid_ptr.read(&memory));
@@ -117,7 +109,7 @@ pub(super) fn proc_join_internal<M: MemorySize + 'static>(
 
             // We wait for any process to exit (if it takes too long
             // then we go into a deep sleep)
-            let res = __asyncify_with_deep_sleep::<M, _, _>(ctx, async move {
+            let res = block_on(async move {
                 let child_exit = process.join_any_child().await;
                 match child_exit {
                     Ok(Some((pid, exit_code))) => {
@@ -134,11 +126,8 @@ pub(super) fn proc_join_internal<M: MemorySize + 'static>(
                         JoinStatusResult::Err(err)
                     }
                 }
-            })?;
-            return match res {
-                AsyncifyAction::Finish(ctx, result) => ret_result(ctx, result),
-                AsyncifyAction::Unwind => Ok(Errno::Success),
-            };
+            });
+            return ret_result(ctx, res);
         }
         Some(pid) => pid,
     };
@@ -186,15 +175,12 @@ pub(super) fn proc_join_internal<M: MemorySize + 'static>(
         } else {
             // Wait for the process to finish
             let process2 = process.clone();
-            let res = __asyncify_with_deep_sleep::<M, _, _>(ctx, async move {
+            let res = block_on(async move {
                 let exit_code = process.join().await.unwrap_or_else(|_| Errno::Child.into());
                 tracing::trace!(%exit_code, "triggered child join");
                 JoinStatusResult::ExitNormal(pid, exit_code)
-            })?;
-            match res {
-                AsyncifyAction::Finish(ctx, result) => ret_result(ctx, result),
-                AsyncifyAction::Unwind => Ok(Errno::Success),
-            }
+            });
+            ret_result(ctx, res)
         }
     } else {
         trace!(ret_id = pid.raw(), "status=nothing");

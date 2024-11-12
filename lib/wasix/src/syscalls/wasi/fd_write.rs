@@ -140,7 +140,7 @@ pub(crate) fn fd_write_internal<M: MemorySize>(
                         let handle = handle.clone();
                         drop(guard);
 
-                        let res = __asyncify_light(
+                        let res = block_on_with_timeout(
                             env,
                             if fd_entry.flags.contains(Fdflags::NONBLOCK) {
                                 Some(Duration::ZERO)
@@ -195,7 +195,7 @@ pub(crate) fn fd_write_internal<M: MemorySize>(
                                 Ok(written)
                             },
                         );
-                        let written = wasi_try_ok_ok!(res?.map_err(|err| match err {
+                        let written = wasi_try_ok_ok!(res.map_err(|err| match err {
                             Errno::Timedout => Errno::Again,
                             a => a,
                         }));
@@ -218,7 +218,7 @@ pub(crate) fn fd_write_internal<M: MemorySize>(
 
                     let tasks = env.tasks().clone();
 
-                    let res = __asyncify_light(env, None, async {
+                    let res = block_on(async {
                         let mut sent = 0usize;
 
                         match &data {
@@ -254,7 +254,7 @@ pub(crate) fn fd_write_internal<M: MemorySize>(
                         }
                         Ok(sent)
                     });
-                    let written = wasi_try_ok_ok!(res?);
+                    let written = wasi_try_ok_ok!(res);
                     (written, false, false)
                 }
                 Kind::Pipe { pipe } => {

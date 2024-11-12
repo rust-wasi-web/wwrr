@@ -15,13 +15,13 @@ use thiserror::Error;
 pub mod arc_file;
 pub mod buffer_file;
 pub mod cow_file;
+mod filesystems;
 pub mod mem_fs;
 pub mod null_file;
-pub mod tmp_fs;
-mod filesystems;
 pub(crate) mod ops;
 pub mod pipe;
 mod static_file;
+pub mod tmp_fs;
 
 pub mod limiter;
 

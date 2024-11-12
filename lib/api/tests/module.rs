@@ -3,32 +3,31 @@ use wasm_bindgen_test::*;
 use wasmer::*;
 
 #[wasm_bindgen_test]
-fn module_get_name()  {
+fn module_get_name() {
     let store = Store::default();
     let wat = r#"(module)"#;
     let module = Module::new(&store, wat)
         .map_err(|e| format!("{e:?}"))
-        .map_err(|e| format!("{e:?}")).unwrap();
+        .map_err(|e| format!("{e:?}"))
+        .unwrap();
     assert_eq!(module.name(), None);
-
-    
 }
 
 #[wasm_bindgen_test]
-fn module_set_name()  {
+fn module_set_name() {
     let store = Store::default();
     let wat = r#"(module $name)"#;
-    let mut module = Module::new(&store, wat).map_err(|e| format!("{e:?}")).unwrap();
+    let mut module = Module::new(&store, wat)
+        .map_err(|e| format!("{e:?}"))
+        .unwrap();
     assert_eq!(module.name(), Some("name"));
 
     module.set_name("new_name");
     assert_eq!(module.name(), Some("new_name"));
-
-    
 }
 
 #[wasm_bindgen_test]
-fn imports()  {
+fn imports() {
     let store = Store::default();
     let wat = r#"(module
 (import "host" "func" (func))
@@ -36,7 +35,9 @@ fn imports()  {
 (import "host" "table" (table 1 anyfunc))
 (import "host" "global" (global i32))
 )"#;
-    let module = Module::new(&store, wat).map_err(|e| format!("{e:?}")).unwrap();
+    let module = Module::new(&store, wat)
+        .map_err(|e| format!("{e:?}"))
+        .unwrap();
     assert_eq!(
         module.imports().collect::<Vec<_>>(),
         vec![
@@ -96,11 +97,10 @@ fn imports()  {
             GlobalType::new(Type::I32, Mutability::Const)
         ),]
     );
-    
 }
 
 #[test]
-fn exports()  {
+fn exports() {
     let store = Store::default();
     let wat = r#"(module
 (func (export "func") nop)
@@ -108,7 +108,9 @@ fn exports()  {
 (table (export "table") 1 funcref)
 (global (export "global") i32 (i32.const 0))
 )"#;
-    let module = Module::new(&store, wat).map_err(|e| format!("{e:?}")).unwrap();
+    let module = Module::new(&store, wat)
+        .map_err(|e| format!("{e:?}"))
+        .unwrap();
     assert_eq!(
         module.exports().collect::<Vec<_>>(),
         vec![
@@ -157,11 +159,10 @@ fn exports()  {
             GlobalType::new(Type::I32, Mutability::Const)
         ),]
     );
-    
 }
 
 #[wasm_bindgen_test]
-fn calling_host_functions_with_negative_values_works()  {
+fn calling_host_functions_with_negative_values_works() {
     let mut store = Store::default();
     let wat = r#"(module
 (import "host" "host_func1" (func (param i64)))
@@ -190,7 +191,9 @@ fn calling_host_functions_with_negative_values_works()  {
 (func (export "call_host_func8")
       (call 7 (i32.const -1)))
 )"#;
-    let module = Module::new(&store, wat).map_err(|e| format!("{e:?}")).unwrap();
+    let module = Module::new(&store, wat)
+        .map_err(|e| format!("{e:?}"))
+        .unwrap();
     let imports = imports! {
         "host" => {
             "host_func1" => Function::new_typed(&mut store, |p: u64| {
@@ -227,40 +230,50 @@ fn calling_host_functions_with_negative_values_works()  {
             }),
         }
     };
-    let instance = Instance::new(&mut store, &module, &imports).map_err(|e| format!("{e:?}")).unwrap();
+    let instance = Instance::new(&mut store, &module, &imports)
+        .map_err(|e| format!("{e:?}"))
+        .unwrap();
 
     let f1: TypedFunction<(), ()> = instance
         .exports
         .get_typed_function(&store, "call_host_func1")
-        .map_err(|e| format!("{e:?}")).unwrap();
+        .map_err(|e| format!("{e:?}"))
+        .unwrap();
     let f2: TypedFunction<(), ()> = instance
         .exports
         .get_typed_function(&store, "call_host_func2")
-        .map_err(|e| format!("{e:?}")).unwrap();
+        .map_err(|e| format!("{e:?}"))
+        .unwrap();
     let f3: TypedFunction<(), ()> = instance
         .exports
         .get_typed_function(&store, "call_host_func3")
-        .map_err(|e| format!("{e:?}")).unwrap();
+        .map_err(|e| format!("{e:?}"))
+        .unwrap();
     let f4: TypedFunction<(), ()> = instance
         .exports
         .get_typed_function(&store, "call_host_func4")
-        .map_err(|e| format!("{e:?}")).unwrap();
+        .map_err(|e| format!("{e:?}"))
+        .unwrap();
     let f5: TypedFunction<(), ()> = instance
         .exports
         .get_typed_function(&store, "call_host_func5")
-        .map_err(|e| format!("{e:?}")).unwrap();
+        .map_err(|e| format!("{e:?}"))
+        .unwrap();
     let f6: TypedFunction<(), ()> = instance
         .exports
         .get_typed_function(&store, "call_host_func6")
-        .map_err(|e| format!("{e:?}")).unwrap();
+        .map_err(|e| format!("{e:?}"))
+        .unwrap();
     let f7: TypedFunction<(), ()> = instance
         .exports
         .get_typed_function(&store, "call_host_func7")
-        .map_err(|e| format!("{e:?}")).unwrap();
+        .map_err(|e| format!("{e:?}"))
+        .unwrap();
     let f8: TypedFunction<(), ()> = instance
         .exports
         .get_typed_function(&store, "call_host_func8")
-        .map_err(|e| format!("{e:?}")).unwrap();
+        .map_err(|e| format!("{e:?}"))
+        .unwrap();
 
     f1.call(&mut store).map_err(|e| format!("{e:?}")).unwrap();
     f2.call(&mut store).map_err(|e| format!("{e:?}")).unwrap();
@@ -270,15 +283,15 @@ fn calling_host_functions_with_negative_values_works()  {
     f6.call(&mut store).map_err(|e| format!("{e:?}")).unwrap();
     f7.call(&mut store).map_err(|e| format!("{e:?}")).unwrap();
     f8.call(&mut store).map_err(|e| format!("{e:?}")).unwrap();
-
-    
 }
 
 #[wasm_bindgen_test]
-fn module_custom_sections()  {
+fn module_custom_sections() {
     let store = Store::default();
     let custom_section_wasm_bytes = include_bytes!("simple-name-section.wasm");
-    let module = Module::new(&store, custom_section_wasm_bytes).map_err(|e| format!("{e:?}")).unwrap();
+    let module = Module::new(&store, custom_section_wasm_bytes)
+        .map_err(|e| format!("{e:?}"))
+        .unwrap();
     let sections = module.custom_sections("name");
     let sections_vec: Vec<Box<[u8]>> = sections.collect();
     assert_eq!(sections_vec.len(), 1);
@@ -286,5 +299,4 @@ fn module_custom_sections()  {
         sections_vec[0],
         vec![2, 2, 36, 105, 1, 0, 0, 0].into_boxed_slice()
     );
-    
 }

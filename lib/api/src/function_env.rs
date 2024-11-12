@@ -1,7 +1,7 @@
 use std::{any::Any, fmt::Debug, marker::PhantomData};
 
-use crate::vm::VMFunctionEnvironment;
 use crate::store::{AsStoreMut, AsStoreRef, StoreHandle, StoreMut, StoreObjects, StoreRef};
+use crate::vm::VMFunctionEnvironment;
 
 #[derive(Debug)]
 #[repr(transparent)]

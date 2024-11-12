@@ -17,7 +17,6 @@ use wasmer_wasix_types::{
 
 use crate::{
     os::task::process::{WasiProcessId, WasiProcessInner},
-    syscalls::HandleRewindType,
     WasiRuntimeError,
 };
 
@@ -101,9 +100,6 @@ pub struct WasiThread {
     state: Arc<WasiThreadState>,
     layout: WasiMemoryLayout,
     start: ThreadStartType,
-
-    // This is used for stack rewinds
-    rewind: Option<RewindResult>,
 }
 
 impl WasiThread {
@@ -111,48 +107,9 @@ impl WasiThread {
         self.state.id
     }
 
-    /// Sets that a rewind will take place
-    pub(crate) fn set_rewind(&mut self, rewind: RewindResult) {
-        self.rewind.replace(rewind);
-    }
-
-    /// Pops any rewinds that need to take place
-    pub(crate) fn take_rewind(&mut self) -> Option<RewindResult> {
-        self.rewind.take()
-    }
-
     /// Gets the thread start type for this thread
     pub fn thread_start_type(&self) -> ThreadStartType {
         self.start
-    }
-
-    /// Returns true if a rewind of a particular type has been queued
-    /// for processed by a rewind operation
-    pub(crate) fn has_rewind_of_type(&self, type_: HandleRewindType) -> bool {
-        match type_ {
-            HandleRewindType::ResultDriven => match &self.rewind {
-                Some(rewind) => match rewind.rewind_result {
-                    RewindResultType::RewindRestart => true,
-                    RewindResultType::RewindWithoutResult => false,
-                    RewindResultType::RewindWithResult(_) => true,
-                },
-                None => false,
-            },
-            HandleRewindType::ResultLess => match &self.rewind {
-                Some(rewind) => match rewind.rewind_result {
-                    RewindResultType::RewindRestart => true,
-                    RewindResultType::RewindWithoutResult => true,
-                    RewindResultType::RewindWithResult(_) => false,
-                },
-                None => false,
-            },
-        }
-    }
-
-    /// Sets a flag that tells others if this thread is currently
-    /// deep sleeping
-    pub(crate) fn set_deep_sleeping(&self, val: bool) {
-        self.state.deep_sleeping.store(val, Ordering::SeqCst);
     }
 
     /// Gets the memory layout for this thread
@@ -223,7 +180,6 @@ struct WasiThreadState {
     signals: Mutex<(Vec<Signal>, Vec<Waker>)>,
     stack: Mutex<ThreadStack>,
     status: Arc<OwnedTaskStatus>,
-    deep_sleeping: AtomicBool,
 
     // Registers the task termination with the ControlPlane on drop.
     // Never accessed, since it's a drop guard.
@@ -250,12 +206,10 @@ impl WasiThread {
                 status,
                 signals: Mutex::new((Vec::new(), Vec::new())),
                 stack: Mutex::new(ThreadStack::default()),
-                deep_sleeping: AtomicBool::new(false),
                 _task_count_guard: guard,
             }),
             layout,
             start,
-            rewind: None,
         }
     }
 

@@ -3,7 +3,7 @@ use wasm_bindgen_test::*;
 use wasmer::*;
 
 #[wasm_bindgen_test]
-fn global_new()  {
+fn global_new() {
     let mut store = Store::default();
     let global = Global::new(&mut store, Value::I32(10));
     assert_eq!(
@@ -25,7 +25,7 @@ fn global_new()  {
 }
 
 #[wasm_bindgen_test]
-fn global_get()  {
+fn global_get() {
     let mut store = Store::default();
 
     let global_i32 = Global::new(&mut store, Value::I32(10));
@@ -33,12 +33,10 @@ fn global_get()  {
 
     let global_f32 = Global::new(&mut store, Value::F32(10.0));
     assert_eq!(global_f32.get(&mut store), Value::F32(10.0));
-
-    
 }
 
 #[wasm_bindgen_test]
-fn global_set()  {
+fn global_set() {
     let mut store = Store::default();
     let global_i32 = Global::new(&mut store, Value::I32(10));
     // Set on a constant should error
@@ -51,14 +49,13 @@ fn global_set()  {
     // Set on same type should succeed
     global_i32_mut
         .set(&mut store, Value::I32(20))
-        .map_err(|e| format!("{e:?}")).unwrap();
+        .map_err(|e| format!("{e:?}"))
+        .unwrap();
     assert_eq!(global_i32_mut.get(&mut store), Value::I32(20));
-
-    
 }
 
 #[wasm_bindgen_test]
-fn table_new()  {
+fn table_new() {
     let mut store = Store::default();
     let table_type = TableType {
         ty: Type::FuncRef,
@@ -67,7 +64,8 @@ fn table_new()  {
     };
     let f = Function::new_typed(&mut store, || {});
     let table = Table::new(&mut store, table_type, Value::FuncRef(Some(f)))
-        .map_err(|e| format!("{e:?}")).unwrap();
+        .map_err(|e| format!("{e:?}"))
+        .unwrap();
     assert_eq!(table.ty(&store), table_type);
 
     // Anyrefs not yet supported
@@ -78,12 +76,10 @@ fn table_new()  {
     // };
     // let table = Table::new(&store, table_type, Value::ExternRef(ExternRef::Null)).map_err(|e| format!("{e:?}"))?;
     // assert_eq!(*table.ty(), table_type);
-
-    
 }
 
 #[wasm_bindgen_test]
-fn table_get()  {
+fn table_get() {
     // Tables are not yet fully supported in Wasm
     // This test was marked as #[ignore] on -sys, which is why it is commented out.
 
@@ -99,47 +95,45 @@ fn table_get()  {
     //    assert_eq!(table.ty(&mut store), table_type);
     //    let _elem = table.get(&mut store, 0).unwrap();
     //    assert_eq!(elem.funcref().unwrap(), f);
-
-    
 }
 
 #[wasm_bindgen_test]
-fn table_set()  {
+fn table_set() {
     // Table set not yet tested
-    
 }
 
 #[wasm_bindgen_test]
-fn table_grow()  {
+fn table_grow() {
     // Tables are not yet fully supported in Wasm
-    
 }
 
 #[wasm_bindgen_test]
-fn table_copy()  {
+fn table_copy() {
     // TODO: table copy test not yet implemented
-    
 }
 
 #[wasm_bindgen_test]
-fn memory_new()  {
+fn memory_new() {
     let mut store = Store::default();
     let memory_type = MemoryType {
         shared: false,
         minimum: Pages(0),
         maximum: Some(Pages(10)),
     };
-    let memory = Memory::new(&mut store, memory_type).map_err(|e| format!("{e:?}")).unwrap();
+    let memory = Memory::new(&mut store, memory_type)
+        .map_err(|e| format!("{e:?}"))
+        .unwrap();
     assert_eq!(memory.view(&store).size(), Pages(0));
     assert_eq!(memory.ty(&store), memory_type);
-    
 }
 
 #[wasm_bindgen_test]
-fn memory_grow()  {
+fn memory_grow() {
     let mut store = Store::default();
     let desc = MemoryType::new(Pages(10), Some(Pages(16)), false);
-    let memory = Memory::new(&mut store, desc).map_err(|e| format!("{e:?}")).unwrap();
+    let memory = Memory::new(&mut store, desc)
+        .map_err(|e| format!("{e:?}"))
+        .unwrap();
     assert_eq!(memory.view(&store).size(), Pages(10));
 
     let result = memory.grow(&mut store, Pages(2)).unwrap();
@@ -154,12 +148,10 @@ fn memory_grow()  {
             attempted_delta: 10.into()
         })
     );
-
-    
 }
 
 #[wasm_bindgen_test]
-fn function_new()  {
+fn function_new() {
     let mut store = Store::default();
     let function = Function::new_typed(&mut store, || {});
     assert_eq!(function.ty(&store), FunctionType::new(vec![], vec![]));
@@ -183,11 +175,10 @@ fn function_new()  {
         function.ty(&store),
         FunctionType::new(vec![], vec![Type::I32, Type::I64, Type::F32, Type::F64])
     );
-    
 }
 
 #[wasm_bindgen_test]
-fn function_new_env()  {
+fn function_new_env() {
     let mut store = Store::default();
     #[derive(Clone)]
     struct MyEnv {}
@@ -226,11 +217,10 @@ fn function_new_env()  {
         function.ty(&store),
         FunctionType::new(vec![], vec![Type::I32, Type::I64, Type::F32, Type::F64])
     );
-    
 }
 
 #[wasm_bindgen_test]
-fn function_new_dynamic()  {
+fn function_new_dynamic() {
     let mut store = Store::default();
 
     // Using &FunctionType signature
@@ -282,12 +272,10 @@ fn function_new_dynamic()  {
         function.ty(&store).results(),
         [Type::I32, Type::F32, Type::F64]
     );
-
-    
 }
 
 #[wasm_bindgen_test]
-fn function_new_dynamic_env()  {
+fn function_new_dynamic_env() {
     let mut store = Store::default();
     #[derive(Clone)]
     struct MyEnv {}
@@ -349,6 +337,4 @@ fn function_new_dynamic_env()  {
         function.ty(&store).results(),
         [Type::I32, Type::F32, Type::F64]
     );
-
-    
 }

@@ -4,8 +4,8 @@ use crate::{Extern, InstantiationError};
 use std::fmt;
 
 use crate::imports::Imports;
-use crate::store::AsStoreMut;
 use crate::js::instance as instance_imp;
+use crate::store::AsStoreMut;
 
 /// A WebAssembly Instance is a stateful, executable
 /// instance of a WebAssembly [`Module`].

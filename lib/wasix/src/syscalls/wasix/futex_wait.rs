@@ -11,6 +11,7 @@ struct FutexPoller {
     expected: u32,
     timeout: Option<Pin<Box<dyn Future<Output = ()> + Send + Sync + 'static>>>,
 }
+
 impl Future for FutexPoller {
     type Output = bool;
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<bool> {
@@ -44,6 +45,7 @@ impl Future for FutexPoller {
         Poll::Pending
     }
 }
+
 impl Drop for FutexPoller {
     fn drop(&mut self) {
         let mut guard = self.state.futexs.lock().unwrap();
@@ -89,18 +91,6 @@ pub(super) fn futex_wait_internal<M: MemorySize + 'static>(
     ret_woken: WasmPtr<Bool, M>,
 ) -> Result<Errno, WasiError> {
     wasi_try_ok!(WasiEnv::process_signals_and_exit(&mut ctx)?);
-
-    ctx = wasi_try_ok!(maybe_backoff::<M>(ctx)?);
-
-    // If we were just restored then we were woken after a deep sleep
-    // and thus we repeat all the checks again, we do not immediately
-    // exit here as it could be the case that we were woken but the
-    // expected value does not match
-    if let Some(_woken) = unsafe { handle_rewind::<M, bool>(&mut ctx) } {
-        // fall through so the normal checks kick in, this will
-        // ensure that the expected value has changed before
-        // this syscall returns even if it was woken
-    }
 
     // Determine the timeout
     let mut env = ctx.data();
@@ -161,15 +151,14 @@ pub(super) fn futex_wait_internal<M: MemorySize + 'static>(
 
     // We use asyncify on the poller and potentially go into deep sleep
     tracing::trace!("wait on {futex_idx}");
-    let res = __asyncify_with_deep_sleep::<M, _, _>(ctx, Box::pin(poller))?;
-    if let AsyncifyAction::Finish(ctx, res) = res {
-        let mut env = ctx.data();
-        let memory = unsafe { env.memory_view(&ctx) };
-        if res {
-            wasi_try_mem_ok!(ret_woken.write(&memory, Bool::True));
-        } else {
-            wasi_try_mem_ok!(ret_woken.write(&memory, Bool::False));
-        }
+    let res = block_on(Box::pin(poller));
+
+    let memory = unsafe { env.memory_view(&ctx) };
+    if res {
+        wasi_try_mem_ok!(ret_woken.write(&memory, Bool::True));
+    } else {
+        wasi_try_mem_ok!(ret_woken.write(&memory, Bool::False));
     }
+
     Ok(Errno::Success)
 }

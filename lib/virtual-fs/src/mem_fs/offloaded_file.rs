@@ -409,7 +409,8 @@ mod tests {
 
         let mut cursor = 0u64;
         let test_data = std::iter::repeat(56u8).take(100).collect::<Vec<_>>();
-        file.write(OffloadWrite::Buffer(&test_data), &mut cursor).unwrap();
+        file.write(OffloadWrite::Buffer(&test_data), &mut cursor)
+            .unwrap();
 
         assert_eq!(file.len(), 100);
 
@@ -422,7 +423,8 @@ mod tests {
         );
 
         cursor = 50;
-        file.write(OffloadWrite::Buffer(&test_data2), &mut cursor).unwrap();
+        file.write(OffloadWrite::Buffer(&test_data2), &mut cursor)
+            .unwrap();
 
         assert_eq!(file.len(), 150);
 
@@ -464,7 +466,8 @@ mod tests {
 
         let mut cursor = 10u64;
         let test_data = std::iter::repeat(74u8).take(10).collect::<Vec<_>>();
-        file.write(OffloadWrite::Buffer(&test_data), &mut cursor).unwrap();
+        file.write(OffloadWrite::Buffer(&test_data), &mut cursor)
+            .unwrap();
 
         assert_eq!(file.len(), 33);
 

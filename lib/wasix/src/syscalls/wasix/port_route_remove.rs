@@ -25,7 +25,7 @@ pub(crate) fn port_route_remove_internal(
 ) -> Result<Result<(), Errno>, WasiError> {
     let env = ctx.data();
     let net = env.net().clone();
-    wasi_try_ok_ok!(__asyncify(ctx, None, async {
+    wasi_try_ok_ok!(block_on_with_signals(ctx, None, async {
         net.route_remove(ip).await.map_err(net_error_into_wasi_err)
     })?);
 

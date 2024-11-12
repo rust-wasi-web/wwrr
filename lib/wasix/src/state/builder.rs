@@ -14,10 +14,7 @@ use crate::{
     fs::{WasiFs, WasiFsRoot, WasiInodes},
     os::task::control_plane::{ControlPlaneConfig, ControlPlaneError, WasiControlPlane},
     state::WasiState,
-    syscalls::{
-        rewind_ext2,
-        types::{__WASI_STDERR_FILENO, __WASI_STDIN_FILENO, __WASI_STDOUT_FILENO},
-    },
+    syscalls::types::{__WASI_STDERR_FILENO, __WASI_STDIN_FILENO, __WASI_STDOUT_FILENO},
     utils::xxhash_random,
     Runtime, WasiEnv, WasiError, WasiFunctionEnv, WasiRuntimeError,
 };
@@ -801,16 +798,6 @@ impl WasiEnvBuilder {
     ) -> Result<(), WasiRuntimeError> {
         let (instance, env) = self.instantiate_ext(module, module_hash, store)?;
 
-        // Bootstrap the process
-        // Unsafe: The bootstrap must be executed in the same thread that runs the
-        //         actual WASM code
-        let rewind_state = unsafe { env.bootstrap(store)? };
-        if rewind_state.is_some() {
-            let mut ctx = env.env.clone().into_mut(store);
-            rewind_ext2(&mut ctx, rewind_state)
-                .map_err(|exit| WasiRuntimeError::Wasi(WasiError::Exit(exit)))?;
-        }
-
         let start = instance.exports.get_function("_start")?;
         env.data(&store).thread.set_status_running();
 
@@ -830,21 +817,6 @@ impl WasiEnvBuilder {
         env.on_exit(store, Some(exit_code));
 
         result
-    }
-
-    /// Start the WASI executable with async threads enabled.
-    #[allow(clippy::result_large_err)]
-    #[tracing::instrument(level = "debug", skip_all)]
-    pub fn run_with_store_async(
-        self,
-        module: Module,
-        module_hash: ModuleHash,
-        mut store: Store,
-    ) -> Result<(), WasiRuntimeError> {
-        let (_, env) = self.instantiate_ext(module, module_hash, &mut store)?;
-
-        env.run_async(store)?;
-        Ok(())
     }
 }
 

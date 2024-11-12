@@ -25,7 +25,6 @@ pub mod os;
 pub mod fs;
 pub mod http;
 pub mod net;
-mod rewind;
 pub mod runtime;
 mod state;
 mod syscalls;
@@ -64,13 +63,12 @@ pub use crate::{
         },
         WasiTtyState,
     },
-    rewind::*,
     runtime::{task_manager::VirtualTaskManager, Runtime},
     state::{
         WasiEnv, WasiEnvBuilder, WasiEnvInit, WasiFunctionEnv, WasiInstanceHandles,
         WasiStateCreationError, ALL_RIGHTS,
     },
-    syscalls::{rewind, rewind_ext, types, unwind},
+    syscalls::types,
     utils::is_wasix_module,
     utils::{
         get_wasi_version, get_wasi_versions, is_wasi_module,
@@ -85,8 +83,6 @@ pub use crate::{
 pub enum WasiError {
     #[error("WASI exited with code: {0}")]
     Exit(ExitCode),
-    #[error("WASI deep sleep: {0:?}")]
-    DeepSleep(DeepSleepWork),
     #[error("The WASI version could not be determined")]
     UnknownWasiVersion,
 }

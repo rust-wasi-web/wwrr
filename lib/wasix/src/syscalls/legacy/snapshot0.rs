@@ -10,8 +10,7 @@ use crate::{
     mem_error_to_wasi,
     os::task::thread::WasiThread,
     state::{PollEventBuilder, PollEventSet},
-    syscalls::types,
-    syscalls::{self, handle_rewind},
+    syscalls::{self, types},
     Memory32, MemorySize, WasiEnv, WasiError,
 };
 

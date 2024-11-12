@@ -69,7 +69,7 @@ pub(super) fn sock_recv_from_internal<M: MemorySize>(
         if max_size <= 10240 {
             let mut buf: [MaybeUninit<u8>; 10240] = unsafe { MaybeUninit::uninit().assume_init() };
             let writer = &mut buf[..max_size];
-            let (amt, peer) = wasi_try_ok!(__sock_asyncify(
+            let (amt, peer) = wasi_try_ok!(block_on_sock(
                 env,
                 sock,
                 Rights::SOCK_RECV,
@@ -94,7 +94,7 @@ pub(super) fn sock_recv_from_internal<M: MemorySize>(
                 (amt, peer)
             }
         } else {
-            let (data, peer) = wasi_try_ok!(__sock_asyncify(
+            let (data, peer) = wasi_try_ok!(block_on_sock(
                 env,
                 sock,
                 Rights::SOCK_RECV_FROM,

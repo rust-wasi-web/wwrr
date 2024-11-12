@@ -1,4 +1,4 @@
-#![allow(unused, clippy::too_many_arguments, clippy::cognitive_complexity)]
+#![allow(clippy::too_many_arguments, clippy::cognitive_complexity)]
 
 pub mod types {
     pub use wasmer_wasix_types::{types::*, wasi};
@@ -9,6 +9,7 @@ pub mod wasix;
 pub mod wasm;
 
 use bytes::{Buf, BufMut};
+use futures::future;
 use futures::{
     future::{BoxFuture, LocalBoxFuture},
     Future,
@@ -57,7 +58,7 @@ pub(crate) use wasmer::{
     Memory, Memory32, Memory64, MemoryAccessError, MemoryError, MemorySize, MemoryView, Module,
     OnCalledAction, Pages, RuntimeError, Store, TypedFunction, Value, WasmPtr, WasmSlice,
 };
-pub(crate) use wasmer_wasix_types::{asyncify::__wasi_asyncify_t, wasi::EventUnion};
+pub(crate) use wasmer_wasix_types::wasi::EventUnion;
 
 pub(crate) use self::types::{
     wasi::{
@@ -89,8 +90,7 @@ use crate::{
     },
     runtime::task_manager::InlineWaker,
     utils::store::StoreSnapshot,
-    DeepSleepWork, RewindPostProcess, RewindState, RewindStateOption, SpawnError, WasiInodes,
-    WasiResult, WasiRuntimeError,
+    SpawnError, WasiInodes, WasiResult, WasiRuntimeError,
 };
 pub(crate) use crate::{
     import_object_for_all_wasi_versions, mem_error_to_wasi,
@@ -226,59 +226,54 @@ pub unsafe fn stderr_write<'a>(
     })
 }
 
-fn block_on_with_timeout<T, Fut>(
-    tasks: &Arc<dyn VirtualTaskManager>,
-    timeout: Option<Duration>,
-    work: Fut,
-) -> WasiResult<T>
+/// Future that will be polled by asyncify methods
+/// (the return value is what will be returned in rewind
+///  or in the instant response)
+pub type AsyncifyFuture = dyn Future<Output = Bytes> + Send + Sync + 'static;
+
+/// Blocks the thread on the specified Future.
+pub(crate) fn block_on<T, Fut>(work: Fut) -> T
 where
-    Fut: Future<Output = WasiResult<T>>,
+    T: 'static,
+    Fut: Future<Output = T>,
 {
-    let mut nonblocking = false;
-    if timeout == Some(Duration::ZERO) {
-        nonblocking = true;
-    }
-    let timeout = async {
-        if let Some(timeout) = timeout {
-            if !nonblocking {
-                tasks.sleep_now(timeout).await
-            } else {
-                InfiniteSleep::default().await
-            }
-        } else {
-            InfiniteSleep::default().await
-        }
-    };
-
-    let work = async move {
-        tokio::select! {
-            // The main work we are doing
-            res = work => res,
-            // Optional timeout
-            _ = timeout => Ok(Err(Errno::Timedout)),
-        }
-    };
-
-    // Fast path
-    if nonblocking {
-        let waker = WasiDummyWaker.into_waker();
-        let mut cx = Context::from_waker(&waker);
-        let mut pinned_work = Box::pin(work);
-        if let Poll::Ready(res) = pinned_work.as_mut().poll(&mut cx) {
-            return res;
-        }
-        return Ok(Err(Errno::Again));
-    }
-
-    // Slow path, block on the work and process process
     InlineWaker::block_on(work)
 }
 
-/// Asyncify takes the current thread and blocks on the async runtime associated with it
-/// thus allowed for asynchronous operations to execute. It has built in functionality
-/// to (optionally) timeout the IO, force exit the process, callback signals and pump
-/// synchronous IO engine
-pub(crate) fn __asyncify<T, Fut>(
+/// Blocks the thread on the specified Future with a timeout.
+///
+/// If the timeout is reached, [`Errno::Timedout`] is returned.
+pub(crate) fn block_on_with_timeout<T, Fut>(
+    env: &WasiEnv,
+    timeout: Option<Duration>,
+    work: Fut,
+) -> Result<T, Errno>
+where
+    T: 'static,
+    Fut: Future<Output = Result<T, Errno>>,
+{
+    let timeout_task = async {
+        match timeout {
+            Some(timeout) => env.tasks().sleep_now(timeout).await,
+            None => future::pending().await,
+        }
+    };
+
+    let task = async {
+        tokio::select! {
+            res = work => res,
+            () = timeout_task => Err(Errno::Timedout)
+        }
+    };
+
+    InlineWaker::block_on(task)
+}
+
+/// Executes the specified future on the current thread while handling signals
+/// and terminaiton.
+///
+/// If timeout is zero and future would block, [`Errno::Again`] is returned.
+pub(crate) fn block_on_with_signals<T, Fut>(
     ctx: &mut FunctionEnvMut<'_, WasiEnv>,
     timeout: Option<Duration>,
     work: Fut,
@@ -302,6 +297,7 @@ where
         ctx: &'a mut FunctionEnvMut<'b, WasiEnv>,
         pinned_work: Pin<Box<Fut>>,
     }
+
     impl<'a, 'b, Fut, T> Future for SignalPoller<'a, 'b, Fut, T>
     where
         Fut: Future<Output = Result<T, Errno>>,
@@ -325,238 +321,38 @@ where
     let mut pinned_work = Box::pin(work);
     let tasks = env.tasks().clone();
     let poller = SignalPoller { ctx, pinned_work };
-    block_on_with_timeout(&tasks, timeout, poller)
-}
 
-/// Future that will be polled by asyncify methods
-/// (the return value is what will be returned in rewind
-///  or in the instant response)
-pub type AsyncifyFuture = dyn Future<Output = Bytes> + Send + Sync + 'static;
-
-// This poller will process any signals when the main working function is idle
-struct AsyncifyPoller<'a, 'b, 'c, T, Fut>
-where
-    Fut: Future<Output = T> + Send + Sync + 'static,
-{
-    ctx: &'b mut FunctionEnvMut<'c, WasiEnv>,
-    work: &'a mut Pin<Box<Fut>>,
-}
-impl<'a, 'b, 'c, T, Fut> Future for AsyncifyPoller<'a, 'b, 'c, T, Fut>
-where
-    Fut: Future<Output = T> + Send + Sync + 'static,
-{
-    type Output = Result<T, WasiError>;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        if let Poll::Ready(res) = self.work.as_mut().poll(cx) {
-            return Poll::Ready(Ok(res));
+    // Non-blocking path.
+    if let Some(Duration::ZERO) = timeout {
+        let waker = WasiDummyWaker.into_waker();
+        let mut cx = Context::from_waker(&waker);
+        let mut pinned_work = Box::pin(poller);
+        match pinned_work.as_mut().poll(&mut cx) {
+            Poll::Ready(res) => return res,
+            Poll::Pending => return Ok(Err(Errno::Again)),
         }
-
-        let env = self.ctx.data();
-        if let Some(forced_exit) = env.thread.try_join() {
-            return Poll::Ready(Err(WasiError::Exit(forced_exit.unwrap_or_else(|err| {
-                tracing::debug!("exit runtime error - {}", err);
-                Errno::Child.into()
-            }))));
-        }
-        if env.thread.has_signals_or_subscribe(cx.waker()) {
-            let has_exit = {
-                let signals = env.thread.signals().lock().unwrap();
-                signals
-                    .0
-                    .iter()
-                    .filter_map(|sig| {
-                        if *sig == Signal::Sigint
-                            || *sig == Signal::Sigquit
-                            || *sig == Signal::Sigkill
-                            || *sig == Signal::Sigabrt
-                        {
-                            Some(env.thread.set_or_get_exit_code_for_signal(*sig))
-                        } else {
-                            None
-                        }
-                    })
-                    .next()
-            };
-
-            return match WasiEnv::process_signals_and_exit(self.ctx) {
-                Ok(Ok(_)) => {
-                    if let Some(exit_code) = has_exit {
-                        Poll::Ready(Err(WasiError::Exit(exit_code)))
-                    } else {
-                        Poll::Pending
-                    }
-                }
-                Ok(Err(err)) => Poll::Ready(Err(WasiError::Exit(ExitCode::Errno(err)))),
-                Err(err) => Poll::Ready(Err(err)),
-            };
-        }
-        Poll::Pending
     }
-}
 
-pub enum AsyncifyAction<'a, R> {
-    /// Indicates that asyncify callback finished and the
-    /// caller now has ownership of the ctx again
-    Finish(FunctionEnvMut<'a, WasiEnv>, R),
-    /// Indicates that asyncify should unwind by immediately exiting
-    /// the current function
-    Unwind,
-}
-
-/// Exponentially increasing backoff of CPU usage
-///
-/// Under certain conditions the process will exponentially backoff
-/// using waits that either put the thread into a low usage state
-/// or even underload the thread completely when deep sleep is enabled
-///
-/// The use-case for this is to handle rogue WASM processes that
-/// generate excessively high CPU usage and need to be artificially
-/// throttled
-///
-#[deprecated = "asyncify"]
-pub(crate) fn maybe_backoff<M: MemorySize>(
-    mut ctx: FunctionEnvMut<'_, WasiEnv>,
-) -> Result<Result<FunctionEnvMut<'_, WasiEnv>, Errno>, WasiError> {
-    let env = ctx.data();
-    Ok(Ok(ctx))
-}
-
-/// Asyncify takes the current thread and blocks on the async runtime associated with it
-/// thus allowed for asynchronous operations to execute. It has built in functionality
-/// to (optionally) timeout the IO, force exit the process, callback signals and pump
-/// synchronous IO engine
-///
-/// This will either return the `ctx` as the asyncify has completed successfully
-/// or it will return an WasiError which will exit the WASM call using asyncify
-/// and instead process it on a shared task
-#[deprecated = "asyncify"]
-pub(crate) fn __asyncify_with_deep_sleep<M: MemorySize, T, Fut>(
-    mut ctx: FunctionEnvMut<'_, WasiEnv>,
-    work: Fut,
-) -> Result<AsyncifyAction<'_, T>, WasiError>
-where
-    T: serde::Serialize + serde::de::DeserializeOwned,
-    Fut: Future<Output = T> + Send + Sync + 'static,
-{
-    // Determine the deep sleep time
-    let deep_sleep_time = Duration::from_millis(50);
-
-    // Box up the trigger
-    let mut trigger = Box::pin(work);
-
-    // Define the work
-    let tasks = ctx.data().tasks().clone();
-    let work = async move {
-        let env = ctx.data();
-
-        // Create the deep sleeper
-        let deep_sleep_wait = async { InfiniteSleep::default().await };
-
-        Ok(tokio::select! {
-            // Inner wait with finializer
-            res = AsyncifyPoller {
-                ctx: &mut ctx,
-                work: &mut trigger,
-            } => {
-                let result = res?;
-                AsyncifyAction::Finish(ctx, result)
-            },
-            // Determines when and if we should go into a deep sleep
-            _ = deep_sleep_wait => {
-                let pid = ctx.data().pid();
-                let tid = ctx.data().tid();
-
-                // We put thread into a deep sleeping state and
-                // notify anyone who is waiting for that
-                let thread = ctx.data().thread.clone();
-                thread.set_deep_sleeping(true);
-                ctx.data().process.inner.1.notify_one();
-
-                tracing::trace!(%pid, %tid, "thread entering deep sleep");
-                deep_sleep::<M>(ctx, Box::pin(async move {
-                    // After this wakes the background work or waking
-                    // event has triggered and its time to result
-                    let result = trigger.await;
-                    tracing::trace!(%pid, %tid, "thread leaving deep sleep");
-                    thread.set_deep_sleeping(false);
-                    bincode::serialize(&result).unwrap().into()
-                }))?;
-                AsyncifyAction::Unwind
-            },
-        })
+    let timeout = async move {
+        match timeout {
+            Some(timeout) => tasks.sleep_now(timeout).await,
+            None => future::pending().await,
+        }
     };
 
-    // Block until the work is finished or until we
-    // unload the thread using asyncify
-    InlineWaker::block_on(work)
-}
-
-/// Asyncify takes the current thread and blocks on the async runtime associated with it
-/// thus allowed for asynchronous operations to execute. It has built in functionality
-/// to (optionally) timeout the IO, force exit the process, callback signals and pump
-/// synchronous IO engine
-#[deprecated = "asyncify light"]
-pub(crate) fn __asyncify_light<T, Fut>(
-    env: &WasiEnv,
-    timeout: Option<Duration>,
-    work: Fut,
-) -> WasiResult<T>
-where
-    T: 'static,
-    Fut: Future<Output = Result<T, Errno>>,
-{
-    // This poller will process any signals when the main working function is idle
-    struct Poller<'a, Fut, T>
-    where
-        Fut: Future<Output = Result<T, Errno>>,
-    {
-        env: &'a WasiEnv,
-        pinned_work: Pin<Box<Fut>>,
-        pinned_snapshot: Pin<Box<dyn Future<Output = ()>>>,
-    }
-    impl<'a, Fut, T> Future for Poller<'a, Fut, T>
-    where
-        Fut: Future<Output = Result<T, Errno>>,
-    {
-        type Output = Result<Fut::Output, WasiError>;
-        fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-            if let Poll::Ready(res) = Pin::new(&mut self.pinned_work).poll(cx) {
-                return Poll::Ready(Ok(res));
-            }
-            if let Poll::Ready(()) = Pin::new(&mut self.pinned_snapshot).poll(cx) {
-                return Poll::Ready(Ok(Err(Errno::Intr)));
-            }
-            if let Some(exit_code) = self.env.should_exit() {
-                return Poll::Ready(Err(WasiError::Exit(exit_code)));
-            }
-            if self.env.thread.has_signals_or_subscribe(cx.waker()) {
-                return Poll::Ready(Ok(Err(Errno::Intr)));
-            }
-            Poll::Pending
+    // Block on the work with timeout.
+    let task = async move {
+        tokio::select! {
+            res = poller => res,
+            () = timeout => Ok(Err(Errno::Timedout)),
         }
-    }
+    };
 
-    // Block until the work is finished or until we
-    // unload the thread using asyncify
-    Ok(InlineWaker::block_on(work))
+    InlineWaker::block_on(task)
 }
 
-// This should be compiled away, it will simply wait forever however its never
-// used by itself, normally this is passed into asyncify which will still abort
-// the operating on timeouts, signals or other work due to a select! around the await
-#[derive(Default)]
-pub struct InfiniteSleep {}
-impl std::future::Future for InfiniteSleep {
-    type Output = ();
-    fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
-        Poll::Pending
-    }
-}
-
-/// Performs an immutable operation on the socket while running in an asynchronous runtime
-/// This has built in signal support
-pub(crate) fn __sock_asyncify<T, F, Fut>(
+/// Performs an immutable operation on the socket.
+pub(crate) fn block_on_sock<T, F, Fut>(
     env: &WasiEnv,
     sock: WasiFd,
     rights: Rights,
@@ -590,48 +386,7 @@ where
         }
     };
 
-    // Block until the work is finished or until we
-    // unload the thread using asyncify
     InlineWaker::block_on(work)
-}
-
-/// Performs mutable work on a socket under an asynchronous runtime with
-/// built in signal processing
-pub(crate) fn __sock_asyncify_mut<T, F, Fut>(
-    ctx: &'_ mut FunctionEnvMut<'_, WasiEnv>,
-    sock: WasiFd,
-    rights: Rights,
-    actor: F,
-) -> Result<T, Errno>
-where
-    F: FnOnce(crate::net::socket::InodeSocket, Fd) -> Fut,
-    Fut: std::future::Future<Output = Result<T, Errno>>,
-{
-    let env = ctx.data();
-    let tasks = env.tasks().clone();
-
-    let fd_entry = env.state.fs.get_fd(sock)?;
-    if !rights.is_empty() && !fd_entry.rights.contains(rights) {
-        return Err(Errno::Access);
-    }
-
-    let inode = fd_entry.inode.clone();
-    let mut guard = inode.write();
-    match guard.deref_mut() {
-        Kind::Socket { socket } => {
-            // Clone the socket and release the lock
-            let socket = socket.clone();
-            drop(guard);
-
-            // Start the work using the socket
-            let mut work = actor(socket, fd_entry);
-
-            // Otherwise we block on the work and process it
-            // using an asynchronou context
-            InlineWaker::block_on(work)
-        }
-        _ => Err(Errno::Notsock),
-    }
 }
 
 /// Performs an immutable operation on the socket while running in an asynchronous runtime
@@ -818,553 +573,8 @@ pub(crate) fn get_current_time_in_nanos() -> Result<Timestamp, Errno> {
     Ok(now as Timestamp)
 }
 
-pub(crate) fn get_stack_lower(env: &WasiEnv) -> u64 {
-    env.layout.stack_lower
-}
-
-pub(crate) fn get_stack_upper(env: &WasiEnv) -> u64 {
-    env.layout.stack_upper
-}
-
-pub(crate) unsafe fn get_memory_stack_pointer(
-    ctx: &mut FunctionEnvMut<'_, WasiEnv>,
-) -> Result<u64, String> {
-    // Get the current value of the stack pointer (which we will use
-    // to save all of the stack)
-    let stack_upper = get_stack_upper(ctx.data());
-    let stack_pointer = if let Some(stack_pointer) = ctx.data().inner().stack_pointer.clone() {
-        match stack_pointer.get(ctx) {
-            Value::I32(a) => a as u64,
-            Value::I64(a) => a as u64,
-            _ => stack_upper,
-        }
-    } else {
-        return Err("failed to save stack: not exported __stack_pointer global".to_string());
-    };
-    Ok(stack_pointer)
-}
-
-pub(crate) unsafe fn get_memory_stack_offset(
-    ctx: &mut FunctionEnvMut<'_, WasiEnv>,
-) -> Result<u64, String> {
-    let stack_upper = get_stack_upper(ctx.data());
-    let stack_pointer = get_memory_stack_pointer(ctx)?;
-    Ok(stack_upper - stack_pointer)
-}
-
-pub(crate) fn set_memory_stack_offset(
-    env: &WasiEnv,
-    store: &mut impl AsStoreMut,
-    offset: u64,
-) -> Result<(), String> {
-    // Sets the stack pointer
-    let stack_upper = get_stack_upper(env);
-    let stack_pointer = stack_upper - offset;
-    if let Some(stack_pointer_ptr) = env
-        .try_inner()
-        .ok_or_else(|| "unable to access the stack pointer of the instance".to_string())?
-        .stack_pointer
-        .clone()
-    {
-        match stack_pointer_ptr.get(store) {
-            Value::I32(_) => {
-                stack_pointer_ptr.set(store, Value::I32(stack_pointer as i32));
-            }
-            Value::I64(_) => {
-                stack_pointer_ptr.set(store, Value::I64(stack_pointer as i64));
-            }
-            _ => {
-                return Err(
-                    "failed to save stack: __stack_pointer global is of an unknown type"
-                        .to_string(),
-                );
-            }
-        }
-    } else {
-        return Err("failed to save stack: not exported __stack_pointer global".to_string());
-    }
-    Ok(())
-}
-
-#[allow(dead_code)]
-pub(crate) fn get_memory_stack<M: MemorySize>(
-    env: &WasiEnv,
-    store: &mut impl AsStoreMut,
-) -> Result<BytesMut, String> {
-    // Get the current value of the stack pointer (which we will use
-    // to save all of the stack)
-    let stack_base = get_stack_upper(env);
-    let stack_pointer = if let Some(stack_pointer) = env
-        .try_inner()
-        .ok_or_else(|| "unable to access the stack pointer of the instance".to_string())?
-        .stack_pointer
-        .clone()
-    {
-        match stack_pointer.get(store) {
-            Value::I32(a) => a as u64,
-            Value::I64(a) => a as u64,
-            _ => stack_base,
-        }
-    } else {
-        return Err("failed to save stack: not exported __stack_pointer global".to_string());
-    };
-    let memory = env
-        .try_memory_view(store)
-        .ok_or_else(|| "unable to access the memory of the instance".to_string())?;
-    let stack_offset = env.layout.stack_upper - stack_pointer;
-
-    // Read the memory stack into a vector
-    let memory_stack_ptr = WasmPtr::<u8, M>::new(
-        stack_pointer
-            .try_into()
-            .map_err(|err| format!("failed to save stack: stack pointer overflow (stack_pointer={}, stack_lower={}, stack_upper={})", stack_offset, env.layout.stack_lower, env.layout.stack_upper))?,
-    );
-
-    memory_stack_ptr
-        .slice(
-            &memory,
-            stack_offset
-                .try_into()
-                .map_err(|err| format!("failed to save stack: stack pointer overflow (stack_pointer={}, stack_lower={}, stack_upper={})", stack_offset, env.layout.stack_lower, env.layout.stack_upper))?,
-        )
-        .and_then(|memory_stack| memory_stack.read_to_bytes())
-        .map_err(|err| format!("failed to read stack: {}", err))
-}
-
-#[allow(dead_code)]
-pub(crate) fn set_memory_stack<M: MemorySize>(
-    env: &WasiEnv,
-    store: &mut impl AsStoreMut,
-    stack: Bytes,
-) -> Result<(), String> {
-    // First we restore the memory stack
-    let stack_upper = get_stack_upper(env);
-    let stack_offset = stack.len() as u64;
-    let stack_pointer = stack_upper - stack_offset;
-    let stack_ptr = WasmPtr::<u8, M>::new(
-        stack_pointer
-            .try_into()
-            .map_err(|_| "failed to restore stack: stack pointer overflow".to_string())?,
-    );
-
-    let memory = env
-        .try_memory_view(store)
-        .ok_or_else(|| "unable to set the stack pointer of the instance".to_string())?;
-    stack_ptr
-        .slice(
-            &memory,
-            stack_offset
-                .try_into()
-                .map_err(|_| "failed to restore stack: stack pointer overflow".to_string())?,
-        )
-        .and_then(|memory_stack| memory_stack.write_slice(&stack[..]))
-        .map_err(|err| format!("failed to write stack: {}", err))?;
-
-    // Set the stack pointer itself and return
-    set_memory_stack_offset(env, store, stack_offset)?;
-    Ok(())
-}
-
-/// Puts the process to deep sleep and wakes it again when
-/// the supplied future completes
-#[must_use = "you must return the result immediately so the stack can unwind"]
-pub(crate) fn deep_sleep<M: MemorySize>(
-    mut ctx: FunctionEnvMut<'_, WasiEnv>,
-    trigger: Pin<Box<AsyncifyFuture>>,
-) -> Result<(), WasiError> {
-    // Grab all the globals and serialize them
-    let store_data = crate::utils::store::capture_store_snapshot(&mut ctx.as_store_mut())
-        .serialize()
-        .unwrap();
-    let store_data = Bytes::from(store_data);
-    let thread_start = ctx.data().thread.thread_start_type();
-
-    // Perform the unwind action
-    let tasks = ctx.data().tasks().clone();
-    let res = unwind::<M, _>(ctx, move |mut ctx, memory_stack, rewind_stack| {
-        let memory_stack = memory_stack.freeze();
-        let rewind_stack = rewind_stack.freeze();
-        let thread_layout = ctx.data().thread.memory_layout().clone();
-
-        // Schedule the process on the stack so that it can be resumed
-        OnCalledAction::Trap(Box::new(WasiError::DeepSleep(DeepSleepWork {
-            trigger,
-            rewind: RewindState {
-                memory_stack,
-                rewind_stack,
-                store_data,
-                start: thread_start,
-                layout: thread_layout,
-                is_64bit: M::is_64bit(),
-            },
-        })))
-    })?;
-
-    // If there is an error then exit the process, otherwise we are done
-    match res {
-        Errno::Success => Ok(()),
-        err => Err(WasiError::Exit(ExitCode::Errno(err))),
-    }
-}
-
-#[must_use = "you must return the result immediately so the stack can unwind"]
-pub fn unwind<M: MemorySize, F>(
-    mut ctx: FunctionEnvMut<'_, WasiEnv>,
-    callback: F,
-) -> Result<Errno, WasiError>
-where
-    F: FnOnce(FunctionEnvMut<'_, WasiEnv>, BytesMut, BytesMut) -> OnCalledAction
-        + Send
-        + Sync
-        + 'static,
-{
-    // Get the current stack pointer (this will be used to determine the
-    // upper limit of stack space remaining to unwind into)
-    let (env, mut store) = ctx.data_and_store_mut();
-    let memory_stack = match get_memory_stack::<M>(env, &mut store) {
-        Ok(a) => a,
-        Err(err) => {
-            warn!("unable to get the memory stack - {}", err);
-            return Err(WasiError::Exit(Errno::Unknown.into()));
-        }
-    };
-
-    // Perform a check to see if we have enough room
-    let env = ctx.data();
-    let memory = unsafe { env.memory_view(&ctx) };
-
-    // Write the addresses to the start of the stack space
-    let unwind_pointer = env.layout.stack_lower;
-    let unwind_data_start =
-        unwind_pointer + (std::mem::size_of::<__wasi_asyncify_t<M::Offset>>() as u64);
-    let unwind_data = __wasi_asyncify_t::<M::Offset> {
-        start: wasi_try_ok!(unwind_data_start.try_into().map_err(|_| Errno::Overflow)),
-        end: wasi_try_ok!((env.layout.stack_upper - memory_stack.len() as u64)
-            .try_into()
-            .map_err(|_| Errno::Overflow)),
-    };
-    let unwind_data_ptr: WasmPtr<__wasi_asyncify_t<M::Offset>, M> =
-        WasmPtr::new(wasi_try_ok!(unwind_pointer
-            .try_into()
-            .map_err(|_| Errno::Overflow)));
-    wasi_try_mem_ok!(unwind_data_ptr.write(&memory, unwind_data));
-
-    // Invoke the callback that will prepare to unwind
-    // We need to start unwinding the stack
-    let asyncify_data = wasi_try_ok!(unwind_pointer.try_into().map_err(|_| Errno::Overflow));
-    if let Some(asyncify_start_unwind) = wasi_try_ok!(env.try_inner().ok_or(Errno::Fault))
-        .asyncify_start_unwind
-        .clone()
-    {
-        asyncify_start_unwind.call(&mut ctx, asyncify_data);
-    } else {
-        warn!("failed to unwind the stack because the asyncify_start_rewind export is missing");
-        return Err(WasiError::Exit(Errno::Noexec.into()));
-    }
-
-    // Set callback that will be invoked when this process finishes
-    let env = ctx.data();
-    let unwind_stack_begin: u64 = unwind_data.start.into();
-    let total_stack_space = env.layout.stack_size;
-    let func = ctx.as_ref();
-    trace!(
-        stack_upper = env.layout.stack_upper,
-        stack_lower = env.layout.stack_lower,
-        "wasi[{}:{}]::unwinding (used_stack_space={} total_stack_space={})",
-        ctx.data().pid(),
-        ctx.data().tid(),
-        memory_stack.len(),
-        total_stack_space
-    );
-    ctx.as_store_mut().on_called(move |mut store| {
-        let mut ctx = func.into_mut(&mut store);
-        let env = ctx.data();
-        let memory = env
-            .try_memory_view(&ctx)
-            .ok_or_else(|| "failed to save stack: stack pointer overflow - unable to access the memory of the instance".to_string())?;
-
-        let unwind_data_ptr: WasmPtr<__wasi_asyncify_t<M::Offset>, M> = WasmPtr::new(
-            unwind_pointer
-                .try_into()
-                .map_err(|_| Errno::Overflow)
-                .unwrap(),
-        );
-        let unwind_data_result = unwind_data_ptr.read(&memory).unwrap();
-        let unwind_stack_finish: u64 = unwind_data_result.start.into();
-        let unwind_size = unwind_stack_finish - unwind_stack_begin;
-        trace!(
-            "wasi[{}:{}]::unwound (memory_stack_size={} unwind_size={})",
-            ctx.data().pid(),
-            ctx.data().tid(),
-            memory_stack.len(),
-            unwind_size
-        );
-
-        // Read the memory stack into a vector
-        let unwind_stack_ptr = WasmPtr::<u8, M>::new(
-            unwind_stack_begin
-                .try_into()
-                .map_err(|_| "failed to save stack: stack pointer overflow".to_string())?,
-        );
-        let unwind_stack = unwind_stack_ptr
-            .slice(
-                &memory,
-                unwind_size
-                    .try_into()
-                    .map_err(|_| "failed to save stack: stack pointer overflow".to_string())?,
-            )
-            .and_then(|memory_stack| memory_stack.read_to_bytes())
-            .map_err(|err| format!("failed to read stack: {}", err))?;
-
-        // Notify asyncify that we are no longer unwinding
-        if let Some(asyncify_stop_unwind) = env
-            .try_inner()
-            .into_iter()
-            .filter_map(|i| i.asyncify_stop_unwind.clone())
-            .next()
-        {
-            asyncify_stop_unwind.call(&mut ctx);
-        } else {
-            warn!("failed to unwind the stack because the asyncify_start_rewind export is missing");
-            return Ok(OnCalledAction::Finish);
-        }
-
-        Ok(callback(ctx, memory_stack, unwind_stack))
-    });
-
-    // We need to exit the function so that it can unwind and then invoke the callback
-    Ok(Errno::Success)
-}
-
-// NOTE: not tracing-instrumented because [`rewind_ext`] already is.
-#[must_use = "the action must be passed to the call loop"]
-pub fn rewind<M: MemorySize, T>(
-    mut ctx: FunctionEnvMut<WasiEnv>,
-    memory_stack: Bytes,
-    rewind_stack: Bytes,
-    store_data: Bytes,
-    result: T,
-) -> Errno
-where
-    T: serde::Serialize,
-{
-    let rewind_result = bincode::serialize(&result).unwrap().into();
-    rewind_ext::<M>(
-        &mut ctx,
-        Some(memory_stack),
-        rewind_stack,
-        store_data,
-        RewindResultType::RewindWithResult(rewind_result),
-    )
-}
-
-#[instrument(level = "trace", skip_all, fields(rewind_stack_len = rewind_stack.len(), store_data_len = store_data.len()))]
-#[must_use = "the action must be passed to the call loop"]
-pub fn rewind_ext<M: MemorySize>(
-    ctx: &mut FunctionEnvMut<WasiEnv>,
-    memory_stack: Option<Bytes>,
-    rewind_stack: Bytes,
-    store_data: Bytes,
-    rewind_result: RewindResultType,
-) -> Errno {
-    // Store the memory stack so that it can be restored later
-    ctx.data_mut().thread.set_rewind(RewindResult {
-        memory_stack,
-        rewind_result,
-    });
-
-    // Deserialize the store data back into a snapshot
-    let store_snapshot = match StoreSnapshot::deserialize(&store_data[..]) {
-        Ok(a) => a,
-        Err(err) => {
-            warn!("snapshot restore failed - the store snapshot could not be deserialized");
-            return Errno::Unknown;
-        }
-    };
-    crate::utils::store::restore_store_snapshot(ctx, &store_snapshot);
-    let env = ctx.data();
-    let memory = match env.try_memory_view(&ctx) {
-        Some(v) => v,
-        None => {
-            warn!("snapshot restore failed - unable to access the memory of the instance");
-            return Errno::Unknown;
-        }
-    };
-
-    // Write the addresses to the start of the stack space
-    let rewind_pointer = env.layout.stack_lower;
-    let rewind_data_start =
-        rewind_pointer + (std::mem::size_of::<__wasi_asyncify_t<M::Offset>>() as u64);
-    let rewind_data_end = rewind_data_start + (rewind_stack.len() as u64);
-    if rewind_data_end > env.layout.stack_upper {
-        warn!(
-            "attempting to rewind a stack bigger than the allocated stack space ({} > {})",
-            rewind_data_end, env.layout.stack_upper
-        );
-        return Errno::Overflow;
-    }
-    let rewind_data = __wasi_asyncify_t::<M::Offset> {
-        start: wasi_try!(rewind_data_end.try_into().map_err(|_| Errno::Overflow)),
-        end: wasi_try!(env
-            .layout
-            .stack_upper
-            .try_into()
-            .map_err(|_| Errno::Overflow)),
-    };
-    let rewind_data_ptr: WasmPtr<__wasi_asyncify_t<M::Offset>, M> =
-        WasmPtr::new(wasi_try!(rewind_pointer
-            .try_into()
-            .map_err(|_| Errno::Overflow)));
-    wasi_try_mem!(rewind_data_ptr.write(&memory, rewind_data));
-
-    // Copy the data to the address
-    let rewind_stack_ptr = WasmPtr::<u8, M>::new(wasi_try!(rewind_data_start
-        .try_into()
-        .map_err(|_| Errno::Overflow)));
-    wasi_try_mem!(rewind_stack_ptr
-        .slice(
-            &memory,
-            wasi_try!(rewind_stack.len().try_into().map_err(|_| Errno::Overflow))
-        )
-        .and_then(|stack| { stack.write_slice(&rewind_stack[..]) }));
-
-    // Invoke the callback that will prepare to rewind
-    let asyncify_data = wasi_try!(rewind_pointer.try_into().map_err(|_| Errno::Overflow));
-    if let Some(asyncify_start_rewind) = env
-        .try_inner()
-        .into_iter()
-        .filter_map(|a| a.asyncify_start_rewind.clone())
-        .next()
-    {
-        asyncify_start_rewind.call(ctx, asyncify_data);
-    } else {
-        warn!("failed to rewind the stack because the asyncify_start_rewind export is missing or inaccessible");
-        return Errno::Noexec;
-    }
-
-    Errno::Success
-}
-
-pub fn rewind_ext2(
-    ctx: &mut FunctionEnvMut<WasiEnv>,
-    rewind_state: RewindStateOption,
-) -> Result<(), ExitCode> {
-    if let Some((rewind_state, rewind_result)) = rewind_state {
-        tracing::trace!("Rewinding");
-        let errno = if rewind_state.is_64bit {
-            crate::rewind_ext::<wasmer_types::Memory64>(
-                ctx,
-                Some(rewind_state.memory_stack),
-                rewind_state.rewind_stack,
-                rewind_state.store_data,
-                rewind_result,
-            )
-        } else {
-            crate::rewind_ext::<wasmer_types::Memory32>(
-                ctx,
-                Some(rewind_state.memory_stack),
-                rewind_state.rewind_stack,
-                rewind_state.store_data,
-                rewind_result,
-            )
-        };
-
-        if errno != Errno::Success {
-            let exit_code = ExitCode::from(errno);
-            ctx.data().blocking_on_exit(Some(exit_code));
-            return Err(exit_code);
-        }
-    }
-
-    Ok(())
-}
-
 pub fn anyhow_err_to_runtime_err(err: anyhow::Error) -> WasiRuntimeError {
     WasiRuntimeError::Runtime(RuntimeError::user(err.into()))
-}
-
-pub(crate) unsafe fn handle_rewind<M: MemorySize, T>(
-    ctx: &mut FunctionEnvMut<'_, WasiEnv>,
-) -> Option<T>
-where
-    T: serde::de::DeserializeOwned,
-{
-    handle_rewind_ext::<M, T>(ctx, HandleRewindType::ResultDriven).flatten()
-}
-
-pub(crate) enum HandleRewindType {
-    /// Handle rewind types that have a result to be processed
-    ResultDriven,
-    /// Handle rewind types that are result-less (generally these
-    /// are caused by snapshot events)
-    ResultLess,
-}
-
-pub(crate) unsafe fn handle_rewind_ext_with_default<M: MemorySize, T>(
-    ctx: &mut FunctionEnvMut<'_, WasiEnv>,
-    type_: HandleRewindType,
-) -> Option<T>
-where
-    T: serde::de::DeserializeOwned + Default,
-{
-    let ret = handle_rewind_ext::<M, T>(ctx, type_);
-    ret.unwrap_or_default()
-}
-
-pub(crate) unsafe fn handle_rewind_ext<M: MemorySize, T>(
-    ctx: &mut FunctionEnvMut<'_, WasiEnv>,
-    type_: HandleRewindType,
-) -> Option<Option<T>>
-where
-    T: serde::de::DeserializeOwned,
-{
-    let env = ctx.data();
-    if !env.thread.has_rewind_of_type(type_) {
-        return None;
-    };
-
-    // If the stack has been restored
-    let tid = env.tid();
-    let pid = env.pid();
-    if let Some(result) = ctx.data_mut().thread.take_rewind() {
-        // Deserialize the result
-        let memory_stack = result.memory_stack;
-
-        // Notify asyncify that we are no longer rewinding
-        let env = ctx.data();
-        if let Some(asyncify_stop_rewind) = env.inner().asyncify_stop_unwind.clone() {
-            asyncify_stop_rewind.call(ctx);
-        } else {
-            warn!("failed to handle rewind because the asyncify_start_rewind export is missing or inaccessible");
-            return Some(None);
-        }
-
-        // Restore the memory stack
-        let (env, mut store) = ctx.data_and_store_mut();
-        if let Some(memory_stack) = memory_stack {
-            set_memory_stack::<M>(env, &mut store, memory_stack);
-        }
-
-        match result.rewind_result {
-            RewindResultType::RewindRestart => {
-                debug!(%pid, %tid, "rewind for syscall restart");
-                None
-            }
-            RewindResultType::RewindWithoutResult => {
-                debug!(%pid, %tid, "rewind with no result");
-                Some(None)
-            }
-            RewindResultType::RewindWithResult(rewind_result) => {
-                debug!(%pid, %tid, "rewind with result (data={})", rewind_result.len());
-                let ret = bincode::deserialize(&rewind_result)
-                    .expect("failed to deserialize the rewind result");
-                Some(Some(ret))
-            }
-        }
-    } else {
-        debug!(%pid, %tid, "rewind miss");
-        Some(None)
-    }
 }
 
 // Function to prepare the WASI environment

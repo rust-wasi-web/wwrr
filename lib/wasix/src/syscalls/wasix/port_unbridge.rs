@@ -15,7 +15,7 @@ pub(crate) fn port_unbridge_internal(
 ) -> Result<Result<(), Errno>, WasiError> {
     let env = ctx.data();
     let net = env.net().clone();
-    wasi_try_ok_ok!(__asyncify(ctx, None, async move {
+    wasi_try_ok_ok!(block_on_with_signals(ctx, None, async move {
         net.unbridge().await.map_err(net_error_into_wasi_err)
     })?);
     Ok(Ok(()))

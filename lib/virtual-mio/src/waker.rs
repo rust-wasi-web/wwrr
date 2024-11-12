@@ -6,10 +6,12 @@ use std::{
 
 use futures::Future;
 
+/// Runs a Future on the current thread.
 pub struct InlineWaker {
     lock: Mutex<()>,
     condvar: Condvar,
 }
+
 impl InlineWaker {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
@@ -33,6 +35,7 @@ impl InlineWaker {
         unsafe { Waker::from_raw(raw_waker) }
     }
 
+    /// Runs the specified Future blocking the current thread.
     pub fn block_on<'a, A>(task: impl Future<Output = A> + 'a) -> A {
         // Create the waker
         let inline_waker = Self::new();

@@ -52,7 +52,7 @@ pub(crate) fn port_bridge_internal(
     let env = ctx.data();
 
     let net = env.net().clone();
-    wasi_try_ok_ok!(__asyncify(ctx, None, async move {
+    wasi_try_ok_ok!(block_on_with_signals(ctx, None, async move {
         net.bridge(network, token, security)
             .await
             .map_err(net_error_into_wasi_err)

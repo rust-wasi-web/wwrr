@@ -64,8 +64,6 @@ pub fn poll_oneoff<M: MemorySize + 'static>(
 ) -> Result<Errno, WasiError> {
     wasi_try_ok!(WasiEnv::process_signals_and_exit(&mut ctx)?);
 
-    ctx = wasi_try_ok!(maybe_backoff::<M>(ctx)?);
-
     ctx.data_mut().poll_seed += 1;
     let mut env = ctx.data();
     let mut memory = unsafe { env.memory_view(&ctx) };
@@ -411,10 +409,9 @@ where
 
     let tasks = env.tasks().clone();
     let timeout = async move {
-        if let Some(timeout) = timeout {
-            tasks.sleep_now(timeout).await;
-        } else {
-            InfiniteSleep::default().await
+        match timeout {
+            Some(timeout) => tasks.sleep_now(timeout).await,
+            None => future::pending().await,
         }
     };
 
@@ -456,21 +453,9 @@ where
         }
     };
 
-    // If we are rewound then its time to process them
-    if let Some(events) = unsafe { handle_rewind::<M, Result<Vec<EventResult>, Errno>>(&mut ctx) } {
-        let events = events.map(|events| events.into_iter().map(EventResult::into_event).collect());
-        process_events(&ctx, events);
-        return Ok(Errno::Success);
-    }
-
     // We use asyncify with a deep sleep to wait on new IO events
-    let res = __asyncify_with_deep_sleep::<M, Result<Vec<EventResult>, Errno>, _>(
-        ctx,
-        Box::pin(trigger),
-    )?;
-    if let AsyncifyAction::Finish(mut ctx, events) = res {
-        let events = events.map(|events| events.into_iter().map(EventResult::into_event).collect());
-        process_events(&ctx, events);
-    }
+    let events = block_on(Box::pin(trigger));
+    let events = events.map(|events| events.into_iter().map(EventResult::into_event).collect());
+    process_events(&ctx, events);
     Ok(Errno::Success)
 }

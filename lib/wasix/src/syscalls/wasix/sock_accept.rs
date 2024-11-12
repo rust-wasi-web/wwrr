@@ -102,7 +102,7 @@ pub(crate) fn sock_accept_internal(
     let inodes = &state.inodes;
 
     let tasks = env.tasks().clone();
-    let (child, local_addr, peer_addr, fd_flags) = wasi_try_ok_ok!(__sock_asyncify(
+    let (child, local_addr, peer_addr, fd_flags) = wasi_try_ok_ok!(block_on_sock(
         env,
         sock,
         Rights::SOCK_ACCEPT,

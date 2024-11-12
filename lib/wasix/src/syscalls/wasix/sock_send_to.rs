@@ -71,7 +71,7 @@ pub(crate) fn sock_send_to_internal<M: MemorySize>(
     let memory = unsafe { env.memory_view(&ctx) };
 
     let bytes_written = {
-        wasi_try_ok_ok!(__sock_asyncify(
+        wasi_try_ok_ok!(block_on_sock(
             env,
             sock,
             Rights::SOCK_SEND_TO,

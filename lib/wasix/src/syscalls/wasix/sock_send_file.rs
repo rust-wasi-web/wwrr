@@ -74,7 +74,7 @@ pub(crate) fn sock_send_file_internal(
                     let mut stdin = wasi_try_ok_ok!(
                         WasiInodes::stdin_mut(&state.fs.fd_map).map_err(fs_error_into_wasi_err)
                     );
-                    let data = wasi_try_ok_ok!(__asyncify(ctx, None, async move {
+                    let data = wasi_try_ok_ok!(block_on_with_signals(ctx, None, async move {
                         // TODO: optimize with MaybeUninit
                         let mut buf = vec![0u8; sub_count as usize];
                         let amt = stdin.read(&mut buf[..]).await.map_err(map_io_err)?;
@@ -99,7 +99,7 @@ pub(crate) fn sock_send_file_internal(
                             Kind::File { handle, .. } => {
                                 if let Some(handle) = handle {
                                     let data =
-                                        wasi_try_ok_ok!(__asyncify(ctx, None, async move {
+                                        wasi_try_ok_ok!(block_on_with_signals(ctx, None, async move {
                                             let mut buf = vec![0u8; sub_count as usize];
 
                                             let mut handle = handle.write().unwrap();
@@ -131,7 +131,7 @@ pub(crate) fn sock_send_file_internal(
                                     .flatten()
                                     .unwrap_or(Duration::from_secs(30));
 
-                                let data = wasi_try_ok_ok!(__asyncify(ctx, None, async {
+                                let data = wasi_try_ok_ok!(block_on_with_signals(ctx, None, async {
                                     let mut buf = Vec::with_capacity(sub_count as usize);
                                     unsafe {
                                         buf.set_len(sub_count as usize);
@@ -151,7 +151,7 @@ pub(crate) fn sock_send_file_internal(
                                 data
                             }
                             Kind::Pipe { ref mut pipe, .. } => {
-                                let data = wasi_try_ok_ok!(__asyncify(ctx, None, async move {
+                                let data = wasi_try_ok_ok!(block_on_with_signals(ctx, None, async move {
                                     // TODO: optimize with MaybeUninit
                                     let mut buf = vec![0u8; sub_count as usize];
                                     let amt = virtual_fs::AsyncReadExt::read(pipe, &mut buf[..])
@@ -203,8 +203,8 @@ pub(crate) fn sock_send_file_internal(
 
         // Write it down to the socket
         let tasks = ctx.data().tasks().clone();
-        let bytes_written = wasi_try_ok_ok!(__sock_asyncify_mut(
-            ctx,
+        let bytes_written = wasi_try_ok_ok!(block_on_sock(
+            env,
             sock,
             Rights::SOCK_SEND,
             |socket, fd| async move {

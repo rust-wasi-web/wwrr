@@ -26,8 +26,6 @@ pub fn epoll_wait<'a, M: MemorySize + 'static>(
 ) -> Result<Errno, WasiError> {
     wasi_try_ok!(WasiEnv::process_signals_and_exit(&mut ctx)?);
 
-    ctx = wasi_try_ok!(maybe_backoff::<M>(ctx)?);
-
     if timeout == TIMEOUT_FOREVER {
         tracing::trace!(maxevents, epfd, "waiting forever on wakers");
     } else {
@@ -193,21 +191,7 @@ pub fn epoll_wait<'a, M: MemorySize + 'static>(
         }
     };
 
-    // If we are rewound then its time to process them
-    if let Some(events) =
-        unsafe { handle_rewind::<M, Result<Vec<(EpollFd, EpollType)>, Errno>>(&mut ctx) }
-    {
-        return Ok(process_events(&ctx, events));
-    }
-
     // We use asyncify with a deep sleep to wait on new IO events
-    let res = __asyncify_with_deep_sleep::<M, Result<Vec<(EpollFd, EpollType)>, Errno>, _>(
-        ctx,
-        Box::pin(trigger),
-    )?;
-    if let AsyncifyAction::Finish(mut ctx, events) = res {
-        Ok(process_events(&ctx, events))
-    } else {
-        Ok(Errno::Success)
-    }
+    let events = block_on(Box::pin(trigger));
+    Ok(process_events(&ctx, events))
 }
