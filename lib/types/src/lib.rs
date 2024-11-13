@@ -50,16 +50,12 @@ pub mod lib {
     }
 }
 
-pub mod compilation;
 pub mod error;
-mod features;
 mod indexes;
 mod initializers;
-mod libcalls;
 mod memory;
 mod module;
 mod module_hash;
-mod serialize;
 mod stack;
 mod store_id;
 mod table;
@@ -68,16 +64,7 @@ mod types;
 mod units;
 mod utils;
 mod value;
-mod vmoffsets;
 
-pub use crate::compilation::target::{
-    Aarch64Architecture, Architecture, BinaryFormat, CallingConvention, CpuFeature, Endianness,
-    Environment, OperatingSystem, PointerWidth, Target, Triple, Vendor,
-};
-pub use crate::serialize::{
-    ArchivedSerializableCompilation, ArchivedSerializableModule, MetadataHeader,
-    SerializableCompilation, SerializableModule,
-};
 pub use error::{
     CompileError, DeserializeError, ImportError, MemoryError, MiddlewareError,
     ParseCpuFeatureError, PreInstantiationError, SerializeError, WasmError, WasmResult,
@@ -85,7 +72,6 @@ pub use error::{
 
 /// The entity module, with common helpers for Rust structures
 pub mod entity;
-pub use crate::features::Features;
 pub use crate::indexes::{
     CustomSectionIndex, DataIndex, ElemIndex, ExportIndex, FunctionIndex, GlobalIndex, ImportIndex,
     LocalFunctionIndex, LocalGlobalIndex, LocalMemoryIndex, LocalTableIndex, MemoryIndex,
@@ -108,33 +94,11 @@ pub use types::{
 };
 pub use value::{RawValue, ValueType};
 
-pub use crate::libcalls::LibCall;
 pub use crate::memory::MemoryStyle;
 pub use crate::table::TableStyle;
 pub use crate::trapcode::TrapCode;
-pub use crate::vmoffsets::{TargetSharedSignatureIndex, VMBuiltinFunctionIndex, VMOffsets};
 
 pub use crate::utils::is_wasm;
-
-pub use crate::compilation::relocation::{
-    ArchivedRelocation, Relocation, RelocationKind, RelocationLike, RelocationTarget, Relocations,
-};
-pub use crate::compilation::section::{
-    ArchivedCustomSection, CustomSection, CustomSectionLike, CustomSectionProtection, SectionBody,
-    SectionIndex,
-};
-
-pub use crate::compilation::address_map::{FunctionAddressMap, InstructionAddressMap};
-pub use crate::compilation::function::{
-    ArchivedFunctionBody, Compilation, CompiledFunction, CompiledFunctionFrameInfo, CustomSections,
-    Dwarf, FunctionBody, FunctionBodyLike, Functions,
-};
-pub use crate::compilation::module::CompileModuleInfo;
-pub use crate::compilation::symbols::{Symbol, SymbolRegistry};
-pub use crate::compilation::unwind::{
-    ArchivedCompiledFunctionUnwindInfo, CompiledFunctionUnwindInfo, CompiledFunctionUnwindInfoLike,
-    CompiledFunctionUnwindInfoReference,
-};
 
 pub use crate::stack::{FrameInfo, SourceLoc, TrapInformation};
 pub use crate::store_id::StoreId;

@@ -47,7 +47,6 @@ shared-buffer = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["sync", "macros", "rt"] }
 tracing = { workspace = true }
-typetag = { workspace = true, optional = true }
 waker-fn = { workspace = true }
 wasm-bindgen = { workspace = true }
 wasm-bindgen-futures = { workspace = true }
@@ -60,7 +59,7 @@ wasm-bindgen-test = { workspace = true }
 
 [features]
 disable-all-logging = ["tracing/release_max_level_off", "tracing/max_level_off"]
-enable-serde = ["typetag", "virtual-fs/enable-serde", "wasmer-wasix-types/enable-serde"]
+enable-serde = ["virtual-fs/enable-serde", "wasmer-wasix-types/enable-serde"]
 extra-logging = []
 logging = ["tracing/log"]
 

@@ -74,16 +74,15 @@ pub use value::Value;
 
 pub use wasmer_derive::ValueType;
 pub use wasmer_types::{
-    is_wasm, Bytes, CompileError, CpuFeature, DeserializeError, ExportIndex, ExportType,
-    ExternType, FrameInfo, FunctionType, GlobalInit, GlobalType, ImportType, LocalFunctionIndex,
-    MemoryError, MemoryType, MiddlewareError, Mutability, Pages, ParseCpuFeatureError,
-    SerializeError, TableType, Target, Type, ValueType, WasmError, WasmResult, WASM_MAX_PAGES,
-    WASM_MIN_PAGES, WASM_PAGE_SIZE,
+    is_wasm, Bytes, CompileError, DeserializeError, ExportIndex, ExportType, ExternType, FrameInfo,
+    FunctionType, GlobalInit, GlobalType, ImportType, LocalFunctionIndex, MemoryError, MemoryType,
+    MiddlewareError, Mutability, Pages, ParseCpuFeatureError, SerializeError, TableType, Type,
+    ValueType, WasmError, WasmResult, WASM_MAX_PAGES, WASM_MIN_PAGES, WASM_PAGE_SIZE,
 };
+pub use wasmparser;
+
 #[cfg(feature = "wat")]
 pub use wat::parse_bytes as wat2wasm;
-
-pub use wasmparser;
 
 /// Version number of this crate.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

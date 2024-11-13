@@ -72,7 +72,6 @@ impl From<(String, String, u32)> for ImportKey {
 
 #[cfg(feature = "enable-serde")]
 mod serde_imports {
-
     use crate::ImportIndex;
     use crate::ImportKey;
     use indexmap::IndexMap;
@@ -80,8 +79,7 @@ mod serde_imports {
 
     type InitialType = IndexMap<ImportKey, ImportIndex>;
     type SerializedType = Vec<(ImportKey, ImportIndex)>;
-    // IndexMap<ImportKey, ImportIndex>
-    // Vec<
+
     pub fn serialize<S: Serializer>(s: &InitialType, serializer: S) -> Result<S::Ok, S::Error> {
         let vec: SerializedType = s
             .iter()

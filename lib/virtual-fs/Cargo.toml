@@ -23,7 +23,6 @@ slab = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["io-util", "sync", "macros"] }
 tracing = { workspace = true }
-typetag = { workspace = true, optional = true }
 webc = { workspace = true, optional = true, features = ["v1"] }
 
 [dev-dependencies]
@@ -31,7 +30,7 @@ tracing-test = { workspace = true }
 tokio = { workspace = true, features = ["io-util", "rt"] }
 
 [features]
-enable-serde = ["typetag", "serde"]
+enable-serde = ["serde"]
 no-time = []
 
 [package.metadata.docs.rs]
