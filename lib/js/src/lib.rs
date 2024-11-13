@@ -1,5 +1,3 @@
-// #![feature(once_cell_try)]
-
 #[cfg(test)]
 wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
 

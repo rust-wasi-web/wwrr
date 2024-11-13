@@ -10,13 +10,10 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-dashmap.workspace = true
-dunce = "1.0.4"
 async-trait = { version = "^0.1" }
 bytes = "1"
 derivative = "2.2.0"
 futures = { version = "0.3" }
-indexmap = "1.9.2"
 lazy_static = "1.4"
 pin-project-lite = "0.2.9"
 replace_with = "0.1.7"
@@ -28,11 +25,8 @@ tracing = { version = "0.1" }
 typetag = { version = "0.1", optional = true }
 webc = { workspace = true, optional = true, features = ["v1"] }
 serde = { version = "1.0", default-features = false, features = ["derive"], optional = true }
-getrandom = { version = "0.2", features = [ "js" ] }
 
 [dev-dependencies]
-pretty_assertions.workspace = true
-tempfile = "3.6.0"
 tracing-test = "0.2.4"
 tokio = { workspace = true, features = ["io-util", "rt"], default-features = false }
 

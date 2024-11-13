@@ -39,7 +39,6 @@ wat = { version = "=1.0.71", optional = true }
 
 [dev-dependencies]
 wat = "1.0"
-anyhow = "1.0"
 wasm-bindgen-test = "0.3.0"
 
 

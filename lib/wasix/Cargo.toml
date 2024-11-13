@@ -20,11 +20,6 @@ wasmer = { path = "../api", features = ["wat"] }
 wasmer-types = { path = "../types", default-features = false }
 wasmer-wasix-types = { path = "../wasix-types", features = ["enable-serde"] }
 
-http.workspace = true
-dashmap.workspace = true
-base64.workspace = true
-webc.workspace = true
-serde_yaml.workspace = true
 rkyv.workspace = true
 shared-buffer.workspace = true
 
@@ -58,36 +53,22 @@ lazy_static = "1.4"
 sha2 = { version = "0.10" }
 waker-fn = { version = "1.1" }
 cooked-waker = "^5"
-rand = "0.8"
 tokio = { workspace = true, features = [
     "sync",
     "macros",
     "time",
     "rt",
 ], default-features = false }
-tokio-stream = { version = "0.1", features = [ "sync" ] }
 futures = { version = "0.3" }
-# used by feature='os'
 async-trait = { version = "^0.1" }
-urlencoding = { version = "^2" }
 serde_derive = { version = "^1" }
-serde_json = { version = "^1" }
-weezl = { version = "^0.1" }
 hex = { version = "^0.4" }
-linked_hash_set = { version = "0.1" }
 heapless = "0.7.16"
 once_cell = "1.17.0"
-pin-project = "1.0.12"
 semver = "1.0.17"
-tempfile = "3.6.0"
 num_enum = "0.5.7"
-url = "2.3.1"
 bytecheck = "0.6.8"
-blake3 = "1.0"
-petgraph = "0.6.3"
-lz4_flex = "0.11"
 ahash = "0.8.11"
-toml = "0.8"
 pin-utils = "0.1.0"
 
 typetag = { version = "0.1", optional = true }
@@ -95,8 +76,6 @@ typetag = { version = "0.1", optional = true }
 [dev-dependencies]
 wasmer = { path = "../api", default-features = false, features = ["wat"] }
 tokio = { workspace = true, features = [ "sync", "macros", "rt" ], default-features = false }
-pretty_assertions.workspace = true
-tracing-test = "0.2.4"
 wasm-bindgen-test = "0.3.0"
 tracing-wasm = "0.2"
 
