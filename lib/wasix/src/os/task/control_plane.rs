@@ -4,11 +4,9 @@ use std::{
         atomic::{AtomicUsize, Ordering},
         Arc, RwLock,
     },
-    time::Duration,
 };
 
 use crate::{WasiProcess, WasiProcessId};
-use wasmer_types::ModuleHash;
 
 #[derive(Debug, Clone)]
 pub struct WasiControlPlane {
@@ -38,25 +36,11 @@ impl WasiControlPlaneHandle {
 }
 
 #[derive(Debug, Clone)]
-pub struct ControlPlaneConfig {
-    /// Total number of tasks (processes + threads) that can be spawned.
-    pub max_task_count: Option<usize>,
-    /// Flag that indicates if asynchronous threading is enables (opt-in)
-    pub enable_asynchronous_threading: bool,
-    /// Enables an exponential backoff of the process CPU usage when there
-    /// are no active run tokens (when set holds the maximum amount of
-    /// time that it will pause the CPU)
-    /// (default = off)
-    pub enable_exponential_cpu_backoff: Option<Duration>,
-}
+pub struct ControlPlaneConfig {}
 
 impl ControlPlaneConfig {
     pub fn new() -> Self {
-        Self {
-            max_task_count: None,
-            enable_asynchronous_threading: false,
-            enable_exponential_cpu_backoff: None,
-        }
+        Self {}
     }
 }
 
@@ -112,9 +96,9 @@ impl WasiControlPlane {
     /// Creates a new process
     // FIXME: De-register terminated processes!
     // Currently they just accumulate.
-    pub fn new_process(&self, module_hash: ModuleHash) -> Result<WasiProcess, ControlPlaneError> {
+    pub fn new_process(&self) -> Result<WasiProcess, ControlPlaneError> {
         // Create the process first to do all the allocations before locking.
-        let mut proc = WasiProcess::new(WasiProcessId::from(0), module_hash, self.handle());
+        let mut proc = WasiProcess::new(WasiProcessId::from(0), self.handle());
 
         let mut mutable = self.state.mutable.write().unwrap();
 

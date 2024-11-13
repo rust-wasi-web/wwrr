@@ -18,7 +18,7 @@ pub mod legacy;
 
 pub(crate) use std::{
     borrow::{Borrow, Cow},
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     convert::TryInto,
     io::Read,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
@@ -52,7 +52,7 @@ pub(crate) use self::types::{
     },
     *,
 };
-use self::{state::conv_env_vars, utils::WasiDummyWaker};
+use self::utils::WasiDummyWaker;
 pub(crate) use crate::net::net_error_into_wasi_err;
 pub(crate) use crate::os::task::{process::WasiProcessId, thread::WasiThreadId};
 use crate::{
@@ -67,7 +67,7 @@ pub(crate) use crate::{
         socket::{InodeSocket, InodeSocketKind},
         write_ip_port,
     },
-    state::{self, InodeGuard, PollEvent, PollEventBuilder, WasiState},
+    state::{InodeGuard, PollEvent, PollEventBuilder, WasiState},
     utils::{self, map_io_err},
     VirtualTaskManager, WasiEnv, WasiError, WasiFunctionEnv,
 };
@@ -473,72 +473,4 @@ pub(crate) fn write_buffer_array<M: MemorySize>(
 pub(crate) fn get_current_time_in_nanos() -> Result<Timestamp, Errno> {
     let now = platform_clock_time_get(Snapshot0Clockid::Monotonic, 1_000_000).unwrap() as u128;
     Ok(now as Timestamp)
-}
-
-// Function to prepare the WASI environment
-pub(crate) fn _prepare_wasi(
-    wasi_env: &mut WasiEnv,
-    args: Option<Vec<String>>,
-    envs: Option<Vec<(String, String)>>,
-) {
-    // Swap out the arguments with the new ones
-    if let Some(args) = args {
-        let mut wasi_state = wasi_env.state.fork();
-        wasi_state.args = args;
-        wasi_env.state = Arc::new(wasi_state);
-    }
-
-    // Update the env vars
-    if let Some(envs) = envs {
-        let mut guard = wasi_env.state.envs.lock().unwrap();
-
-        let mut existing_envs = guard
-            .iter()
-            .map(|b| {
-                let string = String::from_utf8_lossy(b);
-                let (key, val) = string.split_once('=').expect("env var is malformed");
-
-                (key.to_string(), val.to_string().as_bytes().to_vec())
-            })
-            .collect::<Vec<_>>();
-
-        for (key, val) in envs {
-            let val = val.as_bytes().to_vec();
-            match existing_envs
-                .iter_mut()
-                .find(|(existing_key, _)| existing_key == &key)
-            {
-                Some((_, existing_val)) => *existing_val = val,
-                None => existing_envs.push((key, val)),
-            }
-        }
-
-        let envs = conv_env_vars(existing_envs);
-
-        *guard = envs;
-
-        drop(guard)
-    }
-
-    // Close any files after the STDERR that are not preopened
-    let close_fds = {
-        let preopen_fds = {
-            let preopen_fds = wasi_env.state.fs.preopen_fds.read().unwrap();
-            preopen_fds.iter().copied().collect::<HashSet<_>>()
-        };
-        let fd_map = wasi_env.state.fs.fd_map.read().unwrap();
-        fd_map
-            .keys()
-            .filter_map(|a| match *a {
-                a if a <= __WASI_STDERR_FILENO => None,
-                a if preopen_fds.contains(&a) => None,
-                a => Some(a),
-            })
-            .collect::<Vec<_>>()
-    };
-
-    // Now close all these files
-    for fd in close_fds {
-        let _ = wasi_env.state.fs.close_fd(fd);
-    }
 }

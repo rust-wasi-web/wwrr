@@ -1,4 +1,4 @@
-use crate::{WasiEnv, WasiRuntimeError};
+use crate::WasiRuntimeError;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -8,12 +8,9 @@ use std::{
         atomic::{AtomicU32, Ordering},
         Arc, Condvar, Mutex, MutexGuard, RwLock, Weak,
     },
-    task::Waker,
     time::Duration,
 };
 use tracing::trace;
-use wasmer::FunctionEnvMut;
-use wasmer_types::ModuleHash;
 use wasmer_wasix_types::{
     types::Signal,
     wasi::{Errno, ExitCode, Snapshot0Clockid},
@@ -86,8 +83,6 @@ pub type LockableWasiProcessInner = Arc<(Mutex<WasiProcessInner>, Condvar)>;
 pub struct WasiProcess {
     /// Unique ID of this process
     pub(crate) pid: WasiProcessId,
-    /// Hash of the module that this process is using
-    pub(crate) module_hash: ModuleHash,
     /// List of all the children spawned from this thread
     pub(crate) parent: Option<Weak<RwLock<WasiProcessInner>>>,
     /// The inner protected region of the process with a conditional
@@ -152,24 +147,6 @@ pub struct WasiProcessInner {
     pub signal_intervals: HashMap<Signal, WasiSignalInterval>,
     /// List of all the children spawned from this thread
     pub children: Vec<WasiProcess>,
-    /// Represents a checkpoint which blocks all the threads
-    /// and then executes some maintenance action
-    pub checkpoint: WasiProcessCheckpoint,
-    /// If true then the journaling will be disabled after the
-    /// next snapshot is taken
-    pub disable_journaling_after_checkpoint: bool,
-    /// Any wakers waiting on this process (for example for a checkpoint)
-    pub wakers: Vec<Waker>,
-}
-
-pub enum MaybeCheckpointResult<'a> {
-    NotThisTime(FunctionEnvMut<'a, WasiEnv>),
-    Unwinding,
-}
-
-impl WasiProcessInner {
-    // Execute any checkpoints that can be executed while outside of the WASM process
-    pub fn do_checkpoints_from_outside(_ctx: &mut FunctionEnvMut<'_, WasiEnv>) {}
 }
 
 // TODO: why do we need this, how is it used?
@@ -193,7 +170,7 @@ impl Drop for WasiProcessWait {
 }
 
 impl WasiProcess {
-    pub fn new(pid: WasiProcessId, module_hash: ModuleHash, plane: WasiControlPlaneHandle) -> Self {
+    pub fn new(pid: WasiProcessId, plane: WasiControlPlaneHandle) -> Self {
         let waiting = Arc::new(AtomicU32::new(0));
         let inner = Arc::new((
             Mutex::new(WasiProcessInner {
@@ -202,10 +179,7 @@ impl WasiProcess {
                 thread_count: Default::default(),
                 signal_intervals: Default::default(),
                 children: Default::default(),
-                checkpoint: WasiProcessCheckpoint::Execute,
-                wakers: Default::default(),
                 waiting: waiting.clone(),
-                disable_journaling_after_checkpoint: false,
             }),
             Condvar::new(),
         ));
@@ -225,7 +199,6 @@ impl WasiProcess {
 
         WasiProcess {
             pid,
-            module_hash,
             parent: None,
             compute: plane,
             inner: inner.clone(),

@@ -2,7 +2,6 @@ use std::{ops::Deref, sync::Arc, time::Duration};
 
 use derivative::Derivative;
 use futures::future::BoxFuture;
-use rand::Rng;
 use virtual_fs::{FsError, VirtualFile};
 use virtual_net::DynVirtualNetworking;
 use wasmer::{
@@ -19,16 +18,14 @@ use crate::{
     fs::{WasiFsRoot, WasiInodes},
     import_object_for_all_wasi_versions,
     os::task::{
-        control_plane::ControlPlaneError,
         process::{WasiProcess, WasiProcessId},
         thread::{WasiThread, WasiThreadHandle, WasiThreadId},
     },
     runtime::{task_manager::InlineWaker, SpawnMemoryType},
     syscalls::platform_clock_time_get,
     Runtime, VirtualTaskManager, WasiControlPlane, WasiEnvBuilder, WasiError, WasiFunctionEnv,
-    WasiResult, WasiRuntimeError, WasiVFork,
+    WasiResult, WasiRuntimeError,
 };
-use wasmer_types::ModuleHash;
 
 pub(crate) use super::handles::*;
 use super::WasiState;
@@ -40,10 +37,9 @@ use super::WasiState;
 #[derive(Derivative, Clone)]
 #[derivative(Debug)]
 pub struct WasiInstanceHandles {
-    // TODO: the two fields below are instance specific, while all others are module specific.
-    // Should be split up.
     /// Represents a reference to the memory
     pub(crate) memory: Memory,
+    /// WebAssembly instance.
     pub(crate) instance: wasmer::Instance,
 
     /// Main function that will be invoked (name = "_start")
@@ -95,12 +91,9 @@ impl WasiInstanceHandles {
         }
     }
 
+    /// WebAssembly module.
     pub fn module(&self) -> &Module {
         self.instance.module()
-    }
-
-    pub fn module_clone(&self) -> Module {
-        self.instance.module().clone()
     }
 
     /// Providers safe access to the memory
@@ -121,6 +114,7 @@ impl WasiInstanceHandles {
         self.memory.clone()
     }
 
+    /// WebAssembly instance.
     pub fn instance(&self) -> &Instance {
         &self.instance
     }
@@ -141,12 +135,6 @@ pub struct WasiEnvInit {
     /// Will be true for regular new instances, but false for threads.
     pub call_initialize: bool,
 
-    /// Indicates if the calling environment is capable of deep sleeping
-    pub can_deep_sleep: bool,
-
-    /// Indicates if extra tracing should be output
-    pub extra_tracing: bool,
-
     /// Additional functionality provided to the WASIX instance, besides the
     /// normal WASIX syscalls.
     pub additional_imports: Imports,
@@ -163,7 +151,6 @@ impl WasiEnvInit {
 
         Self {
             state: WasiState {
-                secret: rand::thread_rng().gen::<[u8; 32]>(),
                 inodes,
                 fs,
                 futexs: Default::default(),
@@ -180,8 +167,6 @@ impl WasiEnvInit {
             process: None,
             thread: None,
             call_initialize: self.call_initialize,
-            can_deep_sleep: self.can_deep_sleep,
-            extra_tracing: false,
             additional_imports: self.additional_imports.clone(),
         }
     }
@@ -194,8 +179,6 @@ pub struct WasiEnv {
     pub process: WasiProcess,
     /// Represents the thread this environment is attached to
     pub thread: WasiThread,
-    /// Represents a fork of the process that is currently in play
-    pub vfork: Option<WasiVFork>,
     /// Seed used to rotate around the events returned by `poll_oneoff`
     pub poll_seed: u64,
     /// Shared state of the WASI system. Manages all the data that the
@@ -231,7 +214,6 @@ impl Clone for WasiEnv {
             process: self.process.clone(),
             poll_seed: self.poll_seed,
             thread: self.thread.clone(),
-            vfork: self.vfork.clone(),
             state: self.state.clone(),
             inner: Default::default(),
             owned_handles: self.owned_handles.clone(),
@@ -247,31 +229,6 @@ impl WasiEnv {
         WasiEnvBuilder::new(program_name)
     }
 
-    /// Forking the WasiState is used when either fork or vfork is called
-    pub fn fork(&self) -> Result<(Self, WasiThreadHandle), ControlPlaneError> {
-        let process = self.control_plane.new_process(self.process.module_hash)?;
-        let handle = process.new_thread(ThreadStartType::MainThread)?;
-
-        let thread = handle.as_thread();
-        thread.copy_stack_from(&self.thread);
-
-        let state = Arc::new(self.state.fork());
-
-        let new_env = Self {
-            control_plane: self.control_plane.clone(),
-            process,
-            thread,
-            vfork: None,
-            poll_seed: 0,
-            state,
-            inner: Default::default(),
-            owned_handles: Vec::new(),
-            runtime: self.runtime.clone(),
-            disable_fs_cleanup: self.disable_fs_cleanup,
-        };
-        Ok((new_env, handle))
-    }
-
     pub fn pid(&self) -> WasiProcessId {
         self.process.pid()
     }
@@ -281,14 +238,11 @@ impl WasiEnv {
     }
 
     #[allow(clippy::result_large_err)]
-    pub(crate) fn from_init(
-        init: WasiEnvInit,
-        module_hash: ModuleHash,
-    ) -> Result<Self, WasiRuntimeError> {
+    pub(crate) fn from_init(init: WasiEnvInit) -> Result<Self, WasiRuntimeError> {
         let process = if let Some(p) = init.process {
             p
         } else {
-            init.control_plane.new_process(module_hash)?
+            init.control_plane.new_process()?
         };
 
         let thread = if let Some(t) = init.thread {
@@ -301,7 +255,6 @@ impl WasiEnv {
             control_plane: init.control_plane,
             process,
             thread: thread.as_thread(),
-            vfork: None,
             poll_seed: 0,
             state: Arc::new(init.state),
             inner: Default::default(),
@@ -319,21 +272,18 @@ impl WasiEnv {
     pub(crate) fn instantiate(
         mut init: WasiEnvInit,
         module: Module,
-        module_hash: ModuleHash,
         store: &mut impl AsStoreMut,
     ) -> Result<(Instance, WasiFunctionEnv), WasiRuntimeError> {
         let call_initialize = init.call_initialize;
         let spawn_type = init.memory_ty.take();
 
-        if init.extra_tracing {
-            for import in module.imports() {
-                tracing::trace!("import {}.{}", import.module(), import.name());
-            }
+        for import in module.imports() {
+            tracing::trace!("import {}.{}", import.module(), import.name());
         }
 
         let additional_imports = init.additional_imports.clone();
 
-        let env = Self::from_init(init, module_hash)?;
+        let env = Self::from_init(init)?;
         let pid = env.process.pid();
 
         let mut store = store.as_store_mut();
@@ -646,14 +596,6 @@ impl WasiEnv {
         self.inner.set(handles)
     }
 
-    /// Swaps this inner with the WasiEnvironment of another, this
-    /// is used by the vfork so that the inner handles can be restored
-    /// after the vfork finishes.
-    #[doc(hidden)]
-    pub(crate) fn swap_inner(&mut self, other: &mut Self) {
-        std::mem::swap(&mut self.inner, &mut other.inner);
-    }
-
     /// Tries to clone the instance from this environment
     pub fn try_clone_instance(&self) -> Option<Instance> {
         self.inner.get().map(|i| i.instance.clone())
@@ -663,16 +605,6 @@ impl WasiEnv {
     /// (it must be initialized before it can be used)
     pub(crate) fn try_memory(&self) -> Option<WasiInstanceGuardMemory<'_>> {
         self.try_inner().map(|i| i.memory())
-    }
-
-    /// Providers safe access to the memory
-    /// (it must be initialized before it can be used)
-    /// This has been marked as unsafe as it will panic if its executed
-    /// on the wrong thread or before the inner is set
-    pub(crate) unsafe fn memory(&self) -> WasiInstanceGuardMemory<'_> {
-        self.try_memory().expect(
-            "You must initialize the WasiEnv before using it and can not pass it between threads",
-        )
     }
 
     /// Providers safe access to the memory

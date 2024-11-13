@@ -109,7 +109,7 @@ pub fn thread_spawn_internal_using_layout<M: MemorySize>(
         warn!("thread failed - the program does not export a `wasi_thread_start` function");
         return Err(Errno::Notcapable);
     }
-    let thread_module = unsafe { env.inner() }.module_clone();
+    let thread_module = unsafe { env.inner() }.module().clone();
     let globals = capture_store_snapshot(&mut ctx.as_store_mut());
     let spawn_type =
         crate::runtime::SpawnMemoryType::ShareMemory(thread_memory, ctx.as_store_ref());

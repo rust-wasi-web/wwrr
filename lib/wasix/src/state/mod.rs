@@ -126,8 +126,6 @@ pub(crate) struct WasiFutexState {
 #[derive(Debug)]
 #[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
 pub(crate) struct WasiState {
-    pub secret: [u8; 32],
-
     pub fs: WasiFs,
     pub inodes: WasiInodes,
     pub futexs: Mutex<WasiFutexState>,
@@ -244,19 +242,5 @@ impl WasiState {
             ret
         });
         Ok(ret)
-    }
-
-    /// Forking the WasiState is used when either fork or vfork is called
-    pub fn fork(&self) -> Self {
-        WasiState {
-            fs: self.fs.fork(),
-            secret: self.secret,
-            inodes: self.inodes.clone(),
-            futexs: Default::default(),
-            clock_offset: Mutex::new(self.clock_offset.lock().unwrap().clone()),
-            args: self.args.clone(),
-            envs: Mutex::new(self.envs.lock().unwrap().clone()),
-            preopen: self.preopen.clone(),
-        }
     }
 }

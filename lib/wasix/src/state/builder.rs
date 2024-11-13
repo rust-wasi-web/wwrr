@@ -5,7 +5,6 @@ use std::{
     sync::Arc,
 };
 
-use rand::Rng;
 use thiserror::Error;
 use virtual_fs::{ArcFile, FileSystem, FsError, TmpFileSystem, VirtualFile};
 use wasmer::{AsStoreMut, Extern, Imports, Instance, Module, Store};
@@ -15,10 +14,8 @@ use crate::{
     os::task::control_plane::{ControlPlaneError, WasiControlPlane},
     state::WasiState,
     syscalls::types::{__WASI_STDERR_FILENO, __WASI_STDIN_FILENO, __WASI_STDOUT_FILENO},
-    utils::xxhash_random,
     Runtime, WasiEnv, WasiFunctionEnv, WasiRuntimeError,
 };
-use wasmer_types::ModuleHash;
 
 use super::env::WasiEnvInit;
 
@@ -57,7 +54,6 @@ pub struct WasiEnvBuilder {
     pub(super) fs: Option<WasiFsRoot>,
     pub(super) runtime: Option<Arc<dyn crate::Runtime + Send + Sync + 'static>>,
     pub(super) current_dir: Option<PathBuf>,
-    pub(super) module_hash: Option<ModuleHash>,
     pub(super) additional_imports: Imports,
 }
 
@@ -257,14 +253,6 @@ impl WasiEnvBuilder {
     /// Get a mutable reference to the configured arguments.
     pub fn get_args_mut(&mut self) -> &mut Vec<String> {
         &mut self.args
-    }
-
-    /// Sets the module hash for the running process. This ensures that the journal
-    /// can restore the records for the right module. If no module hash is supplied
-    /// then the process will start with a random module hash.
-    pub fn set_module_hash(&mut self, hash: ModuleHash) -> &mut Self {
-        self.module_hash.replace(hash);
-        self
     }
 
     /// Preopen a directory
@@ -692,7 +680,6 @@ impl WasiEnvBuilder {
 
         let state = WasiState {
             fs: wasi_fs,
-            secret: rand::thread_rng().gen::<[u8; 32]>(),
             inodes,
             args: self.args.clone(),
             preopen: self.vfs_preopens.clone(),
@@ -715,8 +702,6 @@ impl WasiEnvBuilder {
             process: None,
             thread: None,
             call_initialize: true,
-            can_deep_sleep: false,
-            extra_tracing: true,
             additional_imports: self.additional_imports,
         };
 
@@ -725,9 +710,8 @@ impl WasiEnvBuilder {
 
     #[allow(clippy::result_large_err)]
     pub fn build(self) -> Result<WasiEnv, WasiRuntimeError> {
-        let module_hash = self.module_hash.unwrap_or_else(xxhash_random);
         let init = self.build_init()?;
-        WasiEnv::from_init(init, module_hash)
+        WasiEnv::from_init(init)
     }
 
     /// Construct a [`WasiFunctionEnv`].
@@ -740,9 +724,8 @@ impl WasiEnvBuilder {
         self,
         store: &mut impl AsStoreMut,
     ) -> Result<WasiFunctionEnv, WasiRuntimeError> {
-        let module_hash = self.module_hash.unwrap_or_else(xxhash_random);
         let init = self.build_init()?;
-        let env = WasiEnv::from_init(init, module_hash)?;
+        let env = WasiEnv::from_init(init)?;
         let func_env = WasiFunctionEnv::new(store, env);
         Ok(func_env)
     }
@@ -758,45 +741,43 @@ impl WasiEnvBuilder {
         module: Module,
         store: &mut impl AsStoreMut,
     ) -> Result<(Instance, WasiFunctionEnv), WasiRuntimeError> {
-        self.instantiate_ext(module, xxhash_random(), store)
+        self.instantiate_ext(module, store)
     }
 
     #[allow(clippy::result_large_err)]
     pub fn instantiate_ext(
         self,
         module: Module,
-        module_hash: ModuleHash,
         store: &mut impl AsStoreMut,
     ) -> Result<(Instance, WasiFunctionEnv), WasiRuntimeError> {
         let init = self.build_init()?;
-        WasiEnv::instantiate(init, module, module_hash, store)
+        WasiEnv::instantiate(init, module, store)
     }
 
     #[allow(clippy::result_large_err)]
     pub fn run(self, module: Module) -> Result<(), WasiRuntimeError> {
-        self.run_ext(module, xxhash_random())
+        self.run_ext(module)
     }
 
     #[allow(clippy::result_large_err)]
-    pub fn run_ext(self, module: Module, module_hash: ModuleHash) -> Result<(), WasiRuntimeError> {
+    pub fn run_ext(self, module: Module) -> Result<(), WasiRuntimeError> {
         let mut store = wasmer::Store::default();
-        self.run_with_store_ext(module, module_hash, &mut store)
+        self.run_with_store_ext(module, &mut store)
     }
 
     #[allow(clippy::result_large_err)]
     #[tracing::instrument(level = "debug", skip_all)]
     pub fn run_with_store(self, module: Module, store: &mut Store) -> Result<(), WasiRuntimeError> {
-        self.run_with_store_ext(module, xxhash_random(), store)
+        self.run_with_store_ext(module, store)
     }
 
     #[allow(clippy::result_large_err)]
     pub fn run_with_store_ext(
         self,
         module: Module,
-        module_hash: ModuleHash,
         store: &mut Store,
     ) -> Result<(), WasiRuntimeError> {
-        let (instance, env) = self.instantiate_ext(module, module_hash, store)?;
+        let (instance, env) = self.instantiate_ext(module, store)?;
 
         let start = instance.exports.get_function("_start")?;
         env.data(&store).thread.set_status_running();
