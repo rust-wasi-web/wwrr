@@ -19,12 +19,12 @@ wasmer-derive = { path = "../derive" }
 bytes = { workspace = true }
 cfg-if = { workspace = true }
 derivative = { workspace = true }
-indexmap = "1.6"
+indexmap = { workspace = true }
 js-sys = { workspace = true }
 more-asserts = { workspace = true }
 rustc-demangle = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-serde-wasm-bindgen = "0.4.5"
+serde-wasm-bindgen = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 wasm-bindgen = { workspace = true }
