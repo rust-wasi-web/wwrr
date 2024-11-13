@@ -26,7 +26,6 @@ use crate::{
 };
 
 use super::{
-    backoff::WasiProcessCpuBackoff,
     control_plane::{ControlPlaneError, WasiControlPlaneHandle},
     signal::{SignalDeliveryError, SignalHandlerAbi},
     task_join_handle::OwnedTaskStatus,
@@ -102,10 +101,6 @@ pub struct WasiProcess {
     pub(crate) finished: Arc<OwnedTaskStatus>,
     /// Number of threads waiting for children to exit
     pub(crate) waiting: Arc<AtomicU32>,
-    /// Number of tokens that are currently active and thus
-    /// the exponential backoff of CPU is halted (as in CPU
-    /// is allowed to run freely)
-    pub(crate) cpu_run_tokens: Arc<AtomicU32>,
 }
 
 /// Represents a freeze of all threads to perform some action
@@ -165,10 +160,6 @@ pub struct WasiProcessInner {
     pub disable_journaling_after_checkpoint: bool,
     /// Any wakers waiting on this process (for example for a checkpoint)
     pub wakers: Vec<Waker>,
-    /// Represents all the backoff properties for this process
-    /// which will be used to determine if the CPU should be
-    /// throttled or not
-    pub(super) backoff: WasiProcessCpuBackoff,
 }
 
 pub enum MaybeCheckpointResult<'a> {
@@ -203,9 +194,6 @@ impl Drop for WasiProcessWait {
 
 impl WasiProcess {
     pub fn new(pid: WasiProcessId, module_hash: ModuleHash, plane: WasiControlPlaneHandle) -> Self {
-        let max_cpu_backoff_time = Duration::from_secs(30);
-        let max_cpu_cool_off_time = Duration::from_millis(500);
-
         let waiting = Arc::new(AtomicU32::new(0));
         let inner = Arc::new((
             Mutex::new(WasiProcessInner {
@@ -218,7 +206,6 @@ impl WasiProcess {
                 wakers: Default::default(),
                 waiting: waiting.clone(),
                 disable_journaling_after_checkpoint: false,
-                backoff: WasiProcessCpuBackoff::new(max_cpu_backoff_time, max_cpu_cool_off_time),
             }),
             Condvar::new(),
         ));
@@ -247,7 +234,6 @@ impl WasiProcess {
                     .with_signal_handler(Arc::new(SignalHandler(inner))),
             ),
             waiting,
-            cpu_run_tokens: Arc::new(AtomicU32::new(0)),
         }
     }
 

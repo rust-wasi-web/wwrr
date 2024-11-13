@@ -5,10 +5,7 @@ pub use self::task_manager::{SpawnMemoryType, VirtualTaskManager};
 use self::{module_cache::CacheError, task_manager::InlineWaker};
 use wasmer_types::ModuleHash;
 
-use std::{
-    fmt,
-    sync::{Arc, Mutex},
-};
+use std::{fmt, sync::Arc};
 
 use futures::future::BoxFuture;
 use virtual_net::DynVirtualNetworking;
@@ -16,9 +13,8 @@ use wasmer::{Module, RuntimeError};
 use wasmer_wasix_types::wasi::ExitCode;
 
 use crate::{
-    os::TtyBridge,
     runtime::module_cache::{ModuleCache, ThreadLocalCache},
-    SpawnError, WasiTtyState,
+    SpawnError,
 };
 
 #[derive(Clone)]
@@ -61,11 +57,6 @@ where
     /// Create a new [`wasmer::Store`].
     fn new_store(&self) -> wasmer::Store {
         wasmer::Store::default()
-    }
-
-    /// Get access to the TTY used by the environment.
-    fn tty(&self) -> Option<&(dyn TtyBridge + Send + Sync)> {
-        None
     }
 
     /// Load a a Webassembly module, trying to use a pre-compiled version if possible.
@@ -132,28 +123,4 @@ pub async fn load_module(
     }
 
     Ok(module)
-}
-
-#[derive(Debug, Default)]
-pub struct DefaultTty {
-    state: Mutex<WasiTtyState>,
-}
-
-impl TtyBridge for DefaultTty {
-    fn reset(&self) {
-        let mut state = self.state.lock().unwrap();
-        state.echo = false;
-        state.line_buffered = false;
-        state.line_feeds = false
-    }
-
-    fn tty_get(&self) -> WasiTtyState {
-        let state = self.state.lock().unwrap();
-        state.clone()
-    }
-
-    fn tty_set(&self, tty_state: WasiTtyState) {
-        let mut state = self.state.lock().unwrap();
-        *state = tty_state;
-    }
 }

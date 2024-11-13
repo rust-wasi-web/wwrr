@@ -54,13 +54,10 @@ use wasmer_wasix_types::wasi::{Errno, ExitCode};
 
 pub use crate::{
     fs::{default_fs_backing, Fd, WasiFs, WasiInodes, VIRTUAL_ROOT_FD},
-    os::{
-        task::{
-            control_plane::WasiControlPlane,
-            process::{WasiProcess, WasiProcessId},
-            thread::{WasiThread, WasiThreadError, WasiThreadHandle, WasiThreadId},
-        },
-        WasiTtyState,
+    os::task::{
+        control_plane::WasiControlPlane,
+        process::{WasiProcess, WasiProcessId},
+        thread::{WasiThread, WasiThreadError, WasiThreadHandle, WasiThreadId},
     },
     runtime::{task_manager::VirtualTaskManager, Runtime},
     state::{

@@ -1,58 +1,12 @@
 use super::*;
-use crate::{syscalls::*, WasiTtyState};
+use crate::syscalls::*;
 
 /// ### `tty_set()`
 /// Updates the properties of the rect
 #[instrument(level = "trace", skip_all, ret)]
 pub fn tty_set<M: MemorySize>(
-    mut ctx: FunctionEnvMut<'_, WasiEnv>,
-    tty_state: WasmPtr<Tty, M>,
+    _ctx: FunctionEnvMut<'_, WasiEnv>,
+    _tty_state: WasmPtr<Tty, M>,
 ) -> Result<Errno, WasiError> {
-    let env = ctx.data();
-
-    let memory = unsafe { env.memory_view(&ctx) };
-    let state = wasi_try_mem_ok!(tty_state.read(&memory));
-    let echo = state.echo;
-    let line_buffered = state.line_buffered;
-    let line_feeds = true;
-    debug!(
-        %echo,
-        %line_buffered,
-        %line_feeds
-    );
-
-    let state = crate::os::tty::WasiTtyState {
-        cols: state.cols,
-        rows: state.rows,
-        width: state.width,
-        height: state.height,
-        stdin_tty: state.stdin_tty,
-        stdout_tty: state.stdout_tty,
-        stderr_tty: state.stderr_tty,
-        echo,
-        line_buffered,
-        line_feeds,
-    };
-
-    wasi_try_ok!({
-        #[allow(clippy::redundant_clone)]
-        tty_set_internal(&mut ctx, state.clone())
-    });
-
-    Ok(Errno::Success)
-}
-
-pub fn tty_set_internal(
-    ctx: &mut FunctionEnvMut<'_, WasiEnv>,
-    state: WasiTtyState,
-) -> Result<(), Errno> {
-    let env = ctx.data();
-    let bridge = if let Some(t) = env.runtime.tty() {
-        t
-    } else {
-        return Err(Errno::Notsup);
-    };
-    bridge.tty_set(state);
-
-    Ok(())
+    Ok(Errno::Notsup)
 }

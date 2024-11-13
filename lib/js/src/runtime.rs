@@ -1,13 +1,9 @@
-use std::sync::{atomic::AtomicBool, Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex, Weak};
 
 use lazy_static::lazy_static;
 use once_cell::sync::Lazy;
 use virtual_net::VirtualNetworking;
-use wasmer_wasix::{
-    os::{TtyBridge, TtyOptions},
-    runtime::module_cache::ThreadLocalCache,
-    VirtualTaskManager, WasiTtyState,
-};
+use wasmer_wasix::{runtime::module_cache::ThreadLocalCache, VirtualTaskManager};
 
 lazy_static! {
     /// We initialize the ThreadPool lazily
@@ -26,8 +22,6 @@ pub struct Runtime {
     task_manager: Option<Arc<dyn VirtualTaskManager>>,
     networking: Arc<dyn VirtualNetworking>,
     module_cache: Arc<ThreadLocalCache>,
-    tty: TtyOptions,
-    connected_to_tty: Arc<AtomicBool>,
 }
 
 impl Runtime {
@@ -77,7 +71,6 @@ impl Runtime {
     }
 
     pub(crate) fn with_default_pool(&self) -> Self {
-        // let pool = ThreadPool::new();
         self.with_task_manager(DEFAULT_THREAD_POOL.clone())
     }
 
@@ -86,16 +79,7 @@ impl Runtime {
             task_manager: None,
             networking: Arc::new(virtual_net::UnsupportedVirtualNetworking::default()),
             module_cache: Arc::new(ThreadLocalCache::default()),
-            tty: TtyOptions::default(),
-            connected_to_tty: Arc::new(AtomicBool::new(false)),
         }
-    }
-}
-
-impl Runtime {
-    pub(crate) fn set_connected_to_tty(&self, state: bool) {
-        self.connected_to_tty
-            .store(state, std::sync::atomic::Ordering::SeqCst);
     }
 }
 
@@ -120,52 +104,6 @@ impl wasmer_wasix::runtime::Runtime for Runtime {
             .map_err(|x| wasmer_wasix::SpawnError::Other(crate::utils::js_error(x).into()))?;
 
         Ok(wasmer::Module::from((module, wasm.to_vec())))
-    }
-
-    fn tty(&self) -> Option<&(dyn wasmer_wasix::os::TtyBridge + Send + Sync)> {
-        Some(self)
-    }
-}
-
-impl TtyBridge for Runtime {
-    #[tracing::instrument(level = "debug", skip_all)]
-    fn reset(&self) {
-        self.tty.set_echo(true);
-        self.tty.set_line_buffering(true);
-        self.tty.set_line_feeds(true);
-        self.set_connected_to_tty(false);
-    }
-
-    #[tracing::instrument(level = "debug", skip(self), ret)]
-    fn tty_get(&self) -> WasiTtyState {
-        let connected_to_tty = self
-            .connected_to_tty
-            .load(std::sync::atomic::Ordering::SeqCst);
-
-        WasiTtyState {
-            cols: self.tty.cols(),
-            rows: self.tty.rows(),
-            width: 800,
-            height: 600,
-            stdin_tty: connected_to_tty,
-            stdout_tty: connected_to_tty,
-            stderr_tty: connected_to_tty,
-            echo: self.tty.echo(),
-            line_buffered: self.tty.line_buffering(),
-            line_feeds: self.tty.line_feeds(),
-        }
-    }
-
-    #[tracing::instrument(level = "debug", skip(self))]
-    fn tty_set(&self, tty_state: WasiTtyState) {
-        self.tty.set_cols(tty_state.cols);
-        self.tty.set_rows(tty_state.rows);
-        self.tty.set_echo(tty_state.echo);
-        self.tty.set_line_buffering(tty_state.line_buffered);
-        self.tty.set_line_feeds(tty_state.line_feeds);
-        self.set_connected_to_tty(
-            tty_state.stdin_tty || tty_state.stdout_tty || tty_state.stderr_tty,
-        );
     }
 }
 
