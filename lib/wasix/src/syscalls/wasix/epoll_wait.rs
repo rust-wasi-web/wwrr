@@ -185,7 +185,6 @@ pub fn epoll_wait<'a, M: MemorySize + 'static>(
         }
     };
 
-    // We use asyncify with a deep sleep to wait on new IO events
     let events = block_on(Box::pin(trigger));
     Ok(process_events(&ctx, events))
 }

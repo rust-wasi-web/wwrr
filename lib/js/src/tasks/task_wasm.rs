@@ -10,12 +10,9 @@ use wasm_bindgen::{JsCast, JsValue};
 use wasmer::{AsJs, AsStoreRef, Memory, MemoryType, Module, Store};
 use wasmer_wasix::{
     runtime::{
-        task_manager::{
-            TaskWasm, TaskWasmRecycle, TaskWasmRun, TaskWasmRunProperties, WasmResumeTrigger,
-        },
+        task_manager::{TaskWasm, TaskWasmRecycle, TaskWasmRun, TaskWasmRunProperties},
         SpawnMemoryType,
     },
-    wasmer_wasix_types::wasi::ExitCode,
     StoreSnapshot, WasiEnv, WasiFunctionEnv, WasiThreadError,
 };
 
@@ -29,7 +26,6 @@ pub(crate) fn to_scheduler_message(
         env,
         module,
         spawn_type,
-        trigger,
         recycle,
         globals,
     } = task;
@@ -84,16 +80,10 @@ pub(crate) fn to_scheduler_message(
 
     let store_snapshot = globals.cloned();
     let spawn_wasm = SpawnWasm {
-        trigger: trigger.map(|trigger| WasmRunTrigger {
-            run: trigger,
-            memory_ty: memory_ty.expect("triggers must have the a known memory type"),
-            env: env.clone(),
-        }),
         run,
         run_type,
         env,
         module_bytes,
-        result: None,
         recycle,
         store_snapshot,
     };
@@ -168,15 +158,6 @@ fn copy_memory(memory: &JsValue, ty: MemoryType) -> Result<JsValue, WasiThreadEr
 
 #[derive(Derivative)]
 #[derivative(Debug)]
-struct WasmRunTrigger {
-    #[derivative(Debug(format_with = "crate::utils::hidden"))]
-    run: Box<WasmResumeTrigger>,
-    memory_ty: MemoryType,
-    env: WasiEnv,
-}
-
-#[derive(Derivative)]
-#[derivative(Debug)]
 pub(crate) struct SpawnWasm {
     /// A blocking callback to run.
     #[derivative(Debug(format_with = "crate::utils::hidden"))]
@@ -190,12 +171,6 @@ pub(crate) struct SpawnWasm {
     module_bytes: Bytes,
     /// A snapshot of the instance store, used to fork from existing instances.
     store_snapshot: Option<StoreSnapshot>,
-    /// An asynchronous callback which is used to run asyncify methods. The
-    /// returned value is used in [`wasmer_wasix::rewind()`] or instant
-    /// responses.
-    trigger: Option<WasmRunTrigger>,
-    /// The result of running the trigger.
-    result: Option<Result<Bytes, ExitCode>>,
     #[derivative(Debug(format_with = "crate::utils::hidden"))]
     recycle: Option<Box<TaskWasmRecycle>>,
 }
@@ -214,11 +189,7 @@ impl SpawnWasm {
 
     /// Prepare the WebAssembly task for execution, waiting for any triggers to
     /// resolve.
-    pub(crate) async fn begin(mut self) -> ReadySpawnWasm {
-        if let Some(trigger) = self.trigger.take() {
-            self.result = Some((trigger.run)().await);
-        }
-
+    pub(crate) async fn begin(self) -> ReadySpawnWasm {
         ReadySpawnWasm(self)
     }
 }
@@ -239,8 +210,6 @@ impl ReadySpawnWasm {
             run_type,
             env,
             module_bytes,
-            result,
-            trigger: _,
             recycle,
             store_snapshot,
         }) = self;
@@ -259,7 +228,6 @@ impl ReadySpawnWasm {
         let properties = TaskWasmRunProperties {
             ctx,
             store,
-            trigger_result: result,
             recycle,
         };
         run(properties);

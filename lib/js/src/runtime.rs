@@ -2,10 +2,8 @@ use std::sync::{atomic::AtomicBool, Arc, Mutex, Weak};
 
 use lazy_static::lazy_static;
 use once_cell::sync::Lazy;
-use reqwest::header::HeaderValue;
 use virtual_net::VirtualNetworking;
 use wasmer_wasix::{
-    http::{HttpClient, WebHttpClient},
     os::{TtyBridge, TtyOptions},
     runtime::module_cache::ThreadLocalCache,
     VirtualTaskManager, WasiTtyState,
@@ -27,7 +25,6 @@ static GLOBAL_RUNTIME: Lazy<Mutex<Weak<Runtime>>> = Lazy::new(Mutex::default);
 pub struct Runtime {
     task_manager: Option<Arc<dyn VirtualTaskManager>>,
     networking: Arc<dyn VirtualNetworking>,
-    http_client: Arc<dyn HttpClient + Send + Sync>,
     module_cache: Arc<ThreadLocalCache>,
     tty: TtyOptions,
     connected_to_tty: Arc<AtomicBool>,
@@ -75,16 +72,6 @@ impl Runtime {
 
     pub(crate) fn with_task_manager(&self, task_manager: Arc<ThreadPool>) -> Self {
         let mut runtime = self.clone();
-        // Update the http client
-        let mut http_client = WebHttpClient::default();
-        http_client
-            .with_default_header(
-                reqwest::header::USER_AGENT,
-                HeaderValue::from_static(crate::USER_AGENT),
-            )
-            .with_task_manager(task_manager.clone());
-        runtime.http_client = Arc::new(http_client);
-
         runtime.task_manager = Some(task_manager);
         runtime
     }
@@ -95,20 +82,10 @@ impl Runtime {
     }
 
     pub(crate) fn new() -> Self {
-        let mut http_client = WebHttpClient::default();
-        http_client.with_default_header(
-            reqwest::header::USER_AGENT,
-            HeaderValue::from_static(crate::USER_AGENT),
-        );
-        let http_client = Arc::new(http_client);
-
-        let module_cache = ThreadLocalCache::default();
-
         Runtime {
             task_manager: None,
             networking: Arc::new(virtual_net::UnsupportedVirtualNetworking::default()),
-            http_client: Arc::new(http_client),
-            module_cache: Arc::new(module_cache),
+            module_cache: Arc::new(ThreadLocalCache::default()),
             tty: TtyOptions::default(),
             connected_to_tty: Arc::new(AtomicBool::new(false)),
         }
@@ -129,10 +106,6 @@ impl wasmer_wasix::runtime::Runtime for Runtime {
 
     fn task_manager(&self) -> &Arc<dyn VirtualTaskManager> {
         &self.task_manager.as_ref().expect("Task manager not found")
-    }
-
-    fn http_client(&self) -> Option<&wasmer_wasix::http::DynHttpClient> {
-        Some(&self.http_client)
     }
 
     fn module_cache(

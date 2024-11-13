@@ -437,7 +437,6 @@ where
         }
     };
 
-    // We use asyncify with a deep sleep to wait on new IO events
     let events = block_on(Box::pin(trigger));
     let events = events.map(|events| events.into_iter().map(EventResult::into_event).collect());
     process_events(&ctx, events);

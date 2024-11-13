@@ -28,7 +28,6 @@ use once_cell::sync::Lazy;
 use std::sync::Mutex;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-pub(crate) const USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 pub(crate) const DEFAULT_RUST_LOG: &[&str] = &["warn"];
 pub(crate) static CUSTOM_WORKER_URL: Lazy<Mutex<Option<String>>> = Lazy::new(Mutex::default);
 

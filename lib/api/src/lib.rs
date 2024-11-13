@@ -66,22 +66,19 @@ pub use mem_access::{MemoryAccessError, WasmRef, WasmSlice, WasmSliceIter};
 pub use module::{IoCompileError, Module};
 pub use native_type::{FromToNativeWasmType, NativeWasmTypeInto, WasmTypeList};
 pub use ptr::{Memory32, Memory64, MemorySize, WasmPtr, WasmPtr64};
-pub use store::{
-    AsStoreMut, AsStoreRef, OnCalledHandler, Store, StoreId, StoreMut, StoreObjects, StoreRef,
-};
+pub use store::{AsStoreMut, AsStoreRef, Store, StoreId, StoreMut, StoreObjects, StoreRef};
 pub use typed_function::TypedFunction;
 pub use value::Value;
 
 // Reexport from other modules
 
 pub use wasmer_derive::ValueType;
-// TODO: OnCalledAction is needed for asyncify. It will be refactored with https://github.com/wasmerio/wasmer/issues/3451
 pub use wasmer_types::{
     is_wasm, Bytes, CompileError, CpuFeature, DeserializeError, ExportIndex, ExportType,
     ExternType, FrameInfo, FunctionType, GlobalInit, GlobalType, ImportType, LocalFunctionIndex,
-    MemoryError, MemoryType, MiddlewareError, Mutability, OnCalledAction, Pages,
-    ParseCpuFeatureError, SerializeError, TableType, Target, Type, ValueType, WasmError,
-    WasmResult, WASM_MAX_PAGES, WASM_MIN_PAGES, WASM_PAGE_SIZE,
+    MemoryError, MemoryType, MiddlewareError, Mutability, Pages, ParseCpuFeatureError,
+    SerializeError, TableType, Target, Type, ValueType, WasmError, WasmResult, WASM_MAX_PAGES,
+    WASM_MIN_PAGES, WASM_PAGE_SIZE,
 };
 #[cfg(feature = "wat")]
 pub use wat::parse_bytes as wat2wasm;

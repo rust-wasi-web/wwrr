@@ -1,17 +1,13 @@
 use std::ops::Deref;
-use std::task::{Context, Poll};
 use std::{pin::Pin, time::Duration};
 
-use bytes::Bytes;
 use derivative::Derivative;
 use futures::future::BoxFuture;
 use futures::{Future, TryFutureExt};
-use wasmer::{AsStoreMut, AsStoreRef, Memory, MemoryType, Module, Store, StoreMut, StoreRef};
-use wasmer_wasix_types::wasi::{Errno, ExitCode};
+use wasmer::{Memory, MemoryType, Module, Store, StoreMut, StoreRef};
 
 use crate::os::task::thread::WasiThreadError;
-use crate::syscalls::AsyncifyFuture;
-use crate::{capture_store_snapshot, StoreSnapshot, WasiEnv, WasiFunctionEnv, WasiThread};
+use crate::{StoreSnapshot, WasiEnv, WasiFunctionEnv};
 
 pub use virtual_mio::waker::*;
 
@@ -28,22 +24,12 @@ pub enum SpawnMemoryType<'a> {
     CopyMemory(Memory, StoreRef<'a>),
 }
 
-pub type WasmResumeTask = dyn FnOnce(WasiFunctionEnv, Store, Bytes) + Send + 'static;
-
-pub type WasmResumeTrigger = dyn FnOnce() -> Pin<Box<dyn Future<Output = Result<Bytes, ExitCode>> + Send + 'static>>
-    + Send
-    + Sync;
-
 /// The properties passed to the task
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub struct TaskWasmRunProperties {
     pub ctx: WasiFunctionEnv,
     pub store: Store,
-    /// The result of the asynchronous trigger serialized into bytes using the bincode serializer
-    /// When no trigger is associated with the run operation (i.e. spawning threads) then this will be None.
-    /// (if the trigger returns an ExitCode then the WASM process will be terminated without resuming)
-    pub trigger_result: Option<Result<Bytes, ExitCode>>,
     /// The instance will be recycled back to this function when the WASM run has finished
     #[derivative(Debug = "ignore")]
     pub recycle: Option<Box<TaskWasmRecycle>>,
@@ -74,7 +60,6 @@ pub struct TaskWasm<'a, 'b> {
     pub module: Module,
     pub globals: Option<&'b StoreSnapshot>,
     pub spawn_type: SpawnMemoryType<'a>,
-    pub trigger: Option<Box<WasmResumeTrigger>>,
 }
 
 impl<'a, 'b> TaskWasm<'a, 'b> {
@@ -89,7 +74,6 @@ impl<'a, 'b> TaskWasm<'a, 'b> {
                 Some(ty) => SpawnMemoryType::CreateMemoryOfType(ty),
                 None => SpawnMemoryType::CreateMemory,
             },
-            trigger: None,
             recycle: None,
         }
     }
@@ -108,11 +92,6 @@ impl<'a, 'b> TaskWasm<'a, 'b> {
 
     pub fn with_globals(mut self, snapshot: &'b StoreSnapshot) -> Self {
         self.globals.replace(snapshot);
-        self
-    }
-
-    pub fn with_trigger(mut self, trigger: Box<WasmResumeTrigger>) -> Self {
-        self.trigger.replace(trigger);
         self
     }
 
@@ -303,91 +282,6 @@ where
         task: Box<dyn FnOnce(Module) + Send + 'static>,
     ) -> Result<(), WasiThreadError> {
         (**self).spawn_with_module(module, task)
-    }
-}
-
-impl dyn VirtualTaskManager {
-    /// Starts an WebAssembly task will run on a dedicated thread
-    /// pulled from the worker pool that has a stateful thread local variable
-    /// After the poller has succeeded
-    #[doc(hidden)]
-    pub unsafe fn resume_wasm_after_poller(
-        &self,
-        task: Box<WasmResumeTask>,
-        ctx: WasiFunctionEnv,
-        mut store: Store,
-        trigger: Pin<Box<AsyncifyFuture>>,
-    ) -> Result<(), WasiThreadError> {
-        // This poller will process any signals when the main working function is idle
-        struct AsyncifyPollerOwned {
-            thread: WasiThread,
-            trigger: Pin<Box<AsyncifyFuture>>,
-        }
-        impl Future for AsyncifyPollerOwned {
-            type Output = Result<Bytes, ExitCode>;
-            fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-                let work = self.trigger.as_mut();
-                Poll::Ready(if let Poll::Ready(res) = work.poll(cx) {
-                    Ok(res)
-                } else if let Some(forced_exit) = self.thread.try_join() {
-                    return Poll::Ready(Err(forced_exit.unwrap_or_else(|err| {
-                        tracing::debug!("exit runtime error - {}", err);
-                        Errno::Child.into()
-                    })));
-                } else {
-                    return Poll::Pending;
-                })
-            }
-        }
-
-        let snapshot = capture_store_snapshot(&mut store.as_store_mut());
-        let env = ctx.data(&store);
-        let module = env.inner().module_clone();
-        let memory = env.inner().memory_clone();
-        let thread = env.thread.clone();
-        let env = env.clone();
-
-        let thread_inner = thread.clone();
-        self.task_wasm(
-            TaskWasm::new(
-                Box::new(move |props| {
-                    let result = props
-                        .trigger_result
-                        .expect("If there is no result then its likely the trigger did not run");
-                    let result = match result {
-                        Ok(r) => r,
-                        Err(exit_code) => {
-                            thread.set_status_finished(Ok(exit_code));
-                            return;
-                        }
-                    };
-                    task(props.ctx, props.store, result)
-                }),
-                env.clone(),
-                module,
-            )
-            .with_memory(SpawnMemoryType::ShareMemory(memory, store.as_store_ref()))
-            .with_globals(&snapshot)
-            .with_trigger(Box::new(move || {
-                Box::pin(async move {
-                    let mut poller = AsyncifyPollerOwned {
-                        thread: thread_inner,
-                        trigger,
-                    };
-                    let res = Pin::new(&mut poller).await;
-                    let res = match res {
-                        Ok(res) => res,
-                        Err(exit_code) => {
-                            env.thread.set_status_finished(Ok(exit_code));
-                            return Err(exit_code);
-                        }
-                    };
-
-                    tracing::trace!("deep sleep woken - res.len={}", res.len());
-                    Ok(res)
-                })
-            })),
-        )
     }
 }
 

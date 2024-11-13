@@ -30,7 +30,6 @@ pub(crate) use std::{
     time::Duration,
 };
 
-pub(crate) use bytes::Bytes;
 pub(crate) use cooked_waker::IntoWaker;
 pub(crate) use tracing::{debug, error, trace, warn};
 pub use wasm::*;
@@ -140,11 +139,6 @@ pub(crate) fn read_bytes<T: Read, M: MemorySize>(
     }
     Ok(bytes_read)
 }
-
-/// Future that will be polled by asyncify methods
-/// (the return value is what will be returned in rewind
-///  or in the instant response)
-pub type AsyncifyFuture = dyn Future<Output = Bytes> + Send + Sync + 'static;
 
 /// Blocks the thread on the specified Future.
 pub(crate) fn block_on<T, Fut>(work: Fut) -> T

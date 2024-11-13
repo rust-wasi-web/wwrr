@@ -4,15 +4,9 @@ use std::{
     fmt,
     ops::{Deref, DerefMut},
 };
-pub use wasmer_types::{OnCalledAction, StoreId};
+pub use wasmer_types::StoreId;
 
 pub use crate::js::store::{StoreHandle, StoreObjects};
-
-/// Call handler for a store.
-// TODO: better documentation!
-pub type OnCalledHandler = Box<
-    dyn FnOnce(StoreMut<'_>) -> Result<OnCalledAction, Box<dyn std::error::Error + Send + Sync>>,
->;
 
 /// We require the context to have a fixed memory address for its lifetime since
 /// various bits of the VM have raw pointers that point back to it. Hence we
@@ -23,8 +17,6 @@ pub(crate) struct StoreInner {
     pub(crate) objects: StoreObjects,
     #[derivative(Debug = "ignore")]
     pub(crate) engine: Engine,
-    #[derivative(Debug = "ignore")]
-    pub(crate) on_called: Option<OnCalledHandler>,
 }
 
 /// The store represents all global state that can be manipulated by
@@ -47,7 +39,6 @@ impl Store {
             inner: Box::new(StoreInner {
                 objects: Default::default(),
                 engine: engine.into(),
-                on_called: None,
             }),
         }
     }
@@ -182,18 +173,6 @@ impl<'a> StoreMut<'a> {
 
     pub(crate) unsafe fn from_raw(raw: *mut StoreInner) -> Self {
         Self { inner: &mut *raw }
-    }
-
-    // TODO: OnCalledAction is needed for asyncify. It will be refactored with https://github.com/wasmerio/wasmer/issues/3451
-    /// Sets the unwind callback which will be invoked when the call finishes
-    pub fn on_called<F>(&mut self, callback: F)
-    where
-        F: FnOnce(StoreMut<'_>) -> Result<OnCalledAction, Box<dyn std::error::Error + Send + Sync>>
-            + Send
-            + Sync
-            + 'static,
-    {
-        self.inner.on_called.replace(Box::new(callback));
     }
 }
 

@@ -35,31 +35,13 @@ macro_rules! impl_native_traits {
                 let params_list: Vec<_> = unsafe {
                     vec![ $( ($x::WASM_TYPE, $x.into_raw(store) ) ),* ]
                 };
-                let results = {
-                    let mut r;
-                    // TODO: This loop is needed for asyncify. It will be refactored with https://github.com/wasmerio/wasmer/issues/3451
-                    loop {
-                        r = self.func.0.handle.function.apply(
-                            &JsValue::UNDEFINED,
-                            unsafe {
-                                &Array::from_iter(params_list.clone()
-                                .into_iter()
-                                .map(|(b, a)| Value::from_raw(store, b, a).as_jsvalue(store)))
-                                }
-                        );
-                        let store_mut = store.as_store_mut();
-                        if let Some(callback) = store_mut.inner.on_called.take() {
-                            match callback(store_mut) {
-                                Ok(wasmer_types::OnCalledAction::InvokeAgain) => { continue; }
-                                Ok(wasmer_types::OnCalledAction::Finish) => { break; }
-                                Ok(wasmer_types::OnCalledAction::Trap(trap)) => { return Err(RuntimeError::user(trap)) },
-                                Err(trap) => { return Err(RuntimeError::user(trap)) },
-                            }
-                        }
-                        break;
-                    }
-                    r?
-                };
+                let results = self.func.0.handle.function.apply(
+                    &JsValue::UNDEFINED,
+                    unsafe {
+                        &Array::from_iter(params_list.clone()
+                        .into_iter()
+                        .map(|(b, a)| Value::from_raw(store, b, a).as_jsvalue(store)))
+                    })?;
                 let mut rets_list_array = Rets::empty_array();
                 let mut_rets = rets_list_array.as_mut() as *mut [RawValue] as *mut RawValue;
                 match Rets::size() {

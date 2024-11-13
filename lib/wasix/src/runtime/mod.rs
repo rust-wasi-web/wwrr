@@ -16,7 +16,6 @@ use wasmer::{Module, RuntimeError};
 use wasmer_wasix_types::wasi::ExitCode;
 
 use crate::{
-    http::DynHttpClient,
     os::TtyBridge,
     runtime::module_cache::{ModuleCache, ThreadLocalCache},
     SpawnError, WasiTtyState,
@@ -62,11 +61,6 @@ where
     /// Create a new [`wasmer::Store`].
     fn new_store(&self) -> wasmer::Store {
         wasmer::Store::default()
-    }
-
-    /// Get a custom HTTP client
-    fn http_client(&self) -> Option<&DynHttpClient> {
-        None
     }
 
     /// Get access to the TTY used by the environment.

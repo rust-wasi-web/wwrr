@@ -147,7 +147,6 @@ pub(super) fn futex_wait_internal<M: MemorySize + 'static>(
     // then the value is not set) - the poller will set it to true
     wasi_try_mem_ok!(ret_woken.write(&memory, Bool::False));
 
-    // We use asyncify on the poller and potentially go into deep sleep
     tracing::trace!("wait on {futex_idx}");
     let res = block_on(Box::pin(poller));
 

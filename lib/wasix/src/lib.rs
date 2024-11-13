@@ -23,7 +23,6 @@ mod macros;
 pub mod os;
 // TODO: should this be pub?
 pub mod fs;
-pub mod http;
 pub mod net;
 pub mod runtime;
 mod state;
