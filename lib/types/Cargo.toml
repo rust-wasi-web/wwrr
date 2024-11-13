@@ -13,19 +13,20 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-serde = { version = "1.0", features = ["derive", "rc"], optional = true, default-features = false }
-serde_bytes = { version = "0.11", optional = true }
-thiserror = "1.0"
-more-asserts = "0.2"
-indexmap = { version = "1.6" }
+bytecheck = { workspace = true }
+enum-iterator = { workspace = true }
+enumset = { workspace = true }
+hex = { workspace = true }
+indexmap = "1.6"
+more-asserts = { workspace = true }
 rkyv = { workspace = true }
-enum-iterator = "0.7.0"
-target-lexicon = { version = "0.12.2", default-features = false }
-enumset.workspace = true
-bytecheck = "0.6.8"
-xxhash-rust = { version = "0.8.8", features = ["xxh64"] }
-sha2 = { version = "0.10" }
-hex = { version = "^0.4" }
+serde = { workspace = true, features = ["derive", "rc"], optional = true }
+serde_bytes = { workspace = true, optional = true }
+sha2 = { workspace = true }
+target-lexicon = { workspace = true, default-features = false }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+xxhash-rust = { workspace = true, features = ["xxh64"] }
 
 [features]
 default = ["std"]

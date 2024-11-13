@@ -12,16 +12,15 @@ rust-version.workspace = true
 [dependencies]
 virtual-mio = { path = "../virtual-mio" }
 
-thiserror = "1"
-bytes = "1.1"
-async-trait = "0.1"
-derivative = "2"
-serde = { version = "1.0", default-features = false, features = ["derive"] }
-pin-project-lite = "0.2.9"
-futures-util = "0.3"
-
+async-trait = { workspace = true }
+bytecheck = { workspace = true, optional = true }
+bytes = { workspace = true}
+derivative = { workspace = true }
+futures = { workspace = true }
+pin-project-lite = { workspace = true }
 rkyv = { workspace = true, optional = true }
-bytecheck = { version = "0.6.8", optional = true }
+serde = { workspace = true, features = ["derive"] }
+thiserror = { workspace = true }
 tokio = { workspace = true, features = ["io-util"], optional = true }
 
 [features]

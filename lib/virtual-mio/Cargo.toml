@@ -10,7 +10,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-derivative = { version = "2" }
-futures = { version = "0.3" }
-serde = { version = "1.0", default-features = false, features = ["derive"] }
+derivative = { workspace = true }
+futures = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
 

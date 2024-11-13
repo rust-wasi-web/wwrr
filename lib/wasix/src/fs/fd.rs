@@ -8,7 +8,7 @@ use std::{
 };
 
 use futures::Future;
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::sync::Mutex as StdMutex;
 use tokio::sync::{watch, Mutex as AsyncMutex};
 use virtual_fs::{Pipe, VirtualFile};

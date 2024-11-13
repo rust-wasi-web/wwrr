@@ -15,29 +15,27 @@ wasmer = { path = "../api" }
 wasmer-types = { path = "../types" }
 wasmer-wasix = { path = "../wasix" }
 
-lazy_static = "1.5"
-anyhow = "1"
-async-trait = "0.1"
-bincode = "1"
-bytes = "1"
-console_error_panic_hook = { version = "0.1" }
-derivative = { version = "2" }
-futures = "0.3"
-instant = { version = "0.1", features = ["wasm-bindgen"] }
-js-sys = "0.3"
-once_cell = "1"
-serde = { version = "1", features = ["derive"] }
-serde-wasm-bindgen = "0.6"
-sha2 = "0.10.8"
-tokio = { version = "1", features = ["sync"], default-features = false }
-tracing = { version = "0.1", features = ["log", "release_max_level_debug"] }
-tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
-wasm-bindgen = { version = "0.2.92" }
-wasm-bindgen-futures = "0.4.40"
-wasm-bindgen-test = "0.3.45"
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+bytes = { workspace = true }
+console_error_panic_hook = { workspace = true }
+derivative = { workspace = true }
+futures = { workspace = true }
+instant = { workspace = true, features = ["wasm-bindgen"] }
+js-sys = { workspace = true }
+lazy_static = { workspace = true }
+once_cell = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde-wasm-bindgen = { workspace = true }
+sha2 = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
 
 [dependencies.web-sys]
-version = "0.3"
+workspace = true
 features = [
     "BinaryType",
     "Blob",
@@ -80,9 +78,7 @@ features = [
 ]
 
 [dev-dependencies]
-wasm-bindgen-test = "0.3"
-
-
+wasm-bindgen-test = { workspace = true }
 
 [package.metadata.wasm-pack.profile.release.wasm-bindgen]
 debug-js-glue = false
