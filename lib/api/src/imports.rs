@@ -1,6 +1,7 @@
 //! The import module contains the implementation data structures and helper functions used to
 //! manipulate and access a wasm module's imports including memories, tables, globals, and
 //! functions.
+
 use crate::{Exports, Extern, LinkError, Module};
 use std::collections::HashMap;
 use std::fmt;
@@ -235,6 +236,13 @@ impl fmt::Debug for Imports {
             .finish()
     }
 }
+
+/// The raw JavaScript imports object used to instantiate a WebAssembly module.
+///
+/// This is passed to [`js_sys::WebAssembly::Instance::new`] after augmenting it
+/// with further imports.
+#[derive(Default, Clone, Debug, PartialEq, Eq)]
+pub struct ImportsObj(pub js_sys::Object);
 
 // The import! macro for Imports
 

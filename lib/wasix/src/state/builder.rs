@@ -7,7 +7,7 @@ use std::{
 
 use thiserror::Error;
 use virtual_fs::{ArcFile, FileSystem, FsError, TmpFileSystem, VirtualFile};
-use wasmer::{AsStoreMut, Extern, Imports, Instance, Module, Store};
+use wasmer::{AsStoreMut, ExportsObj, Extern, Imports, ImportsObj, Instance, Module, Store};
 
 use crate::{
     fs::{WasiFs, WasiFsRoot, WasiInodes},
@@ -55,6 +55,8 @@ pub struct WasiEnvBuilder {
     pub(super) runtime: Option<Arc<dyn crate::Runtime + Send + Sync + 'static>>,
     pub(super) current_dir: Option<PathBuf>,
     pub(super) additional_imports: Imports,
+    /// Name of wasm-bindgen generated JavaScript module.
+    pub(super) wbg_js_module_name: Option<String>,
 }
 
 impl std::fmt::Debug for WasiEnvBuilder {
@@ -69,6 +71,7 @@ impl std::fmt::Debug for WasiEnvBuilder {
             .field("stderr_override exists", &self.stderr.is_some())
             .field("stdin_override exists", &self.stdin.is_some())
             .field("runtime_override_exists", &self.runtime.is_some())
+            .field("wbg_js_module_name", &self.wbg_js_module_name)
             .finish()
     }
 }
@@ -537,6 +540,11 @@ impl WasiEnvBuilder {
         self
     }
 
+    /// Sets the wasm-bindgen generated JavaScript module name.
+    pub fn set_wbg_js_module_name(&mut self, wbg_js_module_name: String) {
+        self.wbg_js_module_name = Some(wbg_js_module_name);
+    }
+
     /// Consumes the [`WasiEnvBuilder`] and produces a [`WasiEnvInit`], which
     /// can be used to construct a new [`WasiEnv`].
     ///
@@ -703,31 +711,17 @@ impl WasiEnvBuilder {
             thread: None,
             call_initialize: true,
             additional_imports: self.additional_imports,
+            wbg_js_module_name: self.wbg_js_module_name,
         };
 
         Ok(init)
     }
 
+    /// Build the [`WasiEnv`].
     #[allow(clippy::result_large_err)]
     pub fn build(self) -> Result<WasiEnv, WasiRuntimeError> {
         let init = self.build_init()?;
         WasiEnv::from_init(init)
-    }
-
-    /// Construct a [`WasiFunctionEnv`].
-    ///
-    /// NOTE: you still must call [`WasiFunctionEnv::initialize`] to make an
-    /// instance usable.
-    #[doc(hidden)]
-    #[allow(clippy::result_large_err)]
-    pub fn finalize(
-        self,
-        store: &mut impl AsStoreMut,
-    ) -> Result<WasiFunctionEnv, WasiRuntimeError> {
-        let init = self.build_init()?;
-        let env = WasiEnv::from_init(init)?;
-        let func_env = WasiFunctionEnv::new(store, env);
-        Ok(func_env)
     }
 
     /// Consumes the [`WasiEnvBuilder`] and produces a [`WasiEnvInit`], which
@@ -740,44 +734,23 @@ impl WasiEnvBuilder {
         self,
         module: Module,
         store: &mut impl AsStoreMut,
-    ) -> Result<(Instance, WasiFunctionEnv), WasiRuntimeError> {
-        self.instantiate_ext(module, store)
-    }
-
-    #[allow(clippy::result_large_err)]
-    pub fn instantiate_ext(
-        self,
-        module: Module,
-        store: &mut impl AsStoreMut,
+        imports_obj: ImportsObj,
     ) -> Result<(Instance, WasiFunctionEnv), WasiRuntimeError> {
         let init = self.build_init()?;
-        WasiEnv::instantiate(init, module, store)
+        WasiEnv::instantiate(init, module, store, imports_obj)
     }
 
+    /// Run the WASI command module by executing its `_start` function.
     #[allow(clippy::result_large_err)]
     pub fn run(self, module: Module) -> Result<(), WasiRuntimeError> {
-        self.run_ext(module)
-    }
-
-    #[allow(clippy::result_large_err)]
-    pub fn run_ext(self, module: Module) -> Result<(), WasiRuntimeError> {
         let mut store = wasmer::Store::default();
-        self.run_with_store_ext(module, &mut store)
+        self.run_with_store(module, &mut store)
     }
 
+    /// Run the WASI command module by executing its `_start` function.
     #[allow(clippy::result_large_err)]
-    #[tracing::instrument(level = "debug", skip_all)]
     pub fn run_with_store(self, module: Module, store: &mut Store) -> Result<(), WasiRuntimeError> {
-        self.run_with_store_ext(module, store)
-    }
-
-    #[allow(clippy::result_large_err)]
-    pub fn run_with_store_ext(
-        self,
-        module: Module,
-        store: &mut Store,
-    ) -> Result<(), WasiRuntimeError> {
-        let (instance, env) = self.instantiate_ext(module, store)?;
+        let (instance, env) = self.instantiate(module, store, ImportsObj::default())?;
 
         let start = instance.exports.get_function("_start")?;
         env.data(&store).thread.set_status_running();
@@ -798,6 +771,52 @@ impl WasiEnvBuilder {
         env.on_exit(store, Some(exit_code));
 
         result
+    }
+
+    /// Load a WASI reactor module and provide its exports.
+    #[allow(clippy::result_large_err)]
+    pub fn load(
+        self,
+        module: Module,
+        imports_obj: ImportsObj,
+    ) -> Result<WasiReactor, WasiRuntimeError> {
+        let mut store = wasmer::Store::default();
+
+        let (instance, func_env) = self.instantiate(module, &mut store, imports_obj)?;
+        func_env.data(&store).thread.set_status_running();
+
+        Ok(WasiReactor {
+            _store: store,
+            _func_env: func_env,
+            instance,
+        })
+    }
+}
+
+/// Instantiated WASI reactor module.
+#[derive(Debug)]
+pub struct WasiReactor {
+    /// WASI store.
+    ///
+    /// Required to be kept alive.
+    _store: Store,
+    /// Function environment.
+    ///
+    /// Required to be kept alive.
+    _func_env: WasiFunctionEnv,
+    /// Instance of module.
+    instance: Instance,
+}
+
+impl WasiReactor {
+    /// WASI module instance.
+    pub fn instance(&self) -> &Instance {
+        &self.instance
+    }
+
+    /// The raw JavaScript exports object of the instantiated WASI reactor.
+    pub fn exports_obj(&self) -> ExportsObj {
+        self.instance.exports_obj.clone()
     }
 }
 
@@ -926,16 +945,6 @@ mod test {
 
     #[test]
     fn env_var_errors() {
-        #[cfg(not(target_arch = "wasm32"))]
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        #[cfg(not(target_arch = "wasm32"))]
-        let handle = runtime.handle().clone();
-        #[cfg(not(target_arch = "wasm32"))]
-        let _guard = handle.enter();
-
         // `=` in the key is invalid.
         assert!(
             WasiEnv::builder("test_prog")

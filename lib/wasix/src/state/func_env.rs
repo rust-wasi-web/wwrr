@@ -1,8 +1,11 @@
 use std::sync::Arc;
 
+use js_sys::Reflect;
 use tracing::trace;
+use wasm_bindgen::{JsCast, JsValue};
 use wasmer::{
-    AsStoreMut, AsStoreRef, ExportError, FunctionEnv, Imports, Instance, Memory, Module, Store,
+    AsStoreMut, AsStoreRef, ExportError, FunctionEnv, Imports, ImportsObj, Instance, Memory,
+    Module, Store,
 };
 use wasmer_wasix_types::wasi::ExitCode;
 
@@ -26,12 +29,13 @@ impl WasiFunctionEnv {
         }
     }
 
-    // Creates a new environment context on a new store
-    pub fn new_with_store(
+    // Creates a new environment context on a new store.
+    pub fn new_creating_store(
         module: Module,
         env: WasiEnv,
         store_snapshot: Option<&StoreSnapshot>,
         spawn_type: SpawnMemoryType,
+        wbg_js_module: Option<JsValue>,
     ) -> Result<(Self, Store), WasiThreadError> {
         // Create a new store and put the memory object in it
         // (but only if it has imported memory)
@@ -42,17 +46,73 @@ impl WasiFunctionEnv {
 
         // Build the context object and import the memory
         let mut ctx = WasiFunctionEnv::new(&mut store, env);
-        let (mut import_object, init) =
+        let (mut imports, init) =
             import_object_for_all_wasi_versions(&module, &mut store, &ctx.env);
         if let Some(memory) = memory.clone() {
-            import_object.define("env", "memory", memory);
+            imports.define("env", "memory", memory);
         }
 
-        let instance = Instance::new(&mut store, &module, &import_object).map_err(|err| {
-            tracing::warn!("failed to create instance - {}", err);
-            WasiThreadError::InstanceCreateFailed(Box::new(err))
-        })?;
+        // Get wasm-bindgen imports provided to WebAssembly module.
+        let imports_obj = match &wbg_js_module {
+            Some(wbg_mod) => {
+                tracing::debug!("getting imports for wasm-bindgen");
+                let get_imports = Reflect::get(wbg_mod, &JsValue::from_str("__wbg_get_imports"))
+                    .map_err(WasiThreadError::wbg_failed)?;
+                let get_imports =
+                    get_imports
+                        .dyn_ref::<js_sys::Function>()
+                        .ok_or(WasiThreadError::WbgFailed(
+                            "__wbg_get_imports is not a function".to_string(),
+                        ))?;
+                let imports = get_imports
+                    .call0(&JsValue::undefined())
+                    .map_err(WasiThreadError::wbg_failed)?;
+                ImportsObj(imports.into())
+            }
+            None => ImportsObj::default(),
+        };
 
+        // Instantiate WebAssembly module.
+        let instance =
+            Instance::new(&mut store, &module, &imports, imports_obj.clone()).map_err(|err| {
+                tracing::warn!("failed to create instance - {}", err);
+                WasiThreadError::InstanceCreateFailed(Box::new(err))
+            })?;
+
+        // Initialize JavaScript side of wasm-bindgen generated bindings.
+        if let Some(wbg_mod) = &wbg_js_module {
+            // Set exports provided by WASM module.
+            tracing::info!("setting wasm-bindgen exports");
+            let set_exports = Reflect::get(wbg_mod, &JsValue::from_str("__wbg_set_exports"))
+                .map_err(WasiThreadError::wbg_failed)?;
+            let set_exports =
+                set_exports
+                    .dyn_ref::<js_sys::Function>()
+                    .ok_or(WasiThreadError::WbgFailed(
+                        "__wbg_set_exports is not a function".to_string(),
+                    ))?;
+            set_exports
+                .call1(&JsValue::undefined(), &instance.exports_obj.0)
+                .map_err(WasiThreadError::wbg_failed)?;
+
+            // Initialize externref table.
+            tracing::info!("initializing wasm-bindgen externref table");
+            let wbg = Reflect::get(&imports_obj.0, &JsValue::from_str("wbg"))
+                .map_err(WasiThreadError::wbg_failed)?;
+            let init_externref_table =
+                Reflect::get(&wbg, &JsValue::from_str("__wbindgen_init_externref_table"))
+                    .map_err(WasiThreadError::wbg_failed)?;
+            let init_externref_table = init_externref_table.dyn_ref::<js_sys::Function>().ok_or(
+                WasiThreadError::WbgFailed(
+                    "wbg.__wbindgen_init_externref_table is not an exported function".to_string(),
+                ),
+            )?;
+            init_externref_table
+                .call0(&JsValue::undefined())
+                .map_err(WasiThreadError::wbg_failed)?;
+        }
+
+        // Initialize instance.
         init(&instance, &store).map_err(|err| {
             tracing::warn!("failed to init instance - {}", err);
             WasiThreadError::InitFailed(Arc::new(err))

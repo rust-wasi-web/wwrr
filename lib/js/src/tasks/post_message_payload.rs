@@ -1,7 +1,7 @@
+use bytes::Bytes;
 use derivative::Derivative;
 use js_sys::WebAssembly;
 use wasm_bindgen::JsValue;
-use wasmer_types::ModuleHash;
 
 use crate::tasks::{
     interop::Serializer, task_wasm::SpawnWasm, AsyncTask, BlockingModuleTask, BlockingTask,
@@ -13,7 +13,6 @@ use crate::tasks::{
 pub(crate) enum PostMessagePayload {
     Async(AsyncJob),
     Blocking(BlockingJob),
-    Notification(Notification),
 }
 
 impl PostMessagePayload {
@@ -27,7 +26,7 @@ impl PostMessagePayload {
 pub(crate) enum BlockingJob {
     Thunk(#[derivative(Debug(format_with = "crate::utils::hidden"))] BlockingTask),
     SpawnWithModule {
-        module: WebAssembly::Module,
+        module: wasmer::Module,
         #[derivative(Debug(format_with = "crate::utils::hidden"))]
         task: BlockingModuleTask,
     },
@@ -46,25 +45,15 @@ pub(crate) enum AsyncJob {
     Thunk(#[derivative(Debug(format_with = "crate::utils::hidden"))] AsyncTask),
 }
 
-#[derive(Derivative)]
-#[derivative(Debug)]
-pub(crate) enum Notification {
-    CacheModule {
-        hash: ModuleHash,
-        module: WebAssembly::Module,
-    },
-}
-
 mod consts {
     pub(crate) const TYPE_SPAWN_ASYNC: &str = "spawn-async";
     pub(crate) const TYPE_SPAWN_BLOCKING: &str = "spawn-blocking";
-    pub(crate) const TYPE_CACHE_MODULE: &str = "cache-module";
     pub(crate) const TYPE_SPAWN_WITH_MODULE: &str = "spawn-with-module";
     pub(crate) const TYPE_SPAWN_WITH_MODULE_AND_MEMORY: &str = "spawn-with-module-and-memory";
     pub(crate) const PTR: &str = "ptr";
     pub(crate) const MODULE: &str = "module";
+    pub(crate) const MODULE_BYTES: &str = "module-bytes";
     pub(crate) const MEMORY: &str = "memory";
-    pub(crate) const MODULE_HASH: &str = "module-hash";
 }
 
 impl PostMessagePayload {
@@ -83,7 +72,8 @@ impl PostMessagePayload {
             PostMessagePayload::Blocking(BlockingJob::SpawnWithModule { module, task }) => {
                 Serializer::new(consts::TYPE_SPAWN_WITH_MODULE)
                     .boxed(consts::PTR, task)
-                    .set(consts::MODULE, module)
+                    .boxed(consts::MODULE_BYTES, module.serialize())
+                    .set(consts::MODULE, JsValue::from(module))
                     .finish()
             }
             PostMessagePayload::Blocking(BlockingJob::SpawnWithModuleAndMemory {
@@ -95,12 +85,6 @@ impl PostMessagePayload {
                 .set(consts::MODULE, module)
                 .set(consts::MEMORY, memory)
                 .finish(),
-            PostMessagePayload::Notification(Notification::CacheModule { hash, module }) => {
-                Serializer::new(consts::TYPE_CACHE_MODULE)
-                    .set(consts::MODULE_HASH, hash.to_string())
-                    .set(consts::MODULE, module)
-                    .finish()
-            }
         }
     }
 
@@ -123,25 +107,13 @@ impl PostMessagePayload {
                 let task = de.boxed(consts::PTR)?;
                 Ok(PostMessagePayload::Blocking(BlockingJob::Thunk(task)))
             }
-            consts::TYPE_CACHE_MODULE => {
-                let module = de.js(consts::MODULE)?;
-                let hash = de.string(consts::MODULE_HASH)?;
-                let hash = if let Ok(hash) = ModuleHash::sha256_parse_hex(&hash) {
-                    hash
-                } else {
-                    ModuleHash::xxhash_parse_hex(&hash)?
-                };
-
-                Ok(PostMessagePayload::Notification(
-                    Notification::CacheModule { hash, module },
-                ))
-            }
             consts::TYPE_SPAWN_WITH_MODULE => {
                 let task = de.boxed(consts::PTR)?;
-                let module = de.js(consts::MODULE)?;
+                let module: WebAssembly::Module = de.js(consts::MODULE)?;
+                let module_bytes: Option<Bytes> = de.boxed(consts::MODULE_BYTES)?;
 
                 Ok(PostMessagePayload::Blocking(BlockingJob::SpawnWithModule {
-                    module,
+                    module: wasmer::Module::from((module, module_bytes.unwrap())),
                     task,
                 }))
             }
@@ -171,6 +143,7 @@ mod tests {
     };
 
     use futures::channel::oneshot;
+    use futures::FutureExt;
     use wasm_bindgen::JsCast;
     use wasm_bindgen_test::wasm_bindgen_test;
     use wasmer::AsJs;
@@ -234,7 +207,7 @@ mod tests {
         let module = wasmer::Module::new(&engine, ENVVAR_WASM).unwrap();
         let (sender, receiver) = oneshot::channel();
         let msg = PostMessagePayload::Blocking(BlockingJob::SpawnWithModule {
-            module: JsValue::from(module).dyn_into().unwrap(),
+            module,
             task: Box::new(|m| {
                 sender
                     .send(
@@ -270,26 +243,6 @@ mod tests {
     }
 
     #[wasm_bindgen_test]
-    async fn round_trip_cache_module() {
-        let engine = wasmer::Engine::default();
-        let module = wasmer::Module::new(&engine, ENVVAR_WASM).unwrap();
-        let msg = PostMessagePayload::Notification(Notification::CacheModule {
-            hash: ModuleHash::xxhash(ENVVAR_WASM),
-            module: module.into(),
-        });
-
-        let js = msg.into_js().unwrap();
-        let round_tripped = unsafe { PostMessagePayload::try_from_js(js).unwrap() };
-
-        match round_tripped {
-            PostMessagePayload::Notification(Notification::CacheModule { hash, module: _ }) => {
-                assert_eq!(hash, ModuleHash::xxhash(ENVVAR_WASM));
-            }
-            _ => unreachable!(),
-        };
-    }
-
-    #[wasm_bindgen_test]
     async fn round_trip_spawn_with_module_and_memory() {
         let engine = wasmer::Engine::default();
         let module = wasmer::Module::new(&engine, ENVVAR_WASM).unwrap();
@@ -303,7 +256,10 @@ mod tests {
             Box::new({
                 let flag = Arc::clone(&flag);
                 move |_| {
-                    flag.store(true, Ordering::SeqCst);
+                    async move {
+                        flag.store(true, Ordering::SeqCst);
+                    }
+                    .boxed_local()
                 }
             }),
             env,
@@ -337,7 +293,8 @@ mod tests {
         spawn_wasm
             .begin()
             .await
-            .execute(module, memory.into())
+            .execute(module, memory.into(), None)
+            .await
             .unwrap();
         assert!(flag.load(Ordering::SeqCst));
     }

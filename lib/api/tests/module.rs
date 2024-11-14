@@ -230,7 +230,7 @@ fn calling_host_functions_with_negative_values_works() {
             }),
         }
     };
-    let instance = Instance::new(&mut store, &module, &imports)
+    let instance = Instance::new(&mut store, &module, &imports, Default::default())
         .map_err(|e| format!("{e:?}"))
         .unwrap();
 

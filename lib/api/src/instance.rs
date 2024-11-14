@@ -1,11 +1,11 @@
-use crate::exports::Exports;
-use crate::module::Module;
-use crate::{Extern, InstantiationError};
 use std::fmt;
 
-use crate::imports::Imports;
+use crate::exports::{Exports, ExportsObj};
+use crate::imports::{Imports, ImportsObj};
 use crate::js::instance as instance_imp;
+use crate::module::Module;
 use crate::store::AsStoreMut;
+use crate::InstantiationError;
 
 /// A WebAssembly Instance is a stateful, executable
 /// instance of a WebAssembly [`Module`].
@@ -21,6 +21,8 @@ pub struct Instance {
     pub(crate) module: Module,
     /// The exports for an instance.
     pub exports: Exports,
+    /// The raw JavaScript exports object of a WebAssembly instance.
+    pub exports_obj: ExportsObj,
 }
 
 impl Instance {
@@ -59,36 +61,15 @@ impl Instance {
         store: &mut impl AsStoreMut,
         module: &Module,
         imports: &Imports,
+        imports_obj: ImportsObj,
     ) -> Result<Self, InstantiationError> {
-        let (_inner, exports) = instance_imp::Instance::new(store, module, imports)?;
+        let (_inner, exports, exports_obj) =
+            instance_imp::Instance::new(store, module, imports, imports_obj)?;
         Ok(Self {
             _inner,
             module: module.clone(),
             exports,
-        })
-    }
-
-    /// Creates a new `Instance` from a WebAssembly [`Module`] and a
-    /// vector of imports.
-    ///
-    /// ## Errors
-    ///
-    /// The function can return [`InstantiationError`]s.
-    ///
-    /// Those are, as defined by the spec:
-    ///  * Link errors that happen when plugging the imports into the instance
-    ///  * Runtime errors that happen when running the module `start` function.
-    #[allow(clippy::result_large_err)]
-    pub fn new_by_index(
-        store: &mut impl AsStoreMut,
-        module: &Module,
-        externs: &[Extern],
-    ) -> Result<Self, InstantiationError> {
-        let (_inner, exports) = instance_imp::Instance::new_by_index(store, module, externs)?;
-        Ok(Self {
-            _inner,
-            module: module.clone(),
-            exports,
+            exports_obj,
         })
     }
 

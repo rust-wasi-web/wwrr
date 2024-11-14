@@ -9,7 +9,9 @@ use crate::{
     WasiThreadHandle,
 };
 
-use wasmer_wasix_types::wasi::ThreadStart;
+use future::FutureExt;
+use tokio::sync::oneshot;
+use wasmer_wasix_types::wasi::{ThreadActions, ThreadStart};
 
 /// ### `thread_spawn()`
 /// Creates a new thread by spawning that shares the same
@@ -117,7 +119,12 @@ pub fn thread_spawn_internal_using_layout<M: MemorySize>(
     // Now spawn a thread
     trace!("threading: spawning background thread");
     let run = move |props: TaskWasmRunProperties| {
-        let _ = execute_module(props.ctx, props.store);
+        async move {
+            if let Err(err) = execute_module(props.ctx, props.store).await {
+                tracing::warn!("Starting thread failed: {err}");
+            }
+        }
+        .boxed_local()
     };
     tasks
         .task_wasm(
@@ -132,7 +139,7 @@ pub fn thread_spawn_internal_using_layout<M: MemorySize>(
 }
 
 /// Calls the module
-fn call_module<M: MemorySize>(
+async fn call_module<M: MemorySize>(
     env: WasiFunctionEnv,
     mut store: Store,
     start_ptr_offset: M::Offset,
@@ -146,7 +153,7 @@ fn call_module<M: MemorySize>(
         .unwrap();
     let tid = env.data(&store).tid();
 
-    let call_ret = spawn.call(
+    let mut call_ret = spawn.call(
         &mut store,
         tid.raw().try_into().map_err(|_| Errno::Overflow).unwrap(),
         start_ptr_offset
@@ -154,6 +161,29 @@ fn call_module<M: MemorySize>(
             .map_err(|_| Errno::Overflow)
             .unwrap(),
     );
+
+    // Check for thread holding.
+    let wasi_env = env.data_mut(&mut store);
+    if let Some(release_rx) = wasi_env.thread_release_rx.take() {
+        wasi_env.thread_start_executed = true;
+
+        // Wait for thread release.
+        // This release control back to the brower event loop and allows
+        // callbacks and promises to execute.
+        tracing::debug!("thread is on hold");
+        let _ = release_rx.await;
+
+        tracing::debug!("thread hold released, cleaning up");
+        call_ret = spawn.call(
+            &mut store,
+            tid.raw().try_into().map_err(|_| Errno::Overflow).unwrap(),
+            start_ptr_offset
+                .try_into()
+                .map_err(|_| Errno::Overflow)
+                .unwrap(),
+        );
+        tracing::debug!("thread cleanup finished");
+    }
 
     let mut ret = Errno::Success;
     if let Err(err) = call_ret {
@@ -192,4 +222,61 @@ fn call_module<M: MemorySize>(
     // Frees the handle so that it closes
     drop(thread_handle);
     Ok(ret as Pid)
+}
+
+pub(crate) fn thread_actions_internal<M: MemorySize + 'static>(
+    ctx: FunctionEnvMut<'_, WasiEnv>,
+) -> i32 {
+    let env = ctx.data();
+    let tid = env.tid();
+
+    let actions = if env.thread_release_tx.is_some() {
+        // Thread holding was requested: do not clean up.
+        ThreadActions::START
+    } else if env.thread_start_executed {
+        // Thread was released after being held: only clean up is left.
+        ThreadActions::FINISH
+    } else {
+        // No thread holding: normal execution.
+        ThreadActions::START | ThreadActions::FINISH
+    };
+
+    tracing::debug!(tid = %tid, "thread actions: {actions:?}");
+    actions.bits()
+}
+
+pub(crate) fn thread_hold_internal<M: MemorySize + 'static>(
+    mut ctx: FunctionEnvMut<'_, WasiEnv>,
+) -> Result<Errno, WasiError> {
+    let env = ctx.data_mut();
+    let tid = env.tid();
+
+    if env.thread_start_executed {
+        tracing::warn!(tid = %tid, "attempt to hold thread in cleanup");
+        return Ok(Errno::Already);
+    }
+
+    let (tx, rx) = oneshot::channel();
+    env.thread_release_tx = Some(tx);
+    env.thread_release_rx = Some(rx);
+
+    tracing::debug!(tid = %tid, "thread will be held after start function finishes");
+    Ok(Errno::Success)
+}
+
+pub(crate) fn thread_release_internal<M: MemorySize + 'static>(
+    mut ctx: FunctionEnvMut<'_, WasiEnv>,
+) -> Result<Errno, WasiError> {
+    let env = ctx.data_mut();
+    let tid = env.tid();
+
+    let Some(tx) = env.thread_release_tx.take() else {
+        tracing::warn!(tid = %tid, "attempt to release thread that is not being held");
+        return Ok(Errno::Already);
+    };
+
+    let _ = tx.send(());
+
+    tracing::debug!(tid = %tid, "held thread has been released");
+    Ok(Errno::Success)
 }

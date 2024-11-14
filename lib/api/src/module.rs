@@ -1,16 +1,12 @@
 use bytes::Bytes;
 use std::fmt;
-use std::fs;
 use std::io;
-use std::path::Path;
 
 use crate::engine::AsEngineRef;
 use thiserror::Error;
 #[cfg(feature = "wat")]
 use wasmer_types::WasmError;
-use wasmer_types::{
-    CompileError, DeserializeError, ExportsIterator, ImportsIterator, ModuleInfo, SerializeError,
-};
+use wasmer_types::{CompileError, DeserializeError, ExportsIterator, ImportsIterator, ModuleInfo};
 use wasmer_types::{ExportType, ImportType};
 
 use crate::into_bytes::IntoBytes;
@@ -119,22 +115,6 @@ impl Module {
         Self::from_binary(engine, bytes.as_ref())
     }
 
-    /// Creates a new WebAssembly module from a file path.
-    pub fn from_file(
-        engine: &impl AsEngineRef,
-        file: impl AsRef<Path>,
-    ) -> Result<Self, IoCompileError> {
-        let file_ref = file.as_ref();
-        let canonical = file_ref.canonicalize()?;
-        let wasm_bytes = std::fs::read(file_ref)?;
-        let mut module = Self::new(engine, wasm_bytes)?;
-        // Set the module name to the absolute path of the filename.
-        // This is useful for debugging the stack traces.
-        let filename = canonical.as_path().to_str().unwrap();
-        module.set_name(filename);
-        Ok(module)
-    }
-
     /// Creates a new WebAssembly module from a Wasm binary.
     ///
     /// Opposed to [`Module::new`], this function is not compatible with
@@ -190,28 +170,8 @@ impl Module {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn serialize(&self) -> Result<Bytes, SerializeError> {
+    pub fn serialize(&self) -> Bytes {
         self.0.serialize()
-    }
-
-    /// Serializes a module into a file that the `Engine`
-    /// can later process via [`Module::deserialize_from_file`].
-    ///
-    /// # Usage
-    ///
-    /// ```ignore
-    /// # use wasmer::*;
-    /// # fn main() -> anyhow::Result<()> {
-    /// # let mut store = Store::default();
-    /// # let module = Module::from_file(&store, "path/to/foo.wasm")?;
-    /// module.serialize_to_file("path/to/foo.so")?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn serialize_to_file(&self, path: impl AsRef<Path>) -> Result<(), SerializeError> {
-        let serialized = self.0.serialize()?;
-        fs::write(path, serialized)?;
-        Ok(())
     }
 
     /// Deserializes a serialized module binary into a `Module`.
@@ -284,60 +244,6 @@ impl Module {
         bytes: impl IntoBytes,
     ) -> Result<Self, DeserializeError> {
         Ok(Self(module_imp::Module::deserialize(engine, bytes)?))
-    }
-
-    /// Deserializes a serialized Module located in a `Path` into a `Module`.
-    /// > Note: the module has to be serialized before with the `serialize` method.
-    ///
-    /// # Usage
-    ///
-    /// ```ignore
-    /// # use wasmer::*;
-    /// # let mut store = Store::default();
-    /// # fn main() -> anyhow::Result<()> {
-    /// let module = Module::deserialize_from_file(&store, path)?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// # Safety
-    ///
-    /// See [`Self::deserialize`].
-    pub unsafe fn deserialize_from_file(
-        engine: &impl AsEngineRef,
-        path: impl AsRef<Path>,
-    ) -> Result<Self, DeserializeError> {
-        Ok(Self(module_imp::Module::deserialize_from_file(
-            engine, path,
-        )?))
-    }
-
-    /// Deserializes a serialized Module located in a `Path` into a `Module`.
-    /// > Note: the module has to be serialized before with the `serialize` method.
-    ///
-    /// You should usually prefer the safer [`Module::deserialize_from_file`].
-    ///
-    /// # Safety
-    ///
-    /// Please check [`Module::deserialize_unchecked`].
-    ///
-    /// # Usage
-    ///
-    /// ```ignore
-    /// # use wasmer::*;
-    /// # let mut store = Store::default();
-    /// # fn main() -> anyhow::Result<()> {
-    /// let module = Module::deserialize_from_file_unchecked(&store, path)?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub unsafe fn deserialize_from_file_unchecked(
-        engine: &impl AsEngineRef,
-        path: impl AsRef<Path>,
-    ) -> Result<Self, DeserializeError> {
-        Ok(Self(module_imp::Module::deserialize_from_file_unchecked(
-            engine, path,
-        )?))
     }
 
     /// Returns the name of the current module.

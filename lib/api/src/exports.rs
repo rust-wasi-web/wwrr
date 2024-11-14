@@ -55,8 +55,6 @@ pub enum ExportError {
 
 /// Exports is a special kind of map that allows easily unwrapping
 /// the types of instances.
-///
-/// TODO: add examples of using exports
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct Exports {
     map: IndexMap<String, Extern>,
@@ -304,3 +302,9 @@ impl<'a, T: Exportable<'a> + Clone + 'static> ExportableWithGenerics<'a, (), ()>
         T::get_self_from_extern(_extern).map(|i| i.clone())
     }
 }
+
+/// The raw JavaScript exports object of a WebAssembly instance.
+///
+/// Obtained by [`js_sys::WebAssembly::Instance::exports`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExportsObj(pub js_sys::Object);

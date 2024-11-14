@@ -21,7 +21,7 @@ fn exports_work_after_multiple_instances_have_been_freed() {
     .unwrap();
 
     let imports = Imports::new();
-    let instance = Instance::new(&mut store, &module, &imports)
+    let instance = Instance::new(&mut store, &module, &imports, Default::default())
         .map_err(|e| format!("{e:?}"))
         .unwrap();
     let instance2 = instance.clone();

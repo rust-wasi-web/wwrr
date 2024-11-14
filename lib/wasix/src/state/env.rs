@@ -2,11 +2,12 @@ use std::{ops::Deref, sync::Arc, time::Duration};
 
 use derivative::Derivative;
 use futures::future::BoxFuture;
+use tokio::sync::oneshot;
 use virtual_fs::{FsError, VirtualFile};
 use virtual_net::DynVirtualNetworking;
 use wasmer::{
-    AsStoreMut, AsStoreRef, FunctionEnvMut, Imports, Instance, Memory, MemoryType, MemoryView,
-    Module, TypedFunction,
+    AsStoreMut, AsStoreRef, FunctionEnvMut, Imports, ImportsObj, Instance, Memory, MemoryType,
+    MemoryView, Module, TypedFunction,
 };
 use wasmer_wasix_types::{
     types::Signal,
@@ -138,6 +139,9 @@ pub struct WasiEnvInit {
     /// Additional functionality provided to the WASIX instance, besides the
     /// normal WASIX syscalls.
     pub additional_imports: Imports,
+
+    /// Name of wasm-bindgen generated JavaScript module.
+    pub wbg_js_module_name: Option<String>,
 }
 
 impl WasiEnvInit {
@@ -168,6 +172,7 @@ impl WasiEnvInit {
             thread: None,
             call_initialize: self.call_initialize,
             additional_imports: self.additional_imports.clone(),
+            wbg_js_module_name: self.wbg_js_module_name.clone(),
         }
     }
 }
@@ -194,6 +199,16 @@ pub struct WasiEnv {
     /// (this is normally used so that the instance can be reused later on)
     pub(crate) disable_fs_cleanup: bool,
 
+    /// Name of wasm-bindgen generated JavaScript module.
+    pub wbg_js_module_name: Option<String>,
+
+    /// Whether the thread start was executed.
+    pub(crate) thread_start_executed: bool,
+    /// Triggers the finishing of a held thread.
+    pub(crate) thread_release_tx: Option<oneshot::Sender<()>>,
+    /// Receives the trigger for finishing a held thread.
+    pub(crate) thread_release_rx: Option<oneshot::Receiver<()>>,
+
     /// Inner functions and references that are loaded before the environment starts
     /// (inner is not safe to send between threads and so it is private and will
     ///  not be cloned when `WasiEnv` is cloned)
@@ -219,6 +234,10 @@ impl Clone for WasiEnv {
             owned_handles: self.owned_handles.clone(),
             runtime: self.runtime.clone(),
             disable_fs_cleanup: self.disable_fs_cleanup,
+            wbg_js_module_name: self.wbg_js_module_name.clone(),
+            thread_start_executed: Default::default(),
+            thread_release_tx: Default::default(),
+            thread_release_rx: Default::default(),
         }
     }
 }
@@ -261,6 +280,10 @@ impl WasiEnv {
             owned_handles: Vec::new(),
             runtime: init.runtime,
             disable_fs_cleanup: false,
+            wbg_js_module_name: init.wbg_js_module_name,
+            thread_start_executed: false,
+            thread_release_tx: None,
+            thread_release_rx: None,
         };
         env.owned_handles.push(thread);
 
@@ -273,6 +296,7 @@ impl WasiEnv {
         mut init: WasiEnvInit,
         module: Module,
         store: &mut impl AsStoreMut,
+        imports_obj: ImportsObj,
     ) -> Result<(Instance, WasiFunctionEnv), WasiRuntimeError> {
         let call_initialize = init.call_initialize;
         let spawn_type = init.memory_ty.take();
@@ -306,26 +330,26 @@ impl WasiEnv {
         let memory = tasks.build_memory(&mut store, spawn_type)?;
 
         // Let's instantiate the module with the imports.
-        let (mut import_object, instance_init_callback) =
+        let (mut imports, instance_init_callback) =
             import_object_for_all_wasi_versions(&module, &mut store, &func_env.env);
 
         for ((namespace, name), value) in &additional_imports {
             // Note: We don't want to let downstream users override WASIX
             // syscalls
-            if !import_object.exists(&namespace, &name) {
-                import_object.define(&namespace, &name, value);
+            if !imports.exists(&namespace, &name) {
+                imports.define(&namespace, &name, value);
             }
         }
 
         let imported_memory = if let Some(memory) = memory {
-            import_object.define("env", "memory", memory.clone());
+            imports.define("env", "memory", memory.clone());
             Some(memory)
         } else {
             None
         };
 
         // Construct the instance.
-        let instance = match Instance::new(&mut store, &module, &import_object) {
+        let instance = match Instance::new(&mut store, &module, &imports, imports_obj) {
             Ok(a) => a,
             Err(err) => {
                 tracing::error!(

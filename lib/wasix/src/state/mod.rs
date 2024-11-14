@@ -31,10 +31,11 @@ use std::{
 };
 
 use run::*;
-#[cfg(feature = "enable-serde")]
-use serde::{Deserialize, Serialize};
 use virtual_fs::{FileOpener, FileSystem, FsError, OpenOptions, VirtualFile};
 use wasmer_wasix_types::wasi::{Errno, Fd as WasiFd, Rights, Snapshot0Clockid};
+
+#[cfg(feature = "enable-serde")]
+use serde::{Deserialize, Serialize};
 
 pub use self::{
     builder::*,

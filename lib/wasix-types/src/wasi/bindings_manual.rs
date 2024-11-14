@@ -1,3 +1,5 @@
+use bitflags::bitflags;
+
 use crate::wasi::bindings::*;
 
 impl Rights {
@@ -370,5 +372,16 @@ unsafe impl wasmer::FromToNativeWasmType for JoinFlags {
     fn is_from_store(&self, _store: &impl wasmer::AsStoreRef) -> bool {
         // TODO: find correct implementation
         false
+    }
+}
+
+bitflags! {
+    /// Actions the thread start function should perform.
+    #[derive(Debug)]
+    pub struct ThreadActions : i32 {
+        /// Initialize the thread and run its code.
+        const START = 1 << 0;
+        /// Run the thread cleanup code including TLS destructors.
+        const FINISH = 1 << 1;
     }
 }

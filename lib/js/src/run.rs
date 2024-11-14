@@ -1,11 +1,33 @@
 use futures::channel::oneshot;
 use std::sync::Arc;
 use wasm_bindgen::{prelude::wasm_bindgen, JsCast};
-use wasmer_wasix::{Runtime as _, WasiEnvBuilder};
+use wasmer::ImportsObj;
+use wasmer_wasix::{Runtime as _, WasiEnvBuilder, WasiReactor};
 
 use crate::{instance::ExitCondition, utils::Error, Instance, RunOptions};
 
 const DEFAULT_PROGRAM_NAME: &str = "wasm";
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "Uint8Array")]
+    pub type WasmModule;
+}
+
+impl WasmModule {
+    async fn to_module(
+        &self,
+        runtime: &dyn wasmer_wasix::Runtime,
+    ) -> Result<wasmer::Module, Error> {
+        if let Some(buffer) = self.dyn_ref::<js_sys::Uint8Array>() {
+            let buffer = buffer.to_vec();
+            let module = runtime.load_module(&buffer).await?;
+            Ok(module)
+        } else {
+            unreachable!();
+        }
+    }
+}
 
 /// Run a WASIX program.
 ///
@@ -64,25 +86,71 @@ async fn run_wasix_inner(wasm_module: WasmModule, config: RunOptions) -> Result<
     })
 }
 
+/// A handle connected to a loaded WASIX program.
+#[derive(Debug)]
 #[wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(typescript_type = "WebAssembly.Module | Uint8Array")]
-    pub type WasmModule;
+pub struct WasiReactorInstance {
+    /// WASI reactor instance.
+    reactor: Arc<WasiReactor>,
+    /// The standard input stream, if one wasn't provided when starting the
+    /// instance.
+    #[wasm_bindgen(getter_with_clone, readonly)]
+    pub stdin: Option<web_sys::WritableStream>,
+    /// The WASI program's standard output.
+    #[wasm_bindgen(getter_with_clone, readonly)]
+    pub stdout: web_sys::ReadableStream,
+    /// The WASI program's standard error.
+    #[wasm_bindgen(getter_with_clone, readonly)]
+    pub stderr: web_sys::ReadableStream,
 }
 
-impl WasmModule {
-    async fn to_module(
-        &self,
-        runtime: &dyn wasmer_wasix::Runtime,
-    ) -> Result<wasmer::Module, Error> {
-        if let Some(module) = self.dyn_ref::<js_sys::WebAssembly::Module>() {
-            Ok(module.clone().into())
-        } else if let Some(buffer) = self.dyn_ref::<js_sys::Uint8Array>() {
-            let buffer = buffer.to_vec();
-            let module = runtime.load_module(&buffer).await?;
-            Ok(module)
-        } else {
-            unreachable!();
-        }
+#[wasm_bindgen]
+impl WasiReactorInstance {
+    /// Exports from the WASM module.
+    pub fn exports(&self) -> js_sys::Object {
+        self.reactor.exports_obj().0
     }
+}
+
+/// Loads a WASIX program.
+#[wasm_bindgen(js_name = "loadWasix")]
+pub async fn load_wasix(
+    wasm_module: WasmModule,
+    config: RunOptions,
+    imports_obj: js_sys::Object,
+    wbg_js_module_url: String,
+) -> Result<WasiReactorInstance, Error> {
+    let mut runtime = config.runtime().resolve()?.into_inner();
+    // We set it up with the default pool
+    runtime = Arc::new(runtime.with_default_pool());
+
+    let program_name = config
+        .program()
+        .as_string()
+        .unwrap_or_else(|| DEFAULT_PROGRAM_NAME.to_string());
+
+    let mut builder = WasiEnvBuilder::new(program_name).runtime(runtime.clone());
+    let (stdin, stdout, stderr) = config.configure_builder(&mut builder)?;
+
+    let module: wasmer::Module = wasm_module.to_module(&*runtime).await?;
+
+    tracing::info!("loading with module: {module:?} and JavaScript bindings {wbg_js_module_url}");
+    builder.set_wbg_js_module_name(wbg_js_module_url);
+
+    let _span = tracing::debug_span!("load").entered();
+
+    let imports_obj = ImportsObj(imports_obj);
+
+    let reactor = builder
+        .load(module, imports_obj)
+        .map_err(anyhow::Error::new)?;
+
+    tracing::info!("module loaded!");
+
+    Ok(WasiReactorInstance {
+        reactor: Arc::new(reactor),
+        stdin,
+        stdout,
+        stderr,
+    })
 }

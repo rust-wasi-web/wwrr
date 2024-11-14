@@ -25,3 +25,33 @@ pub fn thread_spawn<M: MemorySize>(
         .map_err(|errno| errno as i32)
         .unwrap_or_else(|err| -err)
 }
+
+/// ### `thread_actions()`
+/// Returns the thread start actions to perform.
+///
+/// Bitfield:
+///     1 - Initialize the thread and run its code.
+///     2 - Run the thread cleanup code including TLS destructors.
+pub fn thread_actions<M: MemorySize + 'static>(ctx: FunctionEnvMut<'_, WasiEnv>) -> i32 {
+    thread_actions_internal::<M>(ctx)
+}
+
+/// ### `thread_hold()`
+/// Holds the current thread after its start function has returned.
+///
+/// This allow async callbacks to run.
+/// Call `thread_release()` to cleanup and end the held thread.
+pub fn thread_hold<M: MemorySize + 'static>(
+    ctx: FunctionEnvMut<'_, WasiEnv>,
+) -> Result<Errno, WasiError> {
+    thread_hold_internal::<M>(ctx)
+}
+
+/// ### `thread_release()`
+/// Cleans up and exits the current thread that has previously been
+/// suspended using `thread_hold()`.
+pub fn thread_release<M: MemorySize + 'static>(
+    ctx: FunctionEnvMut<'_, WasiEnv>,
+) -> Result<Errno, WasiError> {
+    thread_release_internal::<M>(ctx)
+}

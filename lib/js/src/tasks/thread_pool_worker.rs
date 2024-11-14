@@ -1,6 +1,8 @@
+use js_sys::Promise;
 use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
+use wasm_bindgen_futures::JsFuture;
 
-use crate::tasks::{AsyncJob, BlockingJob, Notification, PostMessagePayload, WorkerMessage};
+use crate::tasks::{AsyncJob, BlockingJob, PostMessagePayload, WorkerMessage};
 
 /// The Rust state for a worker in the threadpool.
 #[wasm_bindgen(skip_typescript)]
@@ -33,11 +35,6 @@ impl ThreadPoolWorker {
         match msg {
             PostMessagePayload::Async(async_job) => self.execute_async(async_job).await,
             PostMessagePayload::Blocking(blocking) => self.execute_blocking(blocking).await,
-            PostMessagePayload::Notification(Notification::CacheModule { hash, module: _ }) => {
-                tracing::warn!(%hash, "TODO Caching module");
-
-                Ok(())
-            }
         }
     }
 
@@ -51,6 +48,7 @@ impl ThreadPoolWorker {
         Ok(())
     }
 
+    // TODO: change to async
     async fn execute_blocking(&self, job: BlockingJob) -> Result<(), crate::utils::Error> {
         match job {
             BlockingJob::Thunk(thunk) => {
@@ -66,9 +64,27 @@ impl ThreadPoolWorker {
                 memory,
                 spawn_wasm,
             } => {
+                let wbg_mod = match &spawn_wasm.env.wbg_js_module_name {
+                    Some(wbg_js_module_name) => {
+                        tracing::debug!(
+                            "importing wasm-bindgen generated bindings {wbg_js_module_name}"
+                        );
+                        let wbg_js_promise: Promise =
+                            js_sys::eval(&format!("import(\"{wbg_js_module_name}\")"))
+                                .map_err(crate::utils::Error::js)?
+                                .into();
+                        Some(
+                            JsFuture::from(wbg_js_promise)
+                                .await
+                                .map_err(crate::utils::Error::js)?,
+                        )
+                    }
+                    None => None,
+                };
+
                 let task = spawn_wasm.begin().await;
                 let _guard = self.busy();
-                task.execute(module, memory.into())?;
+                task.execute(module, memory.into(), wbg_mod).await?;
             }
         }
 

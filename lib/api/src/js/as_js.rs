@@ -1,6 +1,11 @@
-//use crate::js::externals::Function;
-// use crate::store::{Store, StoreObject};
-// use crate::js::RuntimeError;
+use js_sys::Function as JsFunction;
+use js_sys::WebAssembly::{Memory as JsMemory, Table as JsTable};
+use std::collections::HashMap;
+use std::convert::TryInto;
+use wasm_bindgen::JsCast;
+use wasm_bindgen::{JsError, JsValue};
+use wasmer_types::ExternType;
+
 use crate::imports::Imports;
 use crate::instance::Instance;
 use crate::js::instance::Instance as JsInstance;
@@ -10,13 +15,6 @@ use crate::store::{AsStoreMut, AsStoreRef};
 use crate::value::Value;
 use crate::Type;
 use crate::{Extern, Function, Global, Memory, Table};
-use js_sys::Function as JsFunction;
-use js_sys::WebAssembly::{Memory as JsMemory, Table as JsTable};
-use std::collections::HashMap;
-use std::convert::TryInto;
-use wasm_bindgen::JsCast;
-use wasm_bindgen::{JsError, JsValue};
-use wasmer_types::ExternType;
 
 /// Convert the given type to a [`JsValue`].
 pub trait AsJs: Sized {
@@ -210,12 +208,14 @@ impl AsJs for Instance {
         value: &JsValue,
     ) -> Result<Self, JsError> {
         let js_instance: js_sys::WebAssembly::Instance = value.clone().into();
-        let (instance, exports) = JsInstance::from_module_and_instance(store, module, js_instance)
-            .map_err(|e| JsError::new(&format!("Can't get the instance: {:?}", e)))?;
+        let (instance, exports, exports_obj) =
+            JsInstance::from_module_and_instance(store, module, js_instance)
+                .map_err(|e| JsError::new(&format!("Can't get the instance: {:?}", e)))?;
         Ok(Instance {
             _inner: instance,
             module: module.clone(),
             exports,
+            exports_obj,
         })
     }
 }

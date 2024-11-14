@@ -447,6 +447,7 @@ impl core::fmt::Display for Errno {
     }
 }
 impl std::error::Error for Errno {}
+
 wai_bindgen_rust::bitflags::bitflags! {
     #[doc = " File descriptor rights, determining which actions may be performed."]
     #[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]

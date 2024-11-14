@@ -123,6 +123,7 @@ impl<'a> Exportable<'a> for Table {
 /// Check the example from <https://github.com/wasmerio/wasmer/issues/3197>.
 #[test]
 fn test_table_grow_issue_3197() {
+    use crate::imports::ImportsObj;
     use crate::{imports, Instance, Module, Store, Table, TableType, Type, Value};
 
     const WAT: &str = r#"(module (table (import "env" "table") 100 funcref))"#;
@@ -136,5 +137,5 @@ fn test_table_grow_issue_3197() {
     table.grow(&mut store, 100, Value::FuncRef(None)).unwrap();
     assert_eq!(table.ty(&store).minimum, 0);
     let imports = imports! {"env" => {"table" => table}};
-    let _instance = Instance::new(&mut store, &module, &imports).unwrap();
+    let _instance = Instance::new(&mut store, &module, &imports, ImportsObj::default()).unwrap();
 }

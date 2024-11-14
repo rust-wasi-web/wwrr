@@ -10,7 +10,7 @@ use wasm_bindgen::{JsCast, JsValue};
 use wasmer::{AsJs, AsStoreRef, Memory, MemoryType, Module, Store};
 use wasmer_wasix::{
     runtime::{
-        task_manager::{TaskWasm, TaskWasmRecycle, TaskWasmRun, TaskWasmRunProperties},
+        task_manager::{TaskWasm, TaskWasmRun, TaskWasmRunProperties},
         SpawnMemoryType,
     },
     StoreSnapshot, WasiEnv, WasiFunctionEnv, WasiThreadError,
@@ -26,11 +26,10 @@ pub(crate) fn to_scheduler_message(
         env,
         module,
         spawn_type,
-        recycle,
         globals,
     } = task;
 
-    let module_bytes = module.serialize().unwrap();
+    let module_bytes = module.serialize();
 
     let (memory_ty, memory, run_type) = match spawn_type {
         wasmer_wasix::runtime::SpawnMemoryType::CreateMemory => {
@@ -84,7 +83,6 @@ pub(crate) fn to_scheduler_message(
         run_type,
         env,
         module_bytes,
-        recycle,
         store_snapshot,
     };
 
@@ -165,14 +163,12 @@ pub(crate) struct SpawnWasm {
     /// How the memory should be instantiated to execute the [`SpawnWasm::run`]
     /// callback.
     run_type: WasmMemoryType,
-    env: WasiEnv,
+    pub(crate) env: WasiEnv,
     /// The raw bytes for the WebAssembly module being run.
     #[derivative(Debug(format_with = "crate::utils::hidden"))]
     module_bytes: Bytes,
     /// A snapshot of the instance store, used to fork from existing instances.
     store_snapshot: Option<StoreSnapshot>,
-    #[derivative(Debug(format_with = "crate::utils::hidden"))]
-    recycle: Option<Box<TaskWasmRecycle>>,
 }
 
 impl SpawnWasm {
@@ -200,17 +196,17 @@ pub struct ReadySpawnWasm(SpawnWasm);
 
 impl ReadySpawnWasm {
     /// Execute the callback, blocking until it has completed.
-    pub(crate) fn execute(
+    pub(crate) async fn execute(
         self,
         wasm_module: js_sys::WebAssembly::Module,
         wasm_memory: JsValue,
+        wbg_js_module: Option<JsValue>,
     ) -> Result<(), anyhow::Error> {
         let ReadySpawnWasm(SpawnWasm {
             run,
             run_type,
             env,
             module_bytes,
-            recycle,
             store_snapshot,
         }) = self;
 
@@ -222,15 +218,16 @@ impl ReadySpawnWasm {
             env,
             store_snapshot,
             run_type,
+            wbg_js_module.clone(),
         )
         .context("Unable to initialize the context and store")?;
 
         let properties = TaskWasmRunProperties {
             ctx,
             store,
-            recycle,
+            wbg_js_module,
         };
-        run(properties);
+        run(properties).await;
 
         Ok(())
     }
@@ -243,6 +240,7 @@ fn build_ctx_and_store(
     env: WasiEnv,
     store_snapshot: Option<StoreSnapshot>,
     run_type: WasmMemoryType,
+    wbg_js_module: Option<JsValue>,
 ) -> Option<(WasiFunctionEnv, Store)> {
     // Compile the web assembly module
     let module: Module = (module, module_bytes).into();
@@ -264,16 +262,21 @@ fn build_ctx_and_store(
         }
     };
 
-    let (ctx, store) =
-        match WasiFunctionEnv::new_with_store(module, env, store_snapshot.as_ref(), spawn_type) {
-            Ok(a) => a,
-            Err(err) => {
-                tracing::error!(
-                    error = &err as &dyn std::error::Error,
-                    "Failed to crate wasi context",
-                );
-                return None;
-            }
-        };
+    let (ctx, store) = match WasiFunctionEnv::new_creating_store(
+        module,
+        env,
+        store_snapshot.as_ref(),
+        spawn_type,
+        wbg_js_module,
+    ) {
+        Ok(a) => a,
+        Err(err) => {
+            tracing::error!(
+                error = &err as &dyn std::error::Error,
+                "Failed to crate wasi context",
+            );
+            return None;
+        }
+    };
     Some((ctx, store))
 }

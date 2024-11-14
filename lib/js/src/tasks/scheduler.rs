@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, VecDeque},
+    collections::VecDeque,
     fmt::Debug,
     sync::atomic::{AtomicU32, Ordering},
 };
@@ -10,11 +10,9 @@ use tokio::sync::mpsc::{self};
 use tracing::Instrument;
 use wasm_bindgen::{JsCast, JsValue};
 use wasmer::AsJs;
-use wasmer_types::ModuleHash;
 
 use crate::tasks::{
-    AsyncJob, BlockingJob, Notification, PostMessagePayload, SchedulerMessage, WorkerHandle,
-    WorkerMessage,
+    AsyncJob, BlockingJob, PostMessagePayload, SchedulerMessage, WorkerHandle, WorkerMessage,
 };
 
 /// A handle for interacting with the threadpool's scheduler.
@@ -113,7 +111,6 @@ struct SchedulerState {
     busy: VecDeque<WorkerHandle>,
     /// A channel that can be used to send messages to this scheduler.
     mailbox: Scheduler,
-    cached_modules: BTreeMap<ModuleHash, js_sys::WebAssembly::Module>,
 }
 
 impl SchedulerState {
@@ -122,7 +119,6 @@ impl SchedulerState {
             idle: VecDeque::new(),
             busy: VecDeque::new(),
             mailbox,
-            cached_modules: BTreeMap::new(),
         }
     }
 
@@ -134,24 +130,9 @@ impl SchedulerState {
             SchedulerMessage::SpawnBlocking(task) => {
                 self.post_message(PostMessagePayload::Blocking(BlockingJob::Thunk(task)))
             }
-            SchedulerMessage::CacheModule { hash, module } => {
-                let module: js_sys::WebAssembly::Module = JsValue::from(module).unchecked_into();
-                self.cached_modules.insert(hash, module.clone());
-
-                for worker in self.idle.iter().chain(self.busy.iter()) {
-                    worker.send(PostMessagePayload::Notification(
-                        Notification::CacheModule {
-                            hash,
-                            module: module.clone(),
-                        },
-                    ))?;
-                }
-
-                Ok(())
-            }
             SchedulerMessage::SpawnWithModule { module, task } => {
                 self.post_message(PostMessagePayload::Blocking(BlockingJob::SpawnWithModule {
-                    module: JsValue::from(module).unchecked_into(),
+                    module,
                     task,
                 }))
             }
@@ -241,20 +222,9 @@ impl SchedulerState {
         // every single worker created with this shared linear memory will get a
         // unique ID.
         static NEXT_ID: AtomicU32 = AtomicU32::new(1);
-
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
 
         let handle = WorkerHandle::spawn(id, self.mailbox.clone())?;
-
-        // Prime the worker's module cache
-        for (&hash, module) in &self.cached_modules {
-            let msg = PostMessagePayload::Notification(Notification::CacheModule {
-                hash,
-                module: module.clone(),
-            });
-            handle.send(msg)?;
-        }
-
         Ok(handle)
     }
 }

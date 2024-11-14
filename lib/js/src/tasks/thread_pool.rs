@@ -141,24 +141,17 @@ impl VirtualTaskManager for ThreadPool {
 #[cfg(test)]
 mod tests {
     use futures::{channel::oneshot, FutureExt};
-    use js_sys::Uint8Array;
-    use wasm_bindgen::JsCast;
     use wasm_bindgen_futures::JsFuture;
     use wasm_bindgen_test::wasm_bindgen_test;
+    use wasmer::Engine;
 
     use super::*;
 
     #[wasm_bindgen_test]
     async fn transfer_module_to_worker() {
+        let engine = Engine::default();
         let wasm: &[u8] = include_bytes!("../../../../test-assets/envvar.wasm");
-        let data = Uint8Array::from(wasm);
-        let module: js_sys::WebAssembly::Module =
-            JsFuture::from(js_sys::WebAssembly::compile(&data))
-                .await
-                .unwrap()
-                .dyn_into()
-                .unwrap();
-        let module = wasmer::Module::from(module);
+        let module = wasmer::Module::new(&engine, wasm).unwrap();
         let pool = ThreadPool::new();
 
         let (sender, receiver) = oneshot::channel();

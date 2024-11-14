@@ -23,7 +23,7 @@ fn test_shared_memory_atomics_notify_send() {
         },
     };
 
-    let _inst = Instance::new(&mut store, &module, &imports).unwrap();
+    let _inst = Instance::new(&mut store, &module, &imports, Default::default()).unwrap();
 
     let mem = if let Some(m) = mem.as_shared(&store) {
         m

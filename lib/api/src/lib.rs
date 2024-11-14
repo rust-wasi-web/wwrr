@@ -56,10 +56,10 @@ pub use crate::externals::{
 pub use access::WasmSliceAccess;
 pub use engine::{AsEngineRef, Engine, EngineRef};
 pub use errors::{AtomicsError, InstantiationError, LinkError, RuntimeError};
-pub use exports::{ExportError, Exportable, Exports, ExportsIterator};
+pub use exports::{ExportError, Exportable, Exports, ExportsIterator, ExportsObj};
 pub use extern_ref::ExternRef;
 pub use function_env::{FunctionEnv, FunctionEnvMut};
-pub use imports::Imports;
+pub use imports::{Imports, ImportsObj};
 pub use instance::Instance;
 pub use into_bytes::IntoBytes;
 pub use mem_access::{MemoryAccessError, WasmRef, WasmSlice, WasmSliceIter};

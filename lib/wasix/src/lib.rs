@@ -61,7 +61,7 @@ pub use crate::{
     },
     runtime::{task_manager::VirtualTaskManager, Runtime},
     state::{
-        WasiEnv, WasiEnvBuilder, WasiEnvInit, WasiFunctionEnv, WasiInstanceHandles,
+        WasiEnv, WasiEnvBuilder, WasiEnvInit, WasiFunctionEnv, WasiInstanceHandles, WasiReactor,
         WasiStateCreationError, ALL_RIGHTS,
     },
     syscalls::types,
@@ -305,6 +305,9 @@ pub fn generate_import_object_from_env(
 fn wasi_exports_generic(mut store: &mut impl AsStoreMut, env: &FunctionEnv<WasiEnv>) -> Exports {
     use syscalls::*;
     let namespace = namespace! {
+        "thread-actions" => Function::new_typed_with_env(&mut store, env, thread_actions::<Memory32>),
+        "thread-hold" => Function::new_typed_with_env(&mut store, env, thread_hold::<Memory32>),
+        "thread-release" => Function::new_typed_with_env(&mut store, env, thread_release::<Memory32>),
         "thread-spawn" => Function::new_typed_with_env(&mut store, env, thread_spawn::<Memory32>),
     };
     namespace

@@ -24,7 +24,7 @@ fn pass_i64_between_host_and_plugin() {
         }
     };
 
-    let instance = Instance::new(&mut store, &module, &imports)
+    let instance = Instance::new(&mut store, &module, &imports, Default::default())
         .map_err(|e| format!("{e:?}"))
         .unwrap();
     let add_three_i64 = instance
@@ -71,7 +71,7 @@ fn pass_u64_between_host_and_plugin() {
         }
     };
 
-    let instance = Instance::new(&mut store, &module, &imports)
+    let instance = Instance::new(&mut store, &module, &imports, Default::default())
         .map_err(|e| format!("{e:?}"))
         .unwrap();
     let add_three_u64 = instance
@@ -114,7 +114,7 @@ fn calling_function_exports() {
         //     }),
         // }
     };
-    let instance = Instance::new(&mut store, &module, &imports).unwrap();
+    let instance = Instance::new(&mut store, &module, &imports, Default::default()).unwrap();
 
     let add: TypedFunction<(i32, i32), i32> =
         instance.exports.get_typed_function(&store, "add").unwrap();
@@ -148,7 +148,7 @@ fn back_and_forth_with_imports() {
             "sum" => Function::new_typed(&mut store, sum),
         }
     };
-    let instance = Instance::new(&mut store, &module, &import_object).unwrap();
+    let instance = Instance::new(&mut store, &module, &import_object, Default::default()).unwrap();
 
     let add_one: TypedFunction<i32, i32> = instance
         .exports

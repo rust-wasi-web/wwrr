@@ -26,6 +26,7 @@ pub(crate) struct WasiInstanceGuard<'a> {
     _pointer: &'a WasiInstanceHandlesPointer,
     _inner: Rc<RefCell<WasiInstanceHandles>>,
 }
+
 impl<'a> Deref for WasiInstanceGuard<'a> {
     type Target = WasiInstanceHandles;
     fn deref(&self) -> &Self::Target {
@@ -44,6 +45,7 @@ pub(crate) struct WasiInstanceGuardMut<'a> {
     _pointer: &'a WasiInstanceHandlesPointer,
     _inner: Rc<RefCell<WasiInstanceHandles>>,
 }
+
 impl<'a> Deref for WasiInstanceGuardMut<'a> {
     type Target = WasiInstanceHandles;
 
@@ -51,6 +53,7 @@ impl<'a> Deref for WasiInstanceGuardMut<'a> {
         self.borrow.deref()
     }
 }
+
 impl<'a> DerefMut for WasiInstanceGuardMut<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.borrow.deref_mut()
@@ -67,11 +70,13 @@ pub(crate) struct WasiInstanceHandlesPointer {
     /// Inner functions and references that are loaded before the environment starts
     id: Option<u64>,
 }
+
 impl Drop for WasiInstanceHandlesPointer {
     fn drop(&mut self) {
         self.clear();
     }
 }
+
 impl WasiInstanceHandlesPointer {
     pub fn get(&self) -> Option<WasiInstanceGuard<'_>> {
         self.id
@@ -95,6 +100,7 @@ impl WasiInstanceHandlesPointer {
             })
             .next()
     }
+
     pub fn get_mut(&self) -> Option<WasiInstanceGuardMut<'_>> {
         self.id
             .into_iter()
@@ -117,6 +123,7 @@ impl WasiInstanceHandlesPointer {
             })
             .next()
     }
+
     pub fn set(&mut self, val: WasiInstanceHandles) {
         self.clear();
 
@@ -129,12 +136,14 @@ impl WasiInstanceHandlesPointer {
             Self::destroy(old_id)
         }
     }
+
     #[allow(dead_code)]
     pub fn clear(&mut self) {
         if let Some(id) = self.id.take() {
             Self::destroy(id)
         }
     }
+
     fn destroy(id: u64) {
         THREAD_LOCAL_INSTANCE_HANDLES.with(|map| {
             let mut map = map.borrow_mut();
@@ -150,12 +159,14 @@ pub(crate) struct WasiInstanceGuardMemory<'a> {
     borrow: &'a Memory,
     _guard: WasiInstanceGuard<'a>,
 }
+
 impl<'a> Deref for WasiInstanceGuardMemory<'a> {
     type Target = Memory;
     fn deref(&self) -> &Self::Target {
         self.borrow
     }
 }
+
 impl<'a> WasiInstanceGuard<'a> {
     pub fn memory(self) -> WasiInstanceGuardMemory<'a> {
         let borrow: &Memory = &self.memory;

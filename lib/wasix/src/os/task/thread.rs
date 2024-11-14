@@ -3,6 +3,7 @@ use std::{
     sync::{Arc, Condvar, Mutex, Weak},
     task::Waker,
 };
+use wasm_bindgen::{JsCast, JsValue};
 
 use wasmer::{ExportError, InstantiationError, MemoryError};
 use wasmer_wasix_types::{
@@ -363,6 +364,8 @@ pub enum WasiThreadError {
     /// This will happen if WASM is running in a thread has not been created by the spawn_wasm call
     #[error("WASM context is invalid")]
     InvalidWasmContext,
+    #[error("wasm-bindgen interaction failed - {0}")]
+    WbgFailed(String),
 }
 
 impl From<WasiThreadError> for Errno {
@@ -375,6 +378,26 @@ impl From<WasiThreadError> for Errno {
             WasiThreadError::InstanceCreateFailed(_) => Errno::Noexec,
             WasiThreadError::InitFailed(_) => Errno::Noexec,
             WasiThreadError::InvalidWasmContext => Errno::Noexec,
+            WasiThreadError::WbgFailed(_) => Errno::Noexec,
         }
+    }
+}
+
+impl WasiThreadError {
+    fn js_err_str(js: &JsValue) -> String {
+        if let Some(e) = js.dyn_ref::<js_sys::Error>() {
+            format!("{}", String::from(e.message()))
+        } else if let Some(obj) = js.dyn_ref::<js_sys::Object>() {
+            format!("{}", String::from(obj.to_string()))
+        } else if let Some(s) = js.dyn_ref::<js_sys::JsString>() {
+            format!("{}", String::from(s))
+        } else {
+            format!("A JavaScript error occurred")
+        }
+    }
+
+    /// wasm-bindgen interaction failed.
+    pub fn wbg_failed(err: JsValue) -> Self {
+        Self::WbgFailed(Self::js_err_str(&err))
     }
 }

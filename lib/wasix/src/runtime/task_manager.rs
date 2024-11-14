@@ -2,8 +2,9 @@ use std::ops::Deref;
 use std::{pin::Pin, time::Duration};
 
 use derivative::Derivative;
-use futures::future::BoxFuture;
+use futures::future::{BoxFuture, LocalBoxFuture};
 use futures::{Future, TryFutureExt};
+use wasm_bindgen::JsValue;
 use wasmer::{Memory, MemoryType, Module, Store, StoreMut, StoreRef};
 
 use crate::os::task::thread::WasiThreadError;
@@ -30,32 +31,17 @@ pub enum SpawnMemoryType<'a> {
 pub struct TaskWasmRunProperties {
     pub ctx: WasiFunctionEnv,
     pub store: Store,
-    /// The instance will be recycled back to this function when the WASM run has finished
-    #[derivative(Debug = "ignore")]
-    pub recycle: Option<Box<TaskWasmRecycle>>,
+    /// wasm-bindgen generated JavaScript module.
+    pub wbg_js_module: Option<JsValue>,
 }
 
-/// Callback that will be invoked
-pub type TaskWasmRun = dyn FnOnce(TaskWasmRunProperties) + Send + 'static;
-
-/// Callback that will be invoked
-pub type TaskExecModule = dyn FnOnce(Module) + Send + 'static;
-
-/// The properties passed to the task
-#[derive(Debug)]
-pub struct TaskWasmRecycleProperties {
-    pub env: WasiEnv,
-    pub memory: Memory,
-    pub store: Store,
-}
-
-/// Callback that will be invoked
-pub type TaskWasmRecycle = dyn FnOnce(TaskWasmRecycleProperties) + Send + 'static;
+/// Async callback that will be invoked
+pub type TaskWasmRun =
+    dyn FnOnce(TaskWasmRunProperties) -> LocalBoxFuture<'static, ()> + Send + 'static;
 
 /// Represents a WASM task that will be executed on a dedicated thread
 pub struct TaskWasm<'a, 'b> {
     pub run: Box<TaskWasmRun>,
-    pub recycle: Option<Box<TaskWasmRecycle>>,
     pub env: WasiEnv,
     pub module: Module,
     pub globals: Option<&'b StoreSnapshot>,
@@ -74,7 +60,6 @@ impl<'a, 'b> TaskWasm<'a, 'b> {
                 Some(ty) => SpawnMemoryType::CreateMemoryOfType(ty),
                 None => SpawnMemoryType::CreateMemory,
             },
-            recycle: None,
         }
     }
 
@@ -92,11 +77,6 @@ impl<'a, 'b> TaskWasm<'a, 'b> {
 
     pub fn with_globals(mut self, snapshot: &'b StoreSnapshot) -> Self {
         self.globals.replace(snapshot);
-        self
-    }
-
-    pub fn with_recycle(mut self, trigger: Box<TaskWasmRecycle>) -> Self {
-        self.recycle.replace(trigger);
         self
     }
 }
