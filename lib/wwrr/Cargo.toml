@@ -1,7 +1,8 @@
 [package]
-name = "wasmer-js"
+name = "wwrr"
+description = "WASI Web Reactor Runner"
 version = "0.0.0"
-authors = ["Syrus Akbary <syrus@wasmer.io>"]
+authors = ["Sebastian Urban <surban@surban.net>", "Syrus Akbary <syrus@wasmer.io>"]
 edition = "2021"
 publish = false
 

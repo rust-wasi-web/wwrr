@@ -2511,37 +2511,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "wasmer-js"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "bytes",
- "console_error_panic_hook",
- "derivative",
- "futures",
- "instant",
- "js-sys",
- "lazy_static",
- "once_cell",
- "serde",
- "serde-wasm-bindgen",
- "sha2",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "virtual-fs",
- "virtual-net",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "wasm-bindgen-test",
- "wasmer",
- "wasmer-types",
- "wasmer-wasix",
- "web-sys",
-]
-
-[[package]]
 name = "wasmer-types"
 version = "4.3.7"
 dependencies = [
@@ -2906,6 +2875,37 @@ name = "writeable"
 version = "0.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e9df38ee2d2c3c5948ea468a8406ff0db0b29ae1ffde1bcf20ef305bcc95c51"
+
+[[package]]
+name = "wwrr"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "bytes",
+ "console_error_panic_hook",
+ "derivative",
+ "futures",
+ "instant",
+ "js-sys",
+ "lazy_static",
+ "once_cell",
+ "serde",
+ "serde-wasm-bindgen",
+ "sha2",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "virtual-fs",
+ "virtual-net",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wasm-bindgen-test",
+ "wasmer",
+ "wasmer-types",
+ "wasmer-wasix",
+ "web-sys",
+]
 
 [[package]]
 name = "wyz"

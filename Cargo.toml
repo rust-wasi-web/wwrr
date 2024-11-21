@@ -2,7 +2,7 @@
 members = [
     "lib/api",
     "lib/derive",
-    "lib/js",
+    "lib/wwrr",
     "lib/types",
     "lib/virtual-fs",
     "lib/virtual-mio",
