@@ -31,7 +31,7 @@ pub(crate) enum BlockingJob {
         task: BlockingModuleTask,
     },
     SpawnWithModuleAndMemory {
-        module: WebAssembly::Module,
+        module: wasmer::Module,
         /// An instance of the WebAssembly linear memory that has already been
         /// created.
         memory: Option<WebAssembly::Memory>,
@@ -82,7 +82,8 @@ impl PostMessagePayload {
                 spawn_wasm,
             }) => Serializer::new(consts::TYPE_SPAWN_WITH_MODULE_AND_MEMORY)
                 .boxed(consts::PTR, spawn_wasm)
-                .set(consts::MODULE, module)
+                .boxed(consts::MODULE_BYTES, module.serialize())
+                .set(consts::MODULE, JsValue::from(module))
                 .set(consts::MEMORY, memory)
                 .finish(),
         }
@@ -118,13 +119,14 @@ impl PostMessagePayload {
                 }))
             }
             consts::TYPE_SPAWN_WITH_MODULE_AND_MEMORY => {
-                let module = de.js(consts::MODULE)?;
+                let module: WebAssembly::Module = de.js(consts::MODULE)?;
+                let module_bytes: Option<Bytes> = de.boxed(consts::MODULE_BYTES)?;
                 let memory = de.js(consts::MEMORY).ok();
                 let spawn_wasm = de.boxed(consts::PTR)?;
 
                 Ok(PostMessagePayload::Blocking(
                     BlockingJob::SpawnWithModuleAndMemory {
-                        module,
+                        module: wasmer::Module::from((module, module_bytes.unwrap())),
                         memory,
                         spawn_wasm,
                     },

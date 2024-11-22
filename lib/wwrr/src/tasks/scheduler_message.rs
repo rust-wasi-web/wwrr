@@ -86,8 +86,7 @@ impl SchedulerMessage {
             consts::TYPE_SPAWN_WITH_MODULE_AND_MEMORY => {
                 let spawn_wasm: SpawnWasm = de.boxed(consts::PTR)?;
                 let module: WebAssembly::Module = de.js(consts::MODULE)?;
-                let module_bytes = spawn_wasm.module_bytes();
-                let module = wasmer::Module::from((module, module_bytes));
+                let module_bytes: Option<Bytes> = de.boxed(consts::MODULE_BYTES)?;
 
                 let memory = match spawn_wasm.shared_memory_type() {
                     Some(ty) => {
@@ -99,7 +98,7 @@ impl SchedulerMessage {
                 };
 
                 Ok(SchedulerMessage::SpawnWithModuleAndMemory {
-                    module,
+                    module: wasmer::Module::from((module, module_bytes.unwrap())),
                     memory,
                     spawn_wasm,
                 })

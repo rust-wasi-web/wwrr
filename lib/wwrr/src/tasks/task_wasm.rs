@@ -29,8 +29,6 @@ pub(crate) fn to_scheduler_message(
         globals,
     } = task;
 
-    let module_bytes = module.serialize();
-
     let (memory_ty, memory, run_type) = match spawn_type {
         wasmer_wasix::runtime::SpawnMemoryType::CreateMemory => {
             (None, None, WasmMemoryType::CreateMemory)
@@ -82,7 +80,6 @@ pub(crate) fn to_scheduler_message(
         run,
         run_type,
         env,
-        module_bytes,
         store_snapshot,
     };
 
@@ -163,19 +160,13 @@ pub(crate) struct SpawnWasm {
     /// How the memory should be instantiated to execute the [`SpawnWasm::run`]
     /// callback.
     run_type: WasmMemoryType,
+    /// WASI environment,
     pub(crate) env: WasiEnv,
-    /// The raw bytes for the WebAssembly module being run.
-    #[derivative(Debug(format_with = "crate::utils::hidden"))]
-    module_bytes: Bytes,
     /// A snapshot of the instance store, used to fork from existing instances.
     store_snapshot: Option<StoreSnapshot>,
 }
 
 impl SpawnWasm {
-    pub(crate) fn module_bytes(&self) -> Bytes {
-        self.module_bytes.clone()
-    }
-
     pub(crate) fn shared_memory_type(&self) -> Option<MemoryType> {
         match self.run_type {
             WasmMemoryType::ShareMemory(ty) => Some(ty),
@@ -198,7 +189,7 @@ impl ReadySpawnWasm {
     /// Execute the callback, blocking until it has completed.
     pub(crate) async fn execute(
         self,
-        wasm_module: js_sys::WebAssembly::Module,
+        wasm_module: wasmer::Module,
         wasm_memory: JsValue,
         wbg_js_module: Option<JsValue>,
     ) -> Result<(), anyhow::Error> {
@@ -206,7 +197,6 @@ impl ReadySpawnWasm {
             run,
             run_type,
             env,
-            module_bytes,
             store_snapshot,
         }) = self;
 
@@ -214,7 +204,6 @@ impl ReadySpawnWasm {
         let (ctx, store) = build_ctx_and_store(
             wasm_module,
             wasm_memory,
-            module_bytes,
             env,
             store_snapshot,
             run_type,
@@ -234,17 +223,13 @@ impl ReadySpawnWasm {
 }
 
 fn build_ctx_and_store(
-    module: js_sys::WebAssembly::Module,
+    module: wasmer::Module,
     memory: JsValue,
-    module_bytes: Bytes,
     env: WasiEnv,
     store_snapshot: Option<StoreSnapshot>,
     run_type: WasmMemoryType,
     wbg_js_module: Option<JsValue>,
 ) -> Option<(WasiFunctionEnv, Store)> {
-    // Compile the web assembly module
-    let module: Module = (module, module_bytes).into();
-
     // Make a fake store which will hold the memory we just transferred
     let mut temp_store = env.runtime().new_store();
     let spawn_type = match run_type {
