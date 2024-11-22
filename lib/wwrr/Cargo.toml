@@ -88,3 +88,6 @@ dwarf-debug-info = false
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = ["--enable-threads", "--enable-bulk-memory", "-Oz"]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(wasm_bindgen_unstable_test_coverage)'] }

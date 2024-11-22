@@ -8,7 +8,7 @@ use anyhow::{Context, Error};
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::mpsc::{self};
 use tracing::Instrument;
-use wasm_bindgen::{JsCast, JsValue};
+use wasm_bindgen::JsCast;
 use wasmer::AsJs;
 
 use crate::tasks::{
