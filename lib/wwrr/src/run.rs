@@ -1,6 +1,6 @@
 use futures::channel::oneshot;
 use std::sync::Arc;
-use wasm_bindgen::{prelude::wasm_bindgen, JsCast};
+use wasm_bindgen::{prelude::*, JsCast};
 use wasmer::ImportsObj;
 use wasmer_wasix::{Runtime as _, WasiEnvBuilder, WasiReactor};
 
@@ -121,6 +121,13 @@ pub async fn load_wasix(
     imports_obj: js_sys::Object,
     wbg_js_module_url: String,
 ) -> Result<WasiReactorInstance, Error> {
+    // Check whehther our memory is shared, so that we can start web workers.
+    let our_memory = wasm_bindgen::memory();
+    assert!(
+        is_memory_shared(our_memory.dyn_ref().unwrap()),
+        "wwrr memory is not shared"
+    );
+
     let mut runtime = config.runtime().resolve()?.into_inner();
     // We set it up with the default pool
     runtime = Arc::new(runtime.with_default_pool());
@@ -154,4 +161,11 @@ pub async fn load_wasix(
         stdout,
         stderr,
     })
+}
+
+/// Checks whether the WebAssembly memory is shared.
+pub fn is_memory_shared(memory: &js_sys::WebAssembly::Memory) -> bool {
+    memory
+        .buffer()
+        .is_instance_of::<js_sys::SharedArrayBuffer>()
 }
