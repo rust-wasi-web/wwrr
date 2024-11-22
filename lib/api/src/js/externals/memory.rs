@@ -78,15 +78,12 @@ impl Memory {
         ty: &MemoryType,
     ) -> Result<js_sys::WebAssembly::Memory, MemoryError> {
         let descriptor = js_sys::Object::new();
-        // Annotation is here to prevent spurious IDE warnings.
-        #[allow(unused_unsafe)]
-        unsafe {
-            js_sys::Reflect::set(&descriptor, &"initial".into(), &ty.minimum.0.into()).unwrap();
-            if let Some(max) = ty.maximum {
-                js_sys::Reflect::set(&descriptor, &"maximum".into(), &max.0.into()).unwrap();
-            }
-            js_sys::Reflect::set(&descriptor, &"shared".into(), &ty.shared.into()).unwrap();
+
+        js_sys::Reflect::set(&descriptor, &"initial".into(), &ty.minimum.0.into()).unwrap();
+        if let Some(max) = ty.maximum {
+            js_sys::Reflect::set(&descriptor, &"maximum".into(), &max.0.into()).unwrap();
         }
+        js_sys::Reflect::set(&descriptor, &"shared".into(), &ty.shared.into()).unwrap();
 
         let js_memory = js_sys::WebAssembly::Memory::new(&descriptor).map_err(|e| {
             let error_message = if let Some(s) = e.as_string() {

@@ -38,7 +38,7 @@ impl Scheduler {
         wasm_bindgen_futures::spawn_local(
             async move {
                 while let Some(msg) = receiver.recv().await {
-                    tracing::trace!(?msg, "Executing a message");
+                    tracing::debug!(?msg, "Executing a message");
 
                     if let Err(e) = scheduler.execute(msg) {
                         tracing::error!(error = &*e, "An error occurred while handling a message");

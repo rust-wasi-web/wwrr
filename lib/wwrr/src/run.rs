@@ -107,6 +107,7 @@ pub struct WasiReactorInstance {
 #[wasm_bindgen]
 impl WasiReactorInstance {
     /// Exports from the WASM module.
+    #[wasm_bindgen(getter)]
     pub fn exports(&self) -> js_sys::Object {
         self.reactor.exports_obj().0
     }

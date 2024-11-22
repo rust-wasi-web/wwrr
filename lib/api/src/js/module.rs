@@ -3,14 +3,13 @@ use crate::imports::{Imports, ImportsObj};
 use crate::js::AsJs;
 use crate::store::AsStoreMut;
 use crate::vm::VMInstance;
-use crate::Extern;
 use crate::IntoBytes;
 use crate::{errors::InstantiationError, js::js_handle::JsHandle};
 use crate::{AsEngineRef, ExportType, ImportType};
 use bytes::Bytes;
 use js_sys::{Reflect, Uint8Array, WebAssembly};
 use std::path::Path;
-use tracing::{debug, warn};
+use tracing::{debug, trace, warn};
 use wasm_bindgen::JsValue;
 use wasmer_types::{
     CompileError, DeserializeError, ExportsIterator, ExternType, ImportsIterator, ModuleInfo,
@@ -136,11 +135,10 @@ impl Module {
         }
 
         let imports_object = imports_obj.0;
-        let mut import_externs: Vec<Extern> = vec![];
+
         for import_type in self.imports() {
             let resolved_import = imports.get_export(import_type.module(), import_type.name());
-            // Annotation is here to prevent spurious IDE warnings.
-            #[allow(unused_variables)]
+
             if let wasmer_types::ExternType::Memory(mem_ty) = import_type.ty() {
                 if resolved_import.is_some() {
                     debug!("imported shared memory {:?}", &mem_ty);
@@ -153,44 +151,57 @@ impl Module {
                     );
                 }
             }
-            // Annotation is here to prevent spurious IDE warnings.
-            #[allow(unused_unsafe)]
-            unsafe {
-                if let Some(import) = resolved_import {
-                    let val = js_sys::Reflect::get(&imports_object, &import_type.module().into())?;
-                    if !val.is_undefined() {
-                        // If the namespace is already set
-                        js_sys::Reflect::set(
-                            &val,
-                            &import_type.name().into(),
-                            &import.as_jsvalue(&store.as_store_ref()),
-                        )?;
-                    } else {
-                        // If the namespace doesn't exist
-                        let import_namespace = js_sys::Object::new();
-                        js_sys::Reflect::set(
-                            &import_namespace,
-                            &import_type.name().into(),
-                            &import.as_jsvalue(&store.as_store_ref()),
-                        )?;
-                        js_sys::Reflect::set(
-                            &imports_object,
-                            &import_type.module().into(),
-                            &import_namespace.into(),
-                        )?;
-                    }
-                    import_externs.push(import);
+
+            if let Some(import) = resolved_import {
+                // Get or create the import namespace.
+                let mut import_namespace =
+                    js_sys::Reflect::get(&imports_object, &import_type.module().into())?;
+                if import_namespace.is_undefined() {
+                    import_namespace = js_sys::Object::new().into();
+                    js_sys::Reflect::set(
+                        &imports_object,
+                        &import_type.module().into(),
+                        &import_namespace.clone().into(),
+                    )?;
+                }
+
+                // Set the import on the namespace.
+                js_sys::Reflect::set(
+                    &import_namespace,
+                    &import_type.name().into(),
+                    &import.as_jsvalue(&store.as_store_ref()),
+                )?;
+
+                trace!(
+                    "resolved import {}:{} with internal function",
+                    import_type.module(),
+                    import_type.name()
+                );
+            } else {
+                let import_namespace =
+                    js_sys::Reflect::get(&imports_object, &import_type.module().into())?;
+                let defined = !import_namespace.is_undefined()
+                    && !js_sys::Reflect::get(&import_namespace, &import_type.name().into())?
+                        .is_undefined();
+
+                if defined {
+                    trace!(
+                        "resolved import {}:{} from provided imports object",
+                        import_type.module(),
+                        import_type.name()
+                    );
                 } else {
+                    // in case the import is not found, the JS Wasm VM will handle
+                    // the error for us, so we don't need to handle it
                     warn!(
-                        "import not found {}:{}",
+                        "import {}:{} not found",
                         import_type.module(),
                         import_type.name()
                     );
                 }
             }
-            // in case the import is not found, the JS Wasm VM will handle
-            // the error for us, so we don't need to handle it
         }
+
         Ok(WebAssembly::Instance::new(&self.module, &imports_object)
             .map_err(|e: JsValue| -> RuntimeError { e.into() })?)
     }

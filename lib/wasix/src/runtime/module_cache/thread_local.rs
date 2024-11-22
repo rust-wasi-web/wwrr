@@ -29,7 +29,7 @@ impl ThreadLocalCache {
 
 #[async_trait::async_trait]
 impl ModuleCache for ThreadLocalCache {
-    #[tracing::instrument(level = "debug", skip_all, fields(%key))]
+    #[tracing::instrument(level = "trace", skip_all, fields(%key))]
     async fn load(&self, key: ModuleHash, engine: &Engine) -> Result<Module, CacheError> {
         match self.lookup(key, engine.deterministic_id()) {
             Some(m) => {
@@ -40,7 +40,7 @@ impl ModuleCache for ThreadLocalCache {
         }
     }
 
-    #[tracing::instrument(level = "debug", skip_all, fields(%key))]
+    #[tracing::instrument(level = "trace", skip_all, fields(%key))]
     async fn save(
         &self,
         key: ModuleHash,
