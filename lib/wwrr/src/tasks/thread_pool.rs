@@ -149,9 +149,8 @@ mod tests {
 
     #[wasm_bindgen_test]
     async fn transfer_module_to_worker() {
-        let engine = Engine::default();
         let wasm: &[u8] = include_bytes!("../../../../test-assets/envvar.wasm");
-        let module = wasmer::Module::new(&engine, wasm).unwrap();
+        let module = wasmer::Module::new(wasm).await.unwrap();
         let pool = ThreadPool::new();
 
         let (sender, receiver) = oneshot::channel();

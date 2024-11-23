@@ -129,7 +129,6 @@ pub async fn load_wasix(
     );
 
     let mut runtime = config.runtime().resolve()?.into_inner();
-    // We set it up with the default pool
     runtime = Arc::new(runtime.with_default_pool());
 
     let program_name = config

@@ -114,7 +114,7 @@ impl PostMessagePayload {
                 let module_bytes: Option<Bytes> = de.boxed(consts::MODULE_BYTES)?;
 
                 Ok(PostMessagePayload::Blocking(BlockingJob::SpawnWithModule {
-                    module: wasmer::Module::from((module, module_bytes.unwrap())),
+                    module: wasmer::Module::from_module_and_binary(module, &module_bytes.unwrap()),
                     task,
                 }))
             }
@@ -126,7 +126,10 @@ impl PostMessagePayload {
 
                 Ok(PostMessagePayload::Blocking(
                     BlockingJob::SpawnWithModuleAndMemory {
-                        module: wasmer::Module::from((module, module_bytes.unwrap())),
+                        module: wasmer::Module::from_module_and_binary(
+                            module,
+                            &module_bytes.unwrap(),
+                        ),
                         memory,
                         spawn_wasm,
                     },
@@ -205,8 +208,7 @@ mod tests {
 
     #[wasm_bindgen_test]
     async fn round_trip_spawn_with_module() {
-        let engine = wasmer::Engine::default();
-        let module = wasmer::Module::new(&engine, ENVVAR_WASM).unwrap();
+        let module = wasmer::Module::new(ENVVAR_WASM).await.unwrap();
         let (sender, receiver) = oneshot::channel();
         let msg = PostMessagePayload::Blocking(BlockingJob::SpawnWithModule {
             module,
@@ -246,8 +248,7 @@ mod tests {
 
     #[wasm_bindgen_test]
     async fn round_trip_spawn_with_module_and_memory() {
-        let engine = wasmer::Engine::default();
-        let module = wasmer::Module::new(&engine, ENVVAR_WASM).unwrap();
+        let module = wasmer::Module::new(ENVVAR_WASM).await.unwrap();
         let flag = Arc::new(AtomicBool::new(false));
         let runtime = Runtime::new().with_default_pool();
         let env = WasiEnvBuilder::new("program")

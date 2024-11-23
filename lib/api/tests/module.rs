@@ -1,12 +1,13 @@
+use futures::executor::block_on;
 use wasm_bindgen_test::*;
 
 use wasmer::*;
 
 #[wasm_bindgen_test]
-fn module_get_name() {
-    let store = Store::default();
+async fn module_get_name() {
     let wat = r#"(module)"#;
-    let module = Module::new(&store, wat)
+    let module = Module::new(wat)
+        .await
         .map_err(|e| format!("{e:?}"))
         .map_err(|e| format!("{e:?}"))
         .unwrap();
@@ -14,10 +15,10 @@ fn module_get_name() {
 }
 
 #[wasm_bindgen_test]
-fn module_set_name() {
-    let store = Store::default();
+async fn module_set_name() {
     let wat = r#"(module $name)"#;
-    let mut module = Module::new(&store, wat)
+    let mut module = Module::new(wat)
+        .await
         .map_err(|e| format!("{e:?}"))
         .unwrap();
     assert_eq!(module.name(), Some("name"));
@@ -27,15 +28,15 @@ fn module_set_name() {
 }
 
 #[wasm_bindgen_test]
-fn imports() {
-    let store = Store::default();
+async fn imports() {
     let wat = r#"(module
 (import "host" "func" (func))
 (import "host" "memory" (memory 1))
 (import "host" "table" (table 1 anyfunc))
 (import "host" "global" (global i32))
 )"#;
-    let module = Module::new(&store, wat)
+    let module = Module::new(wat)
+        .await
         .map_err(|e| format!("{e:?}"))
         .unwrap();
     assert_eq!(
@@ -101,14 +102,13 @@ fn imports() {
 
 #[test]
 fn exports() {
-    let store = Store::default();
     let wat = r#"(module
 (func (export "func") nop)
 (memory (export "memory") 1)
 (table (export "table") 1 funcref)
 (global (export "global") i32 (i32.const 0))
 )"#;
-    let module = Module::new(&store, wat)
+    let module = block_on(Module::new(wat))
         .map_err(|e| format!("{e:?}"))
         .unwrap();
     assert_eq!(
@@ -162,7 +162,7 @@ fn exports() {
 }
 
 #[wasm_bindgen_test]
-fn calling_host_functions_with_negative_values_works() {
+async fn calling_host_functions_with_negative_values_works() {
     let mut store = Store::default();
     let wat = r#"(module
 (import "host" "host_func1" (func (param i64)))
@@ -191,7 +191,8 @@ fn calling_host_functions_with_negative_values_works() {
 (func (export "call_host_func8")
       (call 7 (i32.const -1)))
 )"#;
-    let module = Module::new(&store, wat)
+    let module = Module::new(wat)
+        .await
         .map_err(|e| format!("{e:?}"))
         .unwrap();
     let imports = imports! {
@@ -286,10 +287,10 @@ fn calling_host_functions_with_negative_values_works() {
 }
 
 #[wasm_bindgen_test]
-fn module_custom_sections() {
-    let store = Store::default();
+async fn module_custom_sections() {
     let custom_section_wasm_bytes = include_bytes!("simple-name-section.wasm");
-    let module = Module::new(&store, custom_section_wasm_bytes)
+    let module = Module::new(custom_section_wasm_bytes)
+        .await
         .map_err(|e| format!("{e:?}"))
         .unwrap();
     let sections = module.custom_sections("name");

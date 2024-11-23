@@ -97,14 +97,6 @@ impl wasmer_wasix::runtime::Runtime for Runtime {
     ) -> Arc<dyn wasmer_wasix::runtime::module_cache::ModuleCache + Send + Sync> {
         self.module_cache.clone()
     }
-
-    fn load_module_sync(&self, wasm: &[u8]) -> Result<wasmer::Module, wasmer_wasix::SpawnError> {
-        let wasm = unsafe { js_sys::Uint8Array::view(wasm) };
-        let module = js_sys::WebAssembly::Module::new(&wasm)
-            .map_err(|x| wasmer_wasix::SpawnError::Other(crate::utils::js_error(x).into()))?;
-
-        Ok(wasmer::Module::from((module, wasm.to_vec())))
-    }
 }
 
 #[cfg(test)]
@@ -125,9 +117,7 @@ mod tests {
     #[wasm_bindgen_test]
     async fn execute_a_trivial_module() {
         let runtime = Runtime::with_defaults().unwrap().with_default_pool();
-        // let module = runtime.load_module(TRIVIAL_WAT).await.unwrap();
-
-        let module = Module::new(&runtime.engine(), TRIVIAL_WAT).unwrap();
+        let module = Module::new(TRIVIAL_WAT).await.unwrap();
 
         WasiEnvBuilder::new("trivial")
             .runtime(Arc::new(runtime))

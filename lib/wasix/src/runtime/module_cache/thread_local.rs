@@ -69,7 +69,7 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn round_trip_via_cache() {
         let engine = Engine::default();
-        let module = Module::new(&engine, ADD_WAT).unwrap();
+        let module = Module::new(ADD_WAT).await.unwrap();
         let cache = ThreadLocalCache::default();
         let key = ModuleHash::xxhash_from_bytes([0; 8]);
 

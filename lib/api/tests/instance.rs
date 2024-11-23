@@ -3,10 +3,9 @@ use wasm_bindgen_test::*;
 use wasmer::*;
 
 #[wasm_bindgen_test]
-fn exports_work_after_multiple_instances_have_been_freed() {
+async fn exports_work_after_multiple_instances_have_been_freed() {
     let mut store = Store::default();
     let module = Module::new(
-        &store,
         "
 (module
   (type $sum_t (func (param i32 i32) (result i32)))
@@ -17,6 +16,7 @@ fn exports_work_after_multiple_instances_have_been_freed() {
   (export \"sum\" (func $sum_f)))
 ",
     )
+    .await
     .map_err(|e| format!("{e:?}"))
     .unwrap();
 

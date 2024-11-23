@@ -28,10 +28,12 @@ serde-wasm-bindgen = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
 wasmparser = { workspace = true, default-features = false }
 wat = { workspace = true, optional = true }
 
 [dev-dependencies]
+futures = { workspace = true }
 wat = { workspace = true }
 wasm-bindgen-test = { workspace = true }
 

@@ -1,13 +1,13 @@
 pub mod module_cache;
 pub mod task_manager;
 
+use self::module_cache::CacheError;
 pub use self::task_manager::{SpawnMemoryType, VirtualTaskManager};
-use self::{module_cache::CacheError, task_manager::InlineWaker};
 use wasmer_types::ModuleHash;
 
 use std::{fmt, sync::Arc};
 
-use futures::future::BoxFuture;
+use futures::future::LocalBoxFuture;
 use virtual_net::DynVirtualNetworking;
 use wasmer::{Module, RuntimeError};
 use wasmer_wasix_types::wasi::ExitCode;
@@ -27,7 +27,6 @@ pub enum TaintReason {
 /// Runtime components used when running WebAssembly programs.
 ///
 /// Think of this as the "System" in "WebAssembly Systems Interface".
-#[allow(unused_variables)]
 pub trait Runtime
 where
     Self: fmt::Debug,
@@ -60,7 +59,7 @@ where
     }
 
     /// Load a a Webassembly module, trying to use a pre-compiled version if possible.
-    fn load_module<'a>(&'a self, wasm: &'a [u8]) -> BoxFuture<'a, Result<Module, SpawnError>> {
+    fn load_module<'a>(&'a self, wasm: &'a [u8]) -> LocalBoxFuture<'a, Result<Module, SpawnError>> {
         let engine = self.engine();
         let module_cache = self.module_cache();
         let hash = ModuleHash::xxhash(wasm);
@@ -68,13 +67,6 @@ where
         let task = async move { load_module(&engine, &module_cache, wasm, hash).await };
 
         Box::pin(task)
-    }
-
-    /// Load a a Webassembly module, trying to use a pre-compiled version if possible.
-    ///
-    /// Non-async version of [`Self::load_module`].
-    fn load_module_sync(&self, wasm: &[u8]) -> Result<Module, SpawnError> {
-        InlineWaker::block_on(self.load_module(wasm))
     }
 
     /// Callback thats invokes whenever the instance is tainted, tainting can occur
@@ -109,10 +101,12 @@ pub async fn load_module(
         }
     }
 
-    let module = Module::new(&engine, wasm).map_err(|err| crate::SpawnError::CompileError {
-        module_hash: wasm_hash,
-        error: err,
-    })?;
+    let module = Module::new(wasm)
+        .await
+        .map_err(|err| crate::SpawnError::CompileError {
+            module_hash: wasm_hash,
+            error: err,
+        })?;
 
     if let Err(e) = module_cache.save(wasm_hash, engine, &module).await {
         tracing::warn!(

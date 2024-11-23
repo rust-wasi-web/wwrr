@@ -1,12 +1,12 @@
 use bytes::Bytes;
+use js_sys::WebAssembly;
 use std::fmt;
 use std::io;
 
-use crate::engine::AsEngineRef;
 use thiserror::Error;
 #[cfg(feature = "wat")]
 use wasmer_types::WasmError;
-use wasmer_types::{CompileError, DeserializeError, ExportsIterator, ImportsIterator, ModuleInfo};
+use wasmer_types::{CompileError, ExportsIterator, ImportsIterator, ModuleInfo};
 use wasmer_types::{ExportType, ImportType};
 
 use crate::into_bytes::IntoBytes;
@@ -104,7 +104,7 @@ impl Module {
     ///
     /// let module = Module::from_file(&engine, "path/to/foo.wasm");
     /// ```
-    pub fn new(engine: &impl AsEngineRef, bytes: impl AsRef<[u8]>) -> Result<Self, CompileError> {
+    pub async fn new(bytes: impl AsRef<[u8]>) -> Result<Self, CompileError> {
         #[cfg(feature = "wat")]
         let bytes = wat::parse_bytes(bytes.as_ref()).map_err(|e| {
             CompileError::Wasm(WasmError::Generic(format!(
@@ -112,7 +112,8 @@ impl Module {
                 e
             )))
         })?;
-        Self::from_binary(engine, bytes.as_ref())
+
+        Self::from_binary(bytes.as_ref()).await
     }
 
     /// Creates a new WebAssembly module from a Wasm binary.
@@ -120,25 +121,16 @@ impl Module {
     /// Opposed to [`Module::new`], this function is not compatible with
     /// the WebAssembly text format (if the "wat" feature is enabled for
     /// this crate).
-    pub fn from_binary(engine: &impl AsEngineRef, binary: &[u8]) -> Result<Self, CompileError> {
-        Ok(Self(module_imp::Module::from_binary(engine, binary)?))
+    pub async fn from_binary(binary: &[u8]) -> Result<Self, CompileError> {
+        Ok(Self(module_imp::Module::from_binary(binary).await?))
     }
 
-    /// Creates a new WebAssembly module from a Wasm binary,
-    /// skipping any kind of validation on the WebAssembly file.
-    ///
-    /// # Safety
-    ///
-    /// This can speed up compilation time a bit, but it should be only used
-    /// in environments where the WebAssembly modules are trusted and validated
-    /// beforehand.
-    pub unsafe fn from_binary_unchecked(
-        engine: &impl AsEngineRef,
-        binary: &[u8],
-    ) -> Result<Self, CompileError> {
-        Ok(Self(module_imp::Module::from_binary_unchecked(
-            engine, binary,
-        )?))
+    /// Creates a new WebAssembly module from the compiled module and its binary data.
+    pub fn from_module_and_binary(module: WebAssembly::Module, binary: &[u8]) -> Self {
+        Self(module_imp::Module::from_module_and_binary(
+            module,
+            binary.into_bytes(),
+        ))
     }
 
     /// Validates a new WebAssembly Module given the configuration
@@ -147,8 +139,8 @@ impl Module {
     /// This validation is normally pretty fast and checks the enabled
     /// WebAssembly features in the Store Engine to assure deterministic
     /// validation of the Module.
-    pub fn validate(engine: &impl AsEngineRef, binary: &[u8]) -> Result<(), CompileError> {
-        module_imp::Module::validate(engine, binary)
+    pub fn validate(binary: &[u8]) -> Result<(), CompileError> {
+        module_imp::Module::validate(binary)
     }
 
     /// Serializes a module into a binary representation that the `Engine`
@@ -172,78 +164,6 @@ impl Module {
     /// ```
     pub fn serialize(&self) -> Bytes {
         self.0.serialize()
-    }
-
-    /// Deserializes a serialized module binary into a `Module`.
-    ///
-    /// Note: You should usually prefer the safer [`Module::deserialize`].
-    ///
-    /// # Important
-    ///
-    /// This function only accepts a custom binary format, which will be different
-    /// than the `wasm` binary format and may change among Wasmer versions.
-    /// (it should be the result of the serialization of a Module via the
-    /// `Module::serialize` method.).
-    ///
-    /// # Safety
-    ///
-    /// This function is inherently **unsafe** as the provided bytes:
-    /// 1. Are going to be deserialized directly into Rust objects.
-    /// 2. Contains the function assembly bodies and, if intercepted,
-    ///    a malicious actor could inject code into executable
-    ///    memory.
-    ///
-    /// And as such, the `deserialize_unchecked` method is unsafe.
-    ///
-    /// # Usage
-    ///
-    /// ```ignore
-    /// # use wasmer::*;
-    /// # fn main() -> anyhow::Result<()> {
-    /// # let mut store = Store::default();
-    /// let module = Module::deserialize_unchecked(&store, serialized_data)?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub unsafe fn deserialize_unchecked(
-        engine: &impl AsEngineRef,
-        bytes: impl IntoBytes,
-    ) -> Result<Self, DeserializeError> {
-        Ok(Self(module_imp::Module::deserialize_unchecked(
-            engine, bytes,
-        )?))
-    }
-
-    /// Deserializes a serialized Module binary into a `Module`.
-    ///
-    /// # Important
-    ///
-    /// This function only accepts a custom binary format, which will be different
-    /// than the `wasm` binary format and may change among Wasmer versions.
-    /// (it should be the result of the serialization of a Module via the
-    /// `Module::serialize` method.).
-    ///
-    /// # Usage
-    ///
-    /// ```ignore
-    /// # use wasmer::*;
-    /// # fn main() -> anyhow::Result<()> {
-    /// # let mut store = Store::default();
-    /// let module = Module::deserialize(&store, serialized_data)?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// # Safety
-    /// This function is inherently **unsafe**, because it loads executable code
-    /// into memory.
-    /// The loaded bytes must be trusted to contain a valid artifact previously
-    /// built with [`Self::serialize`].
-    pub unsafe fn deserialize(
-        engine: &impl AsEngineRef,
-        bytes: impl IntoBytes,
-    ) -> Result<Self, DeserializeError> {
-        Ok(Self(module_imp::Module::deserialize(engine, bytes)?))
     }
 
     /// Returns the name of the current module.

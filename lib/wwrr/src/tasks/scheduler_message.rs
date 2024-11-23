@@ -79,7 +79,7 @@ impl SchedulerMessage {
                 let module_bytes: Option<Bytes> = de.boxed(consts::MODULE_BYTES)?;
                 let task = de.boxed(consts::PTR)?;
                 Ok(SchedulerMessage::SpawnWithModule {
-                    module: wasmer::Module::from((module, module_bytes.unwrap())),
+                    module: wasmer::Module::from_module_and_binary(module, &module_bytes.unwrap()),
                     task,
                 })
             }
@@ -98,7 +98,7 @@ impl SchedulerMessage {
                 };
 
                 Ok(SchedulerMessage::SpawnWithModuleAndMemory {
-                    module: wasmer::Module::from((module, module_bytes.unwrap())),
+                    module: wasmer::Module::from_module_and_binary(module, &module_bytes.unwrap()),
                     memory,
                     spawn_wasm,
                 })

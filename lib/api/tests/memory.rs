@@ -3,6 +3,7 @@ use std::sync::{
     Arc,
 };
 
+use futures::executor::block_on;
 use wasmer::{imports, Instance, Memory, MemoryLocation, MemoryType, Module, Store};
 
 #[test]
@@ -11,7 +12,7 @@ fn test_shared_memory_atomics_notify_send() {
     let wat = r#"(module
 (import "host" "memory" (memory 10 65536 shared))
 )"#;
-    let module = Module::new(&store, wat)
+    let module = block_on(Module::new(wat))
         .map_err(|e| format!("{e:?}"))
         .unwrap();
 

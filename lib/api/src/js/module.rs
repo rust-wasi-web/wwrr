@@ -5,15 +5,13 @@ use crate::store::AsStoreMut;
 use crate::vm::VMInstance;
 use crate::IntoBytes;
 use crate::{errors::InstantiationError, js::js_handle::JsHandle};
-use crate::{AsEngineRef, ExportType, ImportType};
+use crate::{ExportType, ImportType};
 use bytes::Bytes;
 use js_sys::{Reflect, Uint8Array, WebAssembly};
-use std::path::Path;
 use tracing::{debug, trace, warn};
 use wasm_bindgen::JsValue;
-use wasmer_types::{
-    CompileError, DeserializeError, ExportsIterator, ExternType, ImportsIterator, ModuleInfo,
-};
+use wasm_bindgen_futures::JsFuture;
+use wasmer_types::{CompileError, ExportsIterator, ExternType, ImportsIterator, ModuleInfo};
 
 /// WebAssembly in the browser doesn't yet output the descriptor/types
 /// corresponding to each extern (import and export).
@@ -62,25 +60,19 @@ impl From<Module> for JsValue {
 }
 
 impl Module {
-    pub(crate) fn from_binary(
-        _engine: &impl AsEngineRef,
-        binary: &[u8],
-    ) -> Result<Self, CompileError> {
-        unsafe { Self::from_binary_unchecked(_engine, binary) }
-    }
-
-    pub(crate) unsafe fn from_binary_unchecked(
-        _engine: &impl AsEngineRef,
-        binary: &[u8],
-    ) -> Result<Self, CompileError> {
-        let js_bytes = Uint8Array::view(binary);
-        let module = WebAssembly::Module::new(&js_bytes.into())
+    /// Creates a new WebAssembly module from its binary data.
+    pub(crate) async fn from_binary(binary: &[u8]) -> Result<Self, CompileError> {
+        let js_bytes = unsafe { Uint8Array::view(binary) };
+        let module = JsFuture::from(WebAssembly::compile(&js_bytes))
+            .await
+            .map(|v| v.into())
             .map_err(|e| CompileError::Validate(format!("{}", e.as_string().unwrap())))?;
-        Ok(Self::from_js_module(module, binary))
+
+        Ok(Self::from_module_and_binary(module, binary))
     }
 
-    /// Creates a new WebAssembly module skipping any kind of validation from a javascript module
-    pub(crate) unsafe fn from_js_module(
+    /// Creates a new WebAssembly module from the compiled module and its binary data.
+    pub(crate) fn from_module_and_binary(
         module: WebAssembly::Module,
         binary: impl IntoBytes,
     ) -> Self {
@@ -110,7 +102,7 @@ impl Module {
         }
     }
 
-    pub fn validate(_engine: &impl AsEngineRef, binary: &[u8]) -> Result<(), CompileError> {
+    pub fn validate(binary: &[u8]) -> Result<(), CompileError> {
         let js_bytes = unsafe { Uint8Array::view(binary) };
         match WebAssembly::validate(&js_bytes.into()) {
             Ok(true) => Ok(()),
@@ -214,40 +206,6 @@ impl Module {
         self.raw_bytes.clone()
     }
 
-    #[tracing::instrument(level = "debug", skip_all)]
-    pub unsafe fn deserialize_unchecked(
-        _engine: &impl AsEngineRef,
-        _bytes: impl IntoBytes,
-    ) -> Result<Self, DeserializeError> {
-        return Self::from_binary(_engine, &_bytes.into_bytes())
-            .map_err(|e| DeserializeError::Compiler(e));
-    }
-
-    #[tracing::instrument(level = "debug", skip_all)]
-    pub unsafe fn deserialize(
-        _engine: &impl AsEngineRef,
-        _bytes: impl IntoBytes,
-    ) -> Result<Self, DeserializeError> {
-        return Self::from_binary(_engine, &_bytes.into_bytes())
-            .map_err(|e| DeserializeError::Compiler(e));
-    }
-
-    pub unsafe fn deserialize_from_file_unchecked(
-        engine: &impl AsEngineRef,
-        path: impl AsRef<Path>,
-    ) -> Result<Self, DeserializeError> {
-        let bytes = std::fs::read(path.as_ref())?;
-        Self::deserialize(engine, bytes)
-    }
-
-    pub unsafe fn deserialize_from_file(
-        engine: &impl AsEngineRef,
-        path: impl AsRef<Path>,
-    ) -> Result<Self, DeserializeError> {
-        let bytes = std::fs::read(path.as_ref())?;
-        Self::deserialize(engine, bytes)
-    }
-
     pub fn set_name(&mut self, name: &str) -> bool {
         self.name = Some(name.to_string());
         true
@@ -306,12 +264,6 @@ impl Module {
 
     pub(crate) fn info(&self) -> &ModuleInfo {
         unimplemented!()
-    }
-}
-
-impl<T: IntoBytes> From<(WebAssembly::Module, T)> for crate::module::Module {
-    fn from((module, binary): (WebAssembly::Module, T)) -> crate::module::Module {
-        unsafe { crate::module::Module(Module::from_js_module(module, binary.into_bytes())) }
     }
 }
 

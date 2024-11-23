@@ -41,7 +41,7 @@ mod sys {
 
 async fn test_stdout() {
     let mut store = Store::default();
-    let module = Module::new(&store, br#"
+    let module = Module::new(br#"
     (module
         ;; Import the required fd_write WASI function which will write the given io vectors to stdout
         ;; The function signature for fd_write is:
@@ -69,7 +69,7 @@ async fn test_stdout() {
             drop ;; Discard the number of bytes written from the top of the stack
         )
     )
-    "#).unwrap();
+    "#).await.unwrap();
 
     // Create the `WasiEnv`.
     let (stdout_tx, mut stdout_rx) = Pipe::channel();
@@ -88,7 +88,7 @@ async fn test_stdout() {
 
 async fn test_env() {
     let mut store = Store::default();
-    let module = Module::new(&store, include_bytes!("envvar.wasm")).unwrap();
+    let module = Module::new(include_bytes!("envvar.wasm")).await.unwrap();
 
     tracing_wasm::set_as_global_default_with_config({
         let mut builder = tracing_wasm::WASMLayerConfigBuilder::new();
@@ -116,7 +116,9 @@ async fn test_env() {
 
 async fn test_stdin() {
     let mut store = Store::default();
-    let module = Module::new(&store, include_bytes!("stdin-hello.wasm")).unwrap();
+    let module = Module::new(include_bytes!("stdin-hello.wasm"))
+        .await
+        .unwrap();
 
     // Create the `WasiEnv`.
     let (mut pipe_tx, pipe_rx) = Pipe::channel();
