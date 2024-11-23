@@ -26,7 +26,6 @@ use once_cell::sync::Lazy;
 use std::sync::Mutex;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-pub(crate) const DEFAULT_RUST_LOG: &[&str] = &["warn"];
 pub(crate) static CUSTOM_WORKER_URL: Lazy<Mutex<Option<String>>> = Lazy::new(Mutex::default);
 
 #[wasm_bindgen]
