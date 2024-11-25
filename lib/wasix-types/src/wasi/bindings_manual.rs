@@ -379,9 +379,9 @@ bitflags! {
     /// Actions the thread start function should perform.
     #[derive(Debug)]
     pub struct ThreadActions : i32 {
-        /// Initialize the thread and run its code.
-        const START = 1 << 0;
-        /// Run the thread cleanup code including TLS destructors.
-        const FINISH = 1 << 1;
+        /// Do not initialize the thread and run its code.
+        const NO_START = 1 << 0;
+        /// Do not run the thread cleanup code including TLS destructors.
+        const NO_FINISH = 1 << 1;
     }
 }

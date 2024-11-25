@@ -145,15 +145,14 @@ async fn call_module<M: MemorySize>(
     start_ptr_offset: M::Offset,
     thread_handle: Arc<WasiThreadHandle>,
 ) -> Result<Tid, Errno> {
-    // We either call the reactor callback or the thread spawn callback
-    //trace!("threading: invoking thread callback (reactor={})", reactor);
-    let spawn = unsafe { env.data(&store).inner() }
+    let tid = env.data(&store).tid();
+
+    // Call thread-start callback.
+    let thread_start = unsafe { env.data(&store).inner() }
         .thread_start
         .clone()
         .unwrap();
-    let tid = env.data(&store).tid();
-
-    let mut call_ret = spawn.call(
+    let mut call_ret = thread_start.call(
         &mut store,
         tid.raw().try_into().map_err(|_| Errno::Overflow).unwrap(),
         start_ptr_offset
@@ -168,13 +167,22 @@ async fn call_module<M: MemorySize>(
         wasi_env.thread_start_executed = true;
 
         // Wait for thread release.
-        // This release control back to the brower event loop and allows
+        // This "await" releases control back to the brower event loop and allows
         // callbacks and promises to execute.
         tracing::debug!("thread is on hold");
         let _ = release_rx.await;
 
         tracing::debug!("thread hold released, cleaning up");
-        call_ret = spawn.call(
+        if let Some(thread_set_actions) = unsafe { env.data(&store).inner() }
+            .thread_set_actions
+            .clone()
+        {
+            if let Err(err) = thread_set_actions.call(&mut store, ThreadActions::NO_START.bits()) {
+                warn!("cannot set thread actions for cleanup: {err}");
+            }
+        }
+
+        call_ret = thread_start.call(
             &mut store,
             tid.raw().try_into().map_err(|_| Errno::Overflow).unwrap(),
             start_ptr_offset
@@ -224,32 +232,16 @@ async fn call_module<M: MemorySize>(
     Ok(ret as Pid)
 }
 
-pub(crate) fn thread_actions_internal<M: MemorySize + 'static>(
-    ctx: FunctionEnvMut<'_, WasiEnv>,
-) -> i32 {
-    let env = ctx.data();
-    let tid = env.tid();
-
-    let actions = if env.thread_release_tx.is_some() {
-        // Thread holding was requested: do not clean up.
-        ThreadActions::START
-    } else if env.thread_start_executed {
-        // Thread was released after being held: only clean up is left.
-        ThreadActions::FINISH
-    } else {
-        // No thread holding: normal execution.
-        ThreadActions::START | ThreadActions::FINISH
-    };
-
-    tracing::debug!(tid = %tid, "thread actions: {actions:?}");
-    actions.bits()
-}
-
 pub(crate) fn thread_hold_internal<M: MemorySize + 'static>(
     mut ctx: FunctionEnvMut<'_, WasiEnv>,
 ) -> Result<Errno, WasiError> {
     let env = ctx.data_mut();
     let tid = env.tid();
+
+    let Some(thread_set_actions) = unsafe { env.inner() }.thread_set_actions.clone() else {
+        tracing::warn!(tid = %tid, "attempt to hold thread without exporting wasi_thread_set_actions");
+        return Ok(Errno::Notsup);
+    };
 
     if env.thread_start_executed {
         tracing::warn!(tid = %tid, "attempt to hold thread in cleanup");
@@ -259,6 +251,10 @@ pub(crate) fn thread_hold_internal<M: MemorySize + 'static>(
     let (tx, rx) = oneshot::channel();
     env.thread_release_tx = Some(tx);
     env.thread_release_rx = Some(rx);
+
+    if let Err(err) = thread_set_actions.call(&mut ctx, ThreadActions::NO_FINISH.bits()) {
+        warn!("cannot set thread actions for holding: {err}");
+    }
 
     tracing::debug!(tid = %tid, "thread will be held after start function finishes");
     Ok(Errno::Success)

@@ -59,6 +59,10 @@ pub struct WasiInstanceHandles {
     #[derivative(Debug = "ignore")]
     pub(crate) thread_start: Option<TypedFunction<(i32, i32), ()>>,
 
+    /// Represents the callback for setting the thread actions (name = "wasi_thread_set_actions")
+    #[derivative(Debug = "ignore")]
+    pub(crate) thread_set_actions: Option<TypedFunction<i32, ()>>,
+
     /// Represents the callback for signals (name = "__wasm_signal")
     /// Signals are triggered asynchronously at idle times of the process
     #[derivative(Debug = "ignore")]
@@ -82,6 +86,10 @@ impl WasiInstanceHandles {
             thread_start: instance
                 .exports
                 .get_typed_function(store, "wasi_thread_start")
+                .ok(),
+            thread_set_actions: instance
+                .exports
+                .get_typed_function(store, "wasi_thread_set_actions")
                 .ok(),
             signal: instance
                 .exports

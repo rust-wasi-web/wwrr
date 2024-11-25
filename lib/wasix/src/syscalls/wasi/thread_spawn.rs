@@ -26,16 +26,6 @@ pub fn thread_spawn<M: MemorySize>(
         .unwrap_or_else(|err| -err)
 }
 
-/// ### `thread_actions()`
-/// Returns the thread start actions to perform.
-///
-/// Bitfield:
-///     1 - Initialize the thread and run its code.
-///     2 - Run the thread cleanup code including TLS destructors.
-pub fn thread_actions<M: MemorySize + 'static>(ctx: FunctionEnvMut<'_, WasiEnv>) -> i32 {
-    thread_actions_internal::<M>(ctx)
-}
-
 /// ### `thread_hold()`
 /// Holds the current thread after its start function has returned.
 ///
