@@ -7,7 +7,7 @@ use virtual_fs::{FsError, VirtualFile};
 use virtual_net::DynVirtualNetworking;
 use wasmer::{
     AsStoreMut, AsStoreRef, FunctionEnvMut, Imports, ImportsObj, Instance, Memory, MemoryType,
-    MemoryView, Module, TypedFunction,
+    MemoryView, Module, TypedFunction, Value,
 };
 use wasmer_wasix_types::{
     types::Signal,
@@ -388,6 +388,18 @@ impl WasiEnv {
                 .data(&store)
                 .blocking_on_exit(Some(Errno::Noexec.into()));
             return Err(err.into());
+        }
+
+        // Set number of processors.
+        if let Ok(nprocessors) = instance.exports.get_global("wasi_nprocessors").cloned() {
+            match tasks.thread_parallelism() {
+                Ok(p) => {
+                    if let Err(err) = nprocessors.set(&mut store, Value::I32(p as _)) {
+                        tracing::warn!("cannot set number of processors: {err}");
+                    }
+                }
+                Err(err) => tracing::warn!("cannot get number of processors: {err}"),
+            }
         }
 
         // If this module exports an _initialize function, run that first.
