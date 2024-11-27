@@ -78,7 +78,7 @@ async fn test_stdout() {
         .args(["Gordon"])
         .stdout(Box::new(stdout_tx));
 
-    builder.run_with_store(module, &mut store).unwrap();
+    builder.run_with_store(module, &mut store).await.unwrap();
 
     let mut stdout_str = String::new();
     stdout_rx.read_to_string(&mut stdout_str).await.unwrap();
@@ -106,7 +106,7 @@ async fn test_env() {
         .env("TEST2", "VALUE2")
         .stdout(Box::new(pipe_tx));
 
-    builder.run_with_store(module, &mut store).unwrap();
+    builder.run_with_store(module, &mut store).await.unwrap();
 
     let mut stdout_str = String::new();
     pipe_rx.read_to_string(&mut stdout_str).await.unwrap();
@@ -131,7 +131,7 @@ async fn test_stdin() {
 
     let builder = WasiEnv::builder("command-name").stdin(Box::new(pipe_rx));
 
-    builder.run_with_store(module, &mut store).unwrap();
+    builder.run_with_store(module, &mut store).await.unwrap();
 
     // We assure stdin is now empty
     // Can't easily be tested with current pipe impl.

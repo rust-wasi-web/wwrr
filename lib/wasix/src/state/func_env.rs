@@ -30,11 +30,11 @@ impl WasiFunctionEnv {
     }
 
     // Creates a new environment context on a new store.
-    pub fn new_creating_store(
+    pub async fn new_creating_store(
         module: Module,
         env: WasiEnv,
         store_snapshot: Option<&StoreSnapshot>,
-        spawn_type: SpawnMemoryType,
+        spawn_type: SpawnMemoryType<'_>,
         wbg_js_module: Option<JsValue>,
     ) -> Result<(Self, Store), WasiThreadError> {
         // Create a new store and put the memory object in it
@@ -73,8 +73,9 @@ impl WasiFunctionEnv {
         };
 
         // Instantiate WebAssembly module.
-        let instance =
-            Instance::new(&mut store, &module, &imports, imports_obj.clone()).map_err(|err| {
+        let instance = Instance::new(&mut store, &module, &imports, imports_obj.clone())
+            .await
+            .map_err(|err| {
                 tracing::warn!("failed to create instance - {}", err);
                 WasiThreadError::InstanceCreateFailed(Box::new(err))
             })?;

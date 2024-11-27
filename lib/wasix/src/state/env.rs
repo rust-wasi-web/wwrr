@@ -43,16 +43,6 @@ pub struct WasiInstanceHandles {
     /// WebAssembly instance.
     pub(crate) instance: wasmer::Instance,
 
-    /// Main function that will be invoked (name = "_start")
-    #[derivative(Debug = "ignore")]
-    #[allow(dead_code)]
-    pub(crate) start: Option<TypedFunction<(), ()>>,
-
-    /// Function thats invoked to initialize the WASM module (name = "_initialize")
-    #[derivative(Debug = "ignore")]
-    #[allow(dead_code)]
-    pub(crate) initialize: Option<TypedFunction<(), ()>>,
-
     /// Represents the callback for starting a thread (name = "wasi_thread_start")
     /// (due to limitations with i64 in browsers the parameters are broken into i32 pairs)
     /// [this takes a user_data field]
@@ -78,11 +68,6 @@ impl WasiInstanceHandles {
     pub fn new(memory: Memory, store: &impl AsStoreRef, instance: Instance) -> Self {
         WasiInstanceHandles {
             memory,
-            start: instance.exports.get_typed_function(store, "_start").ok(),
-            initialize: instance
-                .exports
-                .get_typed_function(store, "_initialize")
-                .ok(),
             thread_start: instance
                 .exports
                 .get_typed_function(store, "wasi_thread_start")
@@ -300,7 +285,7 @@ impl WasiEnv {
 
     // FIXME: use custom error type
     #[allow(clippy::result_large_err)]
-    pub(crate) fn instantiate(
+    pub(crate) async fn instantiate(
         mut init: WasiEnvInit,
         module: Module,
         store: &mut impl AsStoreMut,
@@ -357,7 +342,7 @@ impl WasiEnv {
         };
 
         // Construct the instance.
-        let instance = match Instance::new(&mut store, &module, &imports, imports_obj) {
+        let instance = match Instance::new(&mut store, &module, &imports, imports_obj).await {
             Ok(a) => a,
             Err(err) => {
                 tracing::error!(
@@ -405,6 +390,7 @@ impl WasiEnv {
         // If this module exports an _initialize function, run that first.
         if call_initialize {
             if let Ok(initialize) = instance.exports.get_function("_initialize") {
+                tracing::info!("calling WASI _initialize");
                 if let Err(err) = crate::run_wasi_func_start(initialize, &mut store) {
                     func_env
                         .data(&store)

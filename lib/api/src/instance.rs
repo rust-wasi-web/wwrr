@@ -57,14 +57,14 @@ impl Instance {
     ///  * Link errors that happen when plugging the imports into the instance
     ///  * Runtime errors that happen when running the module `start` function.
     #[allow(clippy::result_large_err)]
-    pub fn new(
+    pub async fn new(
         store: &mut impl AsStoreMut,
         module: &Module,
         imports: &Imports,
         imports_obj: ImportsObj,
     ) -> Result<Self, InstantiationError> {
         let (_inner, exports, exports_obj) =
-            instance_imp::Instance::new(store, module, imports, imports_obj)?;
+            instance_imp::Instance::new(store, module, imports, imports_obj).await?;
         Ok(Self {
             _inner,
             module: module.clone(),

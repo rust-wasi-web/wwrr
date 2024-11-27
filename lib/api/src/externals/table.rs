@@ -137,5 +137,11 @@ fn test_table_grow_issue_3197() {
     table.grow(&mut store, 100, Value::FuncRef(None)).unwrap();
     assert_eq!(table.ty(&store).minimum, 0);
     let imports = imports! {"env" => {"table" => table}};
-    let _instance = Instance::new(&mut store, &module, &imports, ImportsObj::default()).unwrap();
+    let _instance = futures::executor::block_on(Instance::new(
+        &mut store,
+        &module,
+        &imports,
+        ImportsObj::default(),
+    ))
+    .unwrap();
 }

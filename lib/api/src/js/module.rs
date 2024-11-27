@@ -9,7 +9,7 @@ use crate::{ExportType, ImportType};
 use bytes::Bytes;
 use js_sys::{Reflect, Uint8Array, WebAssembly};
 use tracing::{debug, trace, warn};
-use wasm_bindgen::JsValue;
+use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 use wasmer_types::{CompileError, ExportsIterator, ExternType, ImportsIterator, ModuleInfo};
 
@@ -110,7 +110,7 @@ impl Module {
         }
     }
 
-    pub(crate) fn instantiate(
+    pub(crate) async fn instantiate(
         &self,
         store: &mut impl AsStoreMut,
         imports: &Imports,
@@ -194,8 +194,19 @@ impl Module {
             }
         }
 
-        Ok(WebAssembly::Instance::new(&self.module, &imports_object)
-            .map_err(|e: JsValue| -> RuntimeError { e.into() })?)
+        tracing::info!(
+            "instantiating module {}",
+            self.name.as_deref().unwrap_or_default()
+        );
+        let module = JsFuture::from(WebAssembly::instantiate_module(
+            &self.module,
+            &imports_object,
+        ))
+        .await
+        .map(|v| v.dyn_into().unwrap())
+        .map_err(|e: JsValue| -> RuntimeError { e.into() })?;
+
+        Ok(module)
     }
 
     pub fn name(&self) -> Option<&str> {

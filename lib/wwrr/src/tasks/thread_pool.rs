@@ -1,8 +1,10 @@
 use std::{fmt::Debug, future::Future, pin::Pin};
 
 use futures::future::LocalBoxFuture;
+use futures::FutureExt;
 use instant::Duration;
 use wasm_bindgen_futures::JsFuture;
+use wasmer::Module;
 use wasmer_wasix::{runtime::task_manager::TaskWasm, VirtualTaskManager, WasiThreadError};
 
 use crate::{
@@ -74,12 +76,13 @@ impl VirtualTaskManager for ThreadPool {
         // deadlock because the syscall will block block until the future
         // resolves, but the JsFuture will never get a chance to mark itself as
         // resolved because the JavaScript VM is still blocked by the syscall.
-        let _ = self.task_dedicated(Box::new(move || {
-            wasm_bindgen_futures::spawn_local(async move {
+        let _ = self.task_shared(Box::new(move || {
+            async move {
                 let global = GlobalScope::current();
                 let _ = JsFuture::from(global.sleep(time)).await;
                 let _ = tx.send(());
-            })
+            }
+            .boxed_local()
         }));
 
         Box::pin(async move {
@@ -91,9 +94,7 @@ impl VirtualTaskManager for ThreadPool {
     /// This task must not block the execution or it could cause a deadlock
     fn task_shared(
         &self,
-        task: Box<
-            dyn FnOnce() -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> + Send + 'static,
-        >,
+        task: Box<dyn FnOnce() -> LocalBoxFuture<'static, ()> + Send + 'static>,
     ) -> Result<(), WasiThreadError> {
         self.spawn(Box::new(move || Box::pin(async move { task().await })))
     }
@@ -104,18 +105,6 @@ impl VirtualTaskManager for ThreadPool {
     fn task_wasm(&self, task: TaskWasm<'_, '_>) -> Result<(), WasiThreadError> {
         let msg = crate::tasks::task_wasm::to_scheduler_message(task)?;
         self.send(msg);
-        Ok(())
-    }
-
-    /// Starts an asynchronous task will will run on a dedicated thread
-    /// pulled from the worker pool. It is ok for this task to block execution
-    /// and any async futures within its scope
-    fn task_dedicated(
-        &self,
-        task: Box<dyn FnOnce() + Send + 'static>,
-    ) -> Result<(), WasiThreadError> {
-        self.send(SchedulerMessage::SpawnBlocking(task));
-
         Ok(())
     }
 
@@ -130,7 +119,7 @@ impl VirtualTaskManager for ThreadPool {
     fn spawn_with_module(
         &self,
         module: wasmer::Module,
-        task: Box<dyn FnOnce(wasmer::Module) + Send + 'static>,
+        task: Box<dyn FnOnce(Module) -> LocalBoxFuture<'static, ()> + Send + 'static>,
     ) -> Result<(), WasiThreadError> {
         self.send(SchedulerMessage::SpawnWithModule { task, module });
 
@@ -143,7 +132,6 @@ mod tests {
     use futures::{channel::oneshot, FutureExt};
     use wasm_bindgen_futures::JsFuture;
     use wasm_bindgen_test::wasm_bindgen_test;
-    use wasmer::Engine;
 
     use super::*;
 
@@ -157,8 +145,11 @@ mod tests {
         pool.spawn_with_module(
             module.clone(),
             Box::new(move |module| {
-                let exports = module.exports().count();
-                sender.send(exports).unwrap();
+                async move {
+                    let exports = module.exports().count();
+                    sender.send(exports).unwrap();
+                }
+                .boxed_local()
             }),
         )
         .unwrap();
@@ -209,18 +200,21 @@ mod tests {
         let pool = ThreadPool::new();
 
         // Note: The second task depends on the first one completing
-        let first_task = Box::new(move || sender_1.send(()).unwrap());
+        let first_task = Box::new(move || async move { sender_1.send(()).unwrap() }.boxed_local());
         let second_task = Box::new(move || {
-            futures::executor::block_on(receiver_1).unwrap();
-            // let the main thread know we're done
-            sender_2.send(()).unwrap();
+            async move {
+                futures::executor::block_on(receiver_1).unwrap();
+                // let the main thread know we're done
+                sender_2.send(()).unwrap();
+            }
+            .boxed_local()
         });
 
         // Schedule the tasks out of order in quick succession... If there is a
         // race condition where both blocking tasks get sent to the same newly
         // created worker, this triggers it pretty reliably.
-        pool.task_dedicated(second_task).unwrap();
-        pool.task_dedicated(first_task).unwrap();
+        pool.task_shared(second_task).unwrap();
+        pool.task_shared(first_task).unwrap();
 
         // If the tasks ran correctly we should get a value. Otherwise, it'll
         // block forever.

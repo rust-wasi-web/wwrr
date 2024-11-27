@@ -10,7 +10,7 @@ use crate::{
     tasks::{
         interop::{Deserializer, Serializer},
         task_wasm::SpawnWasm,
-        AsyncTask, BlockingModuleTask, BlockingTask,
+        AsyncTask, LocalAsyncModuleTask, LocalAsyncTask,
     },
     utils::Error,
 };
@@ -23,7 +23,7 @@ pub(crate) enum SchedulerMessage {
     /// Run a promise on a worker thread.
     SpawnAsync(#[derivative(Debug(format_with = "crate::utils::hidden"))] AsyncTask),
     /// Run a blocking operation on a worker thread.
-    SpawnBlocking(#[derivative(Debug(format_with = "crate::utils::hidden"))] BlockingTask),
+    SpawnBlocking(#[derivative(Debug(format_with = "crate::utils::hidden"))] LocalAsyncTask),
     /// A message sent from a worker thread.
     /// Mark a worker as idle.
     WorkerIdle { worker_id: u32 },
@@ -34,7 +34,7 @@ pub(crate) enum SchedulerMessage {
     SpawnWithModule {
         module: wasmer::Module,
         #[derivative(Debug(format_with = "crate::utils::hidden"))]
-        task: BlockingModuleTask,
+        task: LocalAsyncModuleTask,
     },
     /// Run a task in the background, explicitly transferring the
     /// [`js_sys::WebAssembly::Module`] to the worker.

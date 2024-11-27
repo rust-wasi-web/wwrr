@@ -4,7 +4,7 @@ use js_sys::WebAssembly;
 use wasm_bindgen::JsValue;
 
 use crate::tasks::{
-    interop::Serializer, task_wasm::SpawnWasm, AsyncTask, BlockingModuleTask, BlockingTask,
+    interop::Serializer, task_wasm::SpawnWasm, AsyncTask, LocalAsyncModuleTask, LocalAsyncTask,
 };
 
 /// A message that will be sent from the scheduler to a worker using
@@ -24,11 +24,11 @@ impl PostMessagePayload {
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub(crate) enum BlockingJob {
-    Thunk(#[derivative(Debug(format_with = "crate::utils::hidden"))] BlockingTask),
+    Thunk(#[derivative(Debug(format_with = "crate::utils::hidden"))] LocalAsyncTask),
     SpawnWithModule {
         module: wasmer::Module,
         #[derivative(Debug(format_with = "crate::utils::hidden"))]
-        task: BlockingModuleTask,
+        task: LocalAsyncModuleTask,
     },
     SpawnWithModuleAndMemory {
         module: wasmer::Module,
@@ -166,7 +166,10 @@ mod tests {
         let msg = PostMessagePayload::Blocking(BlockingJob::Thunk({
             let flag = Arc::clone(&flag);
             Box::new(move || {
-                flag.store(true, Ordering::SeqCst);
+                async move {
+                    flag.store(true, Ordering::SeqCst);
+                }
+                .boxed_local()
             })
         }));
 
@@ -175,7 +178,7 @@ mod tests {
 
         match round_tripped {
             PostMessagePayload::Blocking(BlockingJob::Thunk(task)) => {
-                task();
+                task().await;
                 assert!(flag.load(Ordering::SeqCst));
             }
             _ => unreachable!(),
@@ -213,13 +216,16 @@ mod tests {
         let msg = PostMessagePayload::Blocking(BlockingJob::SpawnWithModule {
             module,
             task: Box::new(|m| {
-                sender
-                    .send(
-                        m.exports()
-                            .map(|e| e.name().to_string())
-                            .collect::<Vec<String>>(),
-                    )
-                    .unwrap();
+                async move {
+                    sender
+                        .send(
+                            m.exports()
+                                .map(|e| e.name().to_string())
+                                .collect::<Vec<String>>(),
+                        )
+                        .unwrap();
+                }
+                .boxed_local()
             }),
         });
 
@@ -232,7 +238,7 @@ mod tests {
             }
             _ => unreachable!(),
         };
-        task(module.into());
+        task(module.into()).await;
         let name = receiver.await.unwrap();
         assert_eq!(
             name,

@@ -1,4 +1,5 @@
 use futures::channel::oneshot;
+use futures::FutureExt;
 use std::sync::Arc;
 use wasm_bindgen::{prelude::*, JsCast};
 use wasmer::ImportsObj;
@@ -72,9 +73,12 @@ async fn run_wasix_inner(wasm_module: WasmModule, config: RunOptions) -> Result<
     tasks.spawn_with_module(
         module,
         Box::new(move |module| {
-            let _span = tracing::debug_span!("run").entered();
-            let result = builder.run(module).map_err(anyhow::Error::new);
-            let _ = exit_code_tx.send(ExitCondition::from_result(result));
+            async move {
+                let _span = tracing::debug_span!("run").entered();
+                let result = builder.run(module).await.map_err(anyhow::Error::new);
+                let _ = exit_code_tx.send(ExitCondition::from_result(result));
+            }
+            .boxed_local()
         }),
     )?;
 
@@ -147,9 +151,9 @@ pub async fn load_wasix(
     let _span = tracing::debug_span!("load").entered();
 
     let imports_obj = ImportsObj(imports_obj);
-
     let reactor = builder
         .load(module, imports_obj)
+        .await
         .map_err(anyhow::Error::new)?;
 
     tracing::info!("module loaded!");

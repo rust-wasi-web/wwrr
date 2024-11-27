@@ -7,7 +7,9 @@ use std::{
 
 use thiserror::Error;
 use virtual_fs::{ArcFile, FileSystem, FsError, TmpFileSystem, VirtualFile};
-use wasmer::{AsStoreMut, ExportsObj, Extern, Imports, ImportsObj, Instance, Module, Store};
+use wasmer::{
+    AsStoreMut, ExportsObj, Extern, Imports, ImportsObj, Instance, Module, RuntimeError, Store,
+};
 
 use crate::{
     fs::{WasiFs, WasiFsRoot, WasiInodes},
@@ -730,27 +732,33 @@ impl WasiEnvBuilder {
     /// Returns the error from `WasiFs::new` if there's an error
     // FIXME: use a proper custom error type
     #[allow(clippy::result_large_err)]
-    pub fn instantiate(
+    pub async fn instantiate(
         self,
         module: Module,
         store: &mut impl AsStoreMut,
         imports_obj: ImportsObj,
     ) -> Result<(Instance, WasiFunctionEnv), WasiRuntimeError> {
         let init = self.build_init()?;
-        WasiEnv::instantiate(init, module, store, imports_obj)
+        WasiEnv::instantiate(init, module, store, imports_obj).await
     }
 
     /// Run the WASI command module by executing its `_start` function.
     #[allow(clippy::result_large_err)]
-    pub fn run(self, module: Module) -> Result<(), WasiRuntimeError> {
+    pub async fn run(self, module: Module) -> Result<(), WasiRuntimeError> {
         let mut store = wasmer::Store::default();
-        self.run_with_store(module, &mut store)
+        self.run_with_store(module, &mut store).await
     }
 
     /// Run the WASI command module by executing its `_start` function.
     #[allow(clippy::result_large_err)]
-    pub fn run_with_store(self, module: Module, store: &mut Store) -> Result<(), WasiRuntimeError> {
-        let (instance, env) = self.instantiate(module, store, ImportsObj::default())?;
+    pub async fn run_with_store(
+        self,
+        module: Module,
+        store: &mut Store,
+    ) -> Result<(), WasiRuntimeError> {
+        let (instance, env) = self
+            .instantiate(module, store, ImportsObj::default())
+            .await?;
 
         let start = instance.exports.get_function("_start")?;
         env.data(&store).thread.set_status_running();
@@ -775,14 +783,22 @@ impl WasiEnvBuilder {
 
     /// Load a WASI reactor module and provide its exports.
     #[allow(clippy::result_large_err)]
-    pub fn load(
+    pub async fn load(
         self,
         module: Module,
         imports_obj: ImportsObj,
     ) -> Result<WasiReactor, WasiRuntimeError> {
         let mut store = wasmer::Store::default();
 
-        let (instance, func_env) = self.instantiate(module, &mut store, imports_obj)?;
+        let (instance, func_env) = self.instantiate(module, &mut store, imports_obj).await?;
+
+        if instance.exports.get_function("_start").is_ok() {
+            return Err(RuntimeError::new(
+                "WASI module is not a reactor because it has a _start function",
+            )
+            .into());
+        }
+
         func_env.data(&store).thread.set_status_running();
 
         Ok(WasiReactor {

@@ -18,7 +18,7 @@ pub struct Instance {
 // unsafe impl Send for Instance {}
 
 impl Instance {
-    pub(crate) fn new(
+    pub(crate) async fn new(
         mut store: &mut impl AsStoreMut,
         module: &Module,
         imports: &Imports,
@@ -27,6 +27,7 @@ impl Instance {
         let instance = module
             .0
             .instantiate(&mut store, imports, imports_obj)
+            .await
             .map_err(|e| InstantiationError::Start(e))?;
 
         Self::from_module_and_instance(store, &module, instance)

@@ -122,6 +122,7 @@ mod tests {
         WasiEnvBuilder::new("trivial")
             .runtime(Arc::new(runtime))
             .run(module)
+            .await
             .unwrap();
     }
 }

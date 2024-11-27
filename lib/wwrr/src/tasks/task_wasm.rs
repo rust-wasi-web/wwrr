@@ -208,6 +208,7 @@ impl ReadySpawnWasm {
             run_type,
             wbg_js_module.clone(),
         )
+        .await
         .context("Unable to initialize the context and store")?;
 
         let properties = TaskWasmRunProperties {
@@ -221,7 +222,7 @@ impl ReadySpawnWasm {
     }
 }
 
-fn build_ctx_and_store(
+async fn build_ctx_and_store(
     module: wasmer::Module,
     memory: JsValue,
     env: WasiEnv,
@@ -252,7 +253,9 @@ fn build_ctx_and_store(
         store_snapshot.as_ref(),
         spawn_type,
         wbg_js_module,
-    ) {
+    )
+    .await
+    {
         Ok(a) => a,
         Err(err) => {
             tracing::error!(

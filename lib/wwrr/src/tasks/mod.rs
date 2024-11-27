@@ -41,6 +41,8 @@ mod thread_pool_worker;
 mod worker_handle;
 mod worker_message;
 
+use futures::future::LocalBoxFuture;
+
 pub(crate) use self::{
     post_message_payload::{AsyncJob, BlockingJob, PostMessagePayload},
     scheduler::Scheduler,
@@ -53,5 +55,6 @@ pub(crate) use self::{
 use std::{future::Future, pin::Pin};
 
 type AsyncTask = Box<dyn FnOnce() -> Pin<Box<dyn Future<Output = ()> + 'static>> + Send + 'static>;
-type BlockingTask = Box<dyn FnOnce() + Send + 'static>;
-type BlockingModuleTask = Box<dyn FnOnce(wasmer::Module) + Send + 'static>;
+type LocalAsyncTask = Box<dyn FnOnce() -> LocalBoxFuture<'static, ()> + Send + 'static>;
+type LocalAsyncModuleTask =
+    Box<dyn FnOnce(wasmer::Module) -> LocalBoxFuture<'static, ()> + Send + 'static>;

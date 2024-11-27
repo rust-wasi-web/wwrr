@@ -48,16 +48,15 @@ impl ThreadPoolWorker {
         Ok(())
     }
 
-    // TODO: change to async
     async fn execute_blocking(&self, job: BlockingJob) -> Result<(), crate::utils::Error> {
         match job {
             BlockingJob::Thunk(thunk) => {
                 let _guard = self.busy();
-                thunk();
+                thunk().await;
             }
             BlockingJob::SpawnWithModule { module, task } => {
                 let _guard = self.busy();
-                task(module.into());
+                task(module.into()).await;
             }
             BlockingJob::SpawnWithModuleAndMemory {
                 module,

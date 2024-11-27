@@ -2,8 +2,8 @@ use std::ops::Deref;
 use std::{pin::Pin, time::Duration};
 
 use derivative::Derivative;
-use futures::future::{BoxFuture, LocalBoxFuture};
-use futures::{Future, TryFutureExt};
+use futures::future::LocalBoxFuture;
+use futures::Future;
 use wasm_bindgen::JsValue;
 use wasmer::{Memory, MemoryType, Module, Store, StoreMut, StoreRef};
 
@@ -167,28 +167,19 @@ pub trait VirtualTaskManager: std::fmt::Debug + Send + Sync + 'static {
     /// limitations on what a `task` can and can't contain.
     fn task_shared(
         &self,
-        task: Box<dyn FnOnce() -> BoxFuture<'static, ()> + Send + 'static>,
+        task: Box<dyn FnOnce() -> LocalBoxFuture<'static, ()> + Send + 'static>,
     ) -> Result<(), WasiThreadError>;
 
-    /// Run a blocking WebAssembly operation on the thread pool.
+    /// Run a WebAssembly operation on the thread pool.
     ///
     /// This is primarily used inside the context of a syscall and allows
     /// the transfer of things like [`wasmer::Module`] across threads.
     fn task_wasm(&self, task: TaskWasm) -> Result<(), WasiThreadError>;
 
-    /// Run a blocking operation on the thread pool.
-    ///
-    /// It is okay for this task to block execution and any async futures within
-    /// its scope.
-    fn task_dedicated(
-        &self,
-        task: Box<dyn FnOnce() + Send + 'static>,
-    ) -> Result<(), WasiThreadError>;
-
     /// Returns the amount of parallelism that is possible on this platform.
     fn thread_parallelism(&self) -> Result<usize, WasiThreadError>;
 
-    /// Schedule a blocking task to run on the threadpool, explicitly
+    /// Schedule a task to run on the threadpool, explicitly
     /// transferring a [`Module`] to the task.
     ///
     /// This should be preferred over [`VirtualTaskManager::task_dedicated()`]
@@ -205,12 +196,12 @@ pub trait VirtualTaskManager: std::fmt::Debug + Send + Sync + 'static {
     fn spawn_with_module(
         &self,
         module: Module,
-        task: Box<dyn FnOnce(Module) + Send + 'static>,
+        task: Box<dyn FnOnce(Module) -> LocalBoxFuture<'static, ()> + Send + 'static>,
     ) -> Result<(), WasiThreadError> {
         // Note: Ideally, this function and task_wasm() would be superseded by
         // a more general mechanism for transferring non-thread safe values
         // to the thread pool.
-        self.task_dedicated(Box::new(move || task(module)))
+        self.task_shared(Box::new(move || task(module)))
     }
 }
 
@@ -236,20 +227,13 @@ where
 
     fn task_shared(
         &self,
-        task: Box<dyn FnOnce() -> BoxFuture<'static, ()> + Send + 'static>,
+        task: Box<dyn FnOnce() -> LocalBoxFuture<'static, ()> + Send + 'static>,
     ) -> Result<(), WasiThreadError> {
         (**self).task_shared(task)
     }
 
     fn task_wasm(&self, task: TaskWasm) -> Result<(), WasiThreadError> {
         (**self).task_wasm(task)
-    }
-
-    fn task_dedicated(
-        &self,
-        task: Box<dyn FnOnce() + Send + 'static>,
-    ) -> Result<(), WasiThreadError> {
-        (**self).task_dedicated(task)
     }
 
     fn thread_parallelism(&self) -> Result<usize, WasiThreadError> {
@@ -259,7 +243,7 @@ where
     fn spawn_with_module(
         &self,
         module: Module,
-        task: Box<dyn FnOnce(Module) + Send + 'static>,
+        task: Box<dyn FnOnce(Module) -> LocalBoxFuture<'static, ()> + Send + 'static>,
     ) -> Result<(), WasiThreadError> {
         (**self).spawn_with_module(module, task)
     }
@@ -275,14 +259,6 @@ pub trait VirtualTaskManagerExt {
     ) -> Result<A, anyhow::Error>
     where
         A: Send + 'static;
-
-    fn spawn_await<O, F>(
-        &self,
-        f: F,
-    ) -> Box<dyn Future<Output = Result<O, Box<dyn std::error::Error>>> + Unpin + Send + 'static>
-    where
-        O: Send + 'static,
-        F: FnOnce() -> O + Send + 'static;
 }
 
 impl<D, T> VirtualTaskManagerExt for D
@@ -307,24 +283,5 @@ where
         self.task_shared(Box::new(move || work)).unwrap();
         rx.blocking_recv()
             .map_err(|_| anyhow::anyhow!("task execution failed - result channel dropped"))
-    }
-
-    fn spawn_await<O, F>(
-        &self,
-        f: F,
-    ) -> Box<dyn Future<Output = Result<O, Box<dyn std::error::Error>>> + Unpin + Send + 'static>
-    where
-        O: Send + 'static,
-        F: FnOnce() -> O + Send + 'static,
-    {
-        let (sender, receiver) = ::tokio::sync::oneshot::channel();
-
-        self.task_dedicated(Box::new(move || {
-            let result = f();
-            let _ = sender.send(result);
-        }))
-        .unwrap();
-
-        Box::new(receiver.map_err(|e| Box::new(e).into()))
     }
 }
