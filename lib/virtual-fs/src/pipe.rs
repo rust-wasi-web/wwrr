@@ -3,8 +3,8 @@ use std::io::IoSlice;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::ops::DerefMut;
 use std::pin::Pin;
-use std::sync::Arc;
-use std::sync::Mutex;
+use std::sync::{Arc, RwLock};
+use std::sync::{Mutex, TryLockError};
 use std::task::Context;
 use std::task::Poll;
 use tokio::io::{AsyncRead, AsyncSeek, AsyncWrite};
@@ -23,7 +23,7 @@ pub struct Pipe {
 #[derive(Debug, Clone)]
 pub struct PipeTx {
     /// Sends bytes down the pipe
-    tx: Arc<Mutex<mpsc::UnboundedSender<Vec<u8>>>>,
+    tx_opt: Arc<RwLock<Option<mpsc::UnboundedSender<Vec<u8>>>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -82,7 +82,7 @@ impl Pipe {
 
         Pipe {
             send: PipeTx {
-                tx: Arc::new(Mutex::new(tx)),
+                tx_opt: Arc::new(RwLock::new(Some(tx))),
             },
             recv: PipeRx {
                 rx: Arc::new(Mutex::new(PipeReceiver {
@@ -135,12 +135,23 @@ impl Pipe {
 
 impl PipeTx {
     pub fn close(&self) {
-        // TODO: proper close() implementation - Propably want to store the writer in an Option<>
-        let (mut null_tx, _) = mpsc::unbounded_channel();
-        {
-            let mut guard = self.tx.lock().unwrap();
-            std::mem::swap(guard.deref_mut(), &mut null_tx);
-        }
+        // Sadly the only way to obtain the write lock is to busy wait on it.
+        // This is because we are not allowed to use any wait instructions
+        // in the main WebAssembly thread. However, all locks are held for
+        // very short periods of time since writing to the sender is
+        // non-blocking. Thus, this is not as bad as it looks.
+        let mut tx_opt = loop {
+            match self.tx_opt.try_write() {
+                Ok(guard) => break guard,
+                Err(TryLockError::WouldBlock) => (),
+                Err(TryLockError::Poisoned(_)) => {
+                    tracing::error!("pipe has been poisoned");
+                    return;
+                }
+            }
+        };
+
+        *tx_opt = None;
     }
 }
 
@@ -223,9 +234,17 @@ impl std::io::Write for Pipe {
 
 impl std::io::Write for PipeTx {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let tx = self.tx.lock().unwrap();
+        let Ok(tx_opt) = self.tx_opt.try_read() else {
+            return Err(std::io::ErrorKind::BrokenPipe.into());
+        };
+
+        let Some(tx) = &*tx_opt else {
+            return Err(std::io::ErrorKind::BrokenPipe.into());
+        };
+
         tx.send(buf.to_vec())
             .map_err(|_| Into::<std::io::Error>::into(std::io::ErrorKind::BrokenPipe))?;
+
         Ok(buf.len())
     }
 
@@ -303,8 +322,15 @@ impl AsyncWrite for PipeTx {
         _cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
-        let guard = self.tx.lock().unwrap();
-        match guard.send(buf.to_vec()) {
+        let Ok(tx_opt) = self.tx_opt.try_read() else {
+            return Poll::Ready(Err(std::io::ErrorKind::BrokenPipe.into()));
+        };
+
+        let Some(tx) = &*tx_opt else {
+            return Poll::Ready(Err(std::io::ErrorKind::BrokenPipe.into()));
+        };
+
+        match tx.send(buf.to_vec()) {
             Ok(()) => Poll::Ready(Ok(buf.len())),
             Err(_) => Poll::Ready(Err(Into::<std::io::Error>::into(
                 std::io::ErrorKind::BrokenPipe,
@@ -396,14 +422,17 @@ impl VirtualFile for Pipe {
         Ok(())
     }
 
-    /// Indicates if the file is opened or closed. This function must not block
-    /// Defaults to a status of being constantly open
+    /// Indicates if the file is opened or closed.
     fn is_open(&self) -> bool {
-        self.send
-            .tx
-            .try_lock()
-            .map(|a| !a.is_closed())
-            .unwrap_or_else(|_| true)
+        let Ok(tx_opt) = self.send.tx_opt.try_read() else {
+            return false;
+        };
+
+        let Some(tx) = &*tx_opt else {
+            return false;
+        };
+
+        tx.is_closed()
     }
 
     /// Polls the file for when there is data to be read
@@ -432,7 +461,14 @@ impl VirtualFile for Pipe {
 
     /// Polls the file for when it is available for writing
     fn poll_write_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<usize>> {
-        let tx = self.send.tx.lock().unwrap();
+        let Ok(tx_opt) = self.send.tx_opt.try_read() else {
+            return Poll::Ready(Ok(0));
+        };
+
+        let Some(tx) = &*tx_opt else {
+            return Poll::Ready(Ok(0));
+        };
+
         if tx.is_closed() {
             Poll::Ready(Ok(0))
         } else {

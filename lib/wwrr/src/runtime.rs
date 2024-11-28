@@ -103,7 +103,7 @@ impl wasmer_wasix::runtime::Runtime for Runtime {
 mod tests {
     use wasm_bindgen_test::wasm_bindgen_test;
     use wasmer::Module;
-    use wasmer_wasix::{Runtime as _, WasiEnvBuilder};
+    use wasmer_wasix::WasiEnvBuilder;
 
     use super::*;
 
