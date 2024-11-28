@@ -19,6 +19,16 @@ impl PostMessagePayload {
     pub(crate) fn would_block(&self) -> bool {
         matches!(self, PostMessagePayload::Blocking(_))
     }
+
+    /// Whether the worker is reusable after executing the payload.
+    pub(crate) fn is_woker_reusable(&self) -> bool {
+        !matches!(
+            self,
+            Self::Blocking(
+                BlockingJob::SpawnWithModule { .. } | BlockingJob::SpawnWithModuleAndMemory { .. }
+            )
+        )
+    }
 }
 
 #[derive(Derivative)]

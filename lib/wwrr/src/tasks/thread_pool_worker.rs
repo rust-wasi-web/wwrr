@@ -1,6 +1,7 @@
 use js_sys::Promise;
-use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
+use wasm_bindgen::{prelude::wasm_bindgen, JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
+use web_sys::DedicatedWorkerGlobalScope;
 
 use crate::tasks::{AsyncJob, BlockingJob, PostMessagePayload, WorkerMessage};
 
@@ -57,12 +58,16 @@ impl ThreadPoolWorker {
             BlockingJob::SpawnWithModule { module, task } => {
                 let _guard = self.busy();
                 task(module.into()).await;
+                self.close();
             }
             BlockingJob::SpawnWithModuleAndMemory {
                 module,
                 memory,
                 spawn_wasm,
             } => {
+                let _guard = self.busy();
+
+                // Import wasm-bindgen generated code.
                 let wbg_mod = match &spawn_wasm.env.wbg_js_module_name {
                     Some(wbg_js_module_name) => {
                         tracing::debug!(
@@ -81,13 +86,23 @@ impl ThreadPoolWorker {
                     None => None,
                 };
 
+                // Execute spawned thread.
                 let task = spawn_wasm.begin().await;
-                let _guard = self.busy();
                 task.execute(module, memory.into(), wbg_mod).await?;
+
+                // Terminate web worker.
+                self.close();
             }
         }
 
         Ok(())
+    }
+
+    /// Terminate this web worker.
+    fn close(&self) {
+        tracing::info!("Terminating web worker");
+        let scope: DedicatedWorkerGlobalScope = js_sys::global().dyn_into().unwrap();
+        scope.close();
     }
 }
 

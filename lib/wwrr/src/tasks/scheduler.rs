@@ -109,6 +109,8 @@ struct SchedulerState {
     /// Workers that are currently blocked on synchronous operations and can't
     /// receive work at this time.
     busy: VecDeque<WorkerHandle>,
+    /// Workers that are busy and cannot be reused afterwards.
+    busy_non_reusable: VecDeque<WorkerHandle>,
     /// A channel that can be used to send messages to this scheduler.
     mailbox: Scheduler,
 }
@@ -118,6 +120,7 @@ impl SchedulerState {
         SchedulerState {
             idle: VecDeque::new(),
             busy: VecDeque::new(),
+            busy_non_reusable: VecDeque::new(),
             mailbox,
         }
     }
@@ -163,6 +166,7 @@ impl SchedulerState {
                 Ok(())
             }
             SchedulerMessage::WorkerIdle { worker_id } => {
+                self.busy_non_reusable.retain(|w| w.id() != worker_id);
                 move_worker(worker_id, &mut self.busy, &mut self.idle);
                 tracing::trace!(
                     worker.id=worker_id,
@@ -179,17 +183,22 @@ impl SchedulerState {
     /// Send a task to one of the worker threads, preferring workers that aren't
     /// running synchronous work.
     fn post_message(&mut self, msg: PostMessagePayload) -> Result<(), Error> {
-        let worker = self.next_available_worker()?;
-
+        let reusable = msg.is_woker_reusable();
         let would_block = msg.would_block();
+
+        let worker = self.next_available_worker()?;
         worker
             .send(msg)
             .with_context(|| format!("Unable to send a message to worker {}", worker.id()))?;
 
-        if would_block {
-            self.busy.push_back(worker);
+        if reusable {
+            if would_block {
+                self.busy.push_back(worker);
+            } else {
+                self.idle.push_back(worker);
+            }
         } else {
-            self.idle.push_back(worker);
+            self.busy_non_reusable.push_back(worker);
         }
 
         Ok(())
