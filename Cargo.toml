@@ -13,13 +13,13 @@ members = [
 resolver = "2"
 
 [workspace.package]
-authors = ["Wasmer Engineering Team <engineering@wasmer.io>"]
+authors = ["Sebastian Urban <surban@surban.net>", "Wasmer Engineering Team <engineering@wasmer.io>"]
+homepage = ""
+repository = "https://github.com/rust-wasi-web/wwrr"
 edition = "2021"
-homepage = "https://wasmer.io/"
 license = "MIT"
-repository = "https://github.com/wasmerio/wasmer"
 rust-version = "1.74"
-version = "4.3.7"
+version = "0.1.0"
 
 [workspace.dependencies]
 ahash = "0.8"

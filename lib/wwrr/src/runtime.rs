@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex, Weak};
 use lazy_static::lazy_static;
 use once_cell::sync::Lazy;
 use virtual_net::VirtualNetworking;
+use wasmer::VERSION;
 use wasmer_wasix::{runtime::module_cache::ThreadLocalCache, VirtualTaskManager};
 
 lazy_static! {
@@ -38,6 +39,7 @@ impl Runtime {
             Ok(mut guard) => match guard.upgrade() {
                 Some(rt) => Ok(rt),
                 None => {
+                    tracing::info!("WWRR - WASI Web Reactor Runtime - version {VERSION}");
                     tracing::debug!("Initializing the global runtime");
                     let rt = Arc::new(Runtime::with_defaults()?);
                     *guard = Arc::downgrade(&rt);

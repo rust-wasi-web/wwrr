@@ -1,7 +1,7 @@
 [package]
 name = "wwrr"
-description = "WASI Web Reactor Runner"
-version = "0.0.0"
+description = "WASI Web Reactor Runtime"
+version.workspace = true
 authors = ["Sebastian Urban <surban@surban.net>", "Syrus Akbary <syrus@wasmer.io>"]
 edition = "2021"
 publish = false

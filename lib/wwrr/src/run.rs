@@ -156,8 +156,6 @@ pub async fn load_wasix(
         .await
         .map_err(anyhow::Error::new)?;
 
-    tracing::info!("module loaded!");
-
     Ok(WasiReactorInstance {
         reactor: Arc::new(reactor),
         stdin,
