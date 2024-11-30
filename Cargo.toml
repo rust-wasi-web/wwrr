@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "lib/api",
+    "lib/bindgen-cli",
     "lib/derive",
     "lib/wwrr",
     "lib/types",
@@ -13,7 +14,10 @@ members = [
 resolver = "2"
 
 [workspace.package]
-authors = ["Sebastian Urban <surban@surban.net>", "Wasmer Engineering Team <engineering@wasmer.io>"]
+authors = [
+    "Sebastian Urban <surban@surban.net>",
+    "Wasmer Engineering Team <engineering@wasmer.io>",
+]
 homepage = ""
 repository = "https://github.com/rust-wasi-web/wwrr"
 edition = "2021"
@@ -37,6 +41,7 @@ console_error_panic_hook = "0.1"
 cooked-waker = "5"
 dashmap = "6.0.1"
 derivative = "2"
+docopt = "1"
 enum-iterator = "0.7"
 enumset = "1.1.0"
 futures = "0.3"
@@ -80,7 +85,9 @@ tracing-wasm = "0.2"
 wai-bindgen-rust = { version = "0.2.1", default-features = false }
 waker-fn = "1.1"
 wasm-bindgen = "0.2"
+wasm-bindgen-cli-support = "0.2"
 wasm-bindgen-futures = "0.4"
+wasm-bindgen-shared = "0.2"
 wasm-bindgen-test = "0.3"
 wasmparser = { version = "0.121", default-features = false }
 web-sys = "0.3"

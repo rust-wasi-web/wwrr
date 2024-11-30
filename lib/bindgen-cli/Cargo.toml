@@ -1,0 +1,18 @@
+[package]
+name = "bindgen-cli"
+description = "Call version-matching wasm-bindgen"
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+docopt = { workspace = true }
+serde = { workspace = true }
+tracing-subscriber = { workspace = true }
+wasm-bindgen-cli-support = { workspace = true }
+wasm-bindgen-shared = { workspace = true }
