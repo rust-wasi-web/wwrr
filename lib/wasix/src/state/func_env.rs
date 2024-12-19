@@ -5,7 +5,7 @@ use tracing::trace;
 use wasm_bindgen::{JsCast, JsValue};
 use wasmer::{
     AsStoreMut, AsStoreRef, ExportError, FunctionEnv, Imports, ImportsObj, Instance, Memory,
-    Module, Store,
+    Module, Store, Value,
 };
 use wasmer_wasix_types::wasi::ExitCode;
 
@@ -120,7 +120,7 @@ impl WasiFunctionEnv {
         })?;
 
         // Initialize the WASI environment
-        ctx.initialize_with_memory(&mut store, instance, memory)
+        ctx.initialize_with_memory(&mut store, instance.clone(), memory)
             .map_err(|err| {
                 tracing::warn!("failed initialize environment - {}", err);
                 WasiThreadError::ExportError(err)
@@ -129,6 +129,13 @@ impl WasiFunctionEnv {
         // Set all the globals
         if let Some(snapshot) = store_snapshot {
             restore_store_snapshot(&mut store, snapshot);
+        }
+
+        // Enable wait operations on workers.
+        if let Ok(wait_prohibited) = instance.exports.get_global("wait_prohibited") {
+            wait_prohibited
+                .set(&mut store, Value::I32(0))
+                .map_err(|err| WasiThreadError::InitFailed(Arc::new(err.into())))?;
         }
 
         Ok((ctx, store))
