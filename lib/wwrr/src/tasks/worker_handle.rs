@@ -26,6 +26,7 @@ impl WorkerHandle {
 
         let wo = web_sys::WorkerOptions::new();
         wo.set_name(&name);
+        wo.set_type(web_sys::WorkerType::Module);
 
         let worker =
             web_sys::Worker::new_with_options(&WORKER_URL, &wo).map_err(crate::utils::js_error)?;
