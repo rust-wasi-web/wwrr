@@ -20,13 +20,11 @@ impl WasmModule {
         &self,
         runtime: &dyn wasmer_wasix::Runtime,
     ) -> Result<wasmer::Module, Error> {
-        if let Some(buffer) = self.dyn_ref::<js_sys::Uint8Array>() {
-            let buffer = buffer.to_vec();
-            let module = runtime.load_module(&buffer).await?;
-            Ok(module)
-        } else {
-            unreachable!();
-        }
+        let Some(buffer) = self.dyn_ref::<js_sys::Uint8Array>() else {
+            unreachable!()
+        };
+
+        Ok(runtime.load_module(&buffer.to_vec()).await?)
     }
 }
 
@@ -127,10 +125,9 @@ pub async fn load_wasix(
 ) -> Result<WasiReactorInstance, Error> {
     // Check whehther our memory is shared, so that we can start web workers.
     let our_memory = wasm_bindgen::memory();
-    assert!(
-        is_memory_shared(our_memory.dyn_ref().unwrap()),
-        "wwrr memory is not shared"
-    );
+    if !is_memory_shared(our_memory.dyn_ref().unwrap()) {
+        return Err(anyhow::anyhow!("wwrr memory is not shared").into());
+    }
 
     let mut runtime = config.runtime().resolve()?.into_inner();
     runtime = Arc::new(runtime.with_default_pool());
