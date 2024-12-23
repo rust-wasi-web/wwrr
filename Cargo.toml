@@ -99,3 +99,11 @@ rustc-demangle = "0.1"
 [profile.release]
 lto = true
 opt-level = 'z'
+
+
+[patches.crates-io]
+wasm-bindgen = { path = "../wasm-bindgen" }
+wasm-bindgen-cli-support = { path = "../wasm-bindgen/crates/cli-support" }
+wasm-bindgen-futures = { path = "../wasm-bindgen/crates/futures" }
+wasm-bindgen-shared = { path = "../wasm-bindgen/crates/shared" }
+wasm-bindgen-test = { path = "../wasm-bindgen/crates/test" }
