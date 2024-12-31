@@ -7,6 +7,7 @@ use wasm_bindgen::convert::TryFromJsValue;
 use wasm_bindgen::{prelude::wasm_bindgen, JsCast, JsValue, UnwrapThrowExt};
 use wasmer_wasix::WasiEnvBuilder;
 
+use crate::streams::{ConsoleFile, ConsoleTarget};
 use crate::{runtime::Runtime, utils::Error, Directory, DirectoryInit, JsRuntime, StringOrBytes};
 
 #[wasm_bindgen]
@@ -31,6 +32,10 @@ type CommonOptions = {
     env?: Record<string, string>;
     /** The standard input stream. */
     stdin?: string | Uint8Array;
+    /** If true, stdout can be read from the returned instance */
+    streamStdout?: bool;
+    /** If true, stderr can be read from the returned instance */
+    streamStderr?: bool;    
     /**
      * Directories that should be mounted inside the WASIX instance.
      *
@@ -58,6 +63,8 @@ export type RunOptions = CommonOptions & {
      * created.
      */
     runtime?: Runtime;
+    /** The name of the WebAssembly module (.wasm file) to load */
+    module?: string;
 };
 
 /**
@@ -85,6 +92,12 @@ extern "C" {
 
     #[wasm_bindgen(method, getter)]
     fn stdin(this: &CommonOptions) -> Option<StringOrBytes>;
+
+    #[wasm_bindgen(method, getter)]
+    fn streamStdout(this: &CommonOptions) -> Option<bool>;
+
+    #[wasm_bindgen(method, getter)]
+    fn streamStderr(this: &CommonOptions) -> Option<bool>;
 
     #[wasm_bindgen(method, getter)]
     fn mount(this: &CommonOptions) -> OptionalDirectories;
@@ -200,10 +213,18 @@ impl RunOptions {
         };
 
         let (stdout_file, stdout) = crate::streams::output_pipe();
-        builder.set_stdout(Box::new(stdout_file));
+        if self.streamStdout().unwrap_or_default() {
+            builder.set_stdout(Box::new(stdout_file));
+        } else {
+            builder.set_stdout(Box::new(ConsoleFile::new(ConsoleTarget::Info)));
+        }
 
         let (stderr_file, stderr) = crate::streams::output_pipe();
-        builder.set_stderr(Box::new(stderr_file));
+        if self.streamStderr().unwrap_or_default() {
+            builder.set_stderr(Box::new(stderr_file));
+        } else {
+            builder.set_stderr(Box::new(ConsoleFile::new(ConsoleTarget::Info)));
+        }
 
         let fs = self.filesystem()?;
         builder.set_fs(Box::new(fs));

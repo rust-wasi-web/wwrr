@@ -1,9 +1,14 @@
-use anyhow::Context;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+
+use anyhow::Context as _;
 use bytes::BytesMut;
 use futures::{future::Either, Stream};
 use js_sys::{JsString, Promise, Reflect, Uint8Array};
 use tracing::Instrument;
-use virtual_fs::{AsyncReadExt, AsyncWriteExt, Pipe};
+use virtual_fs::{
+    AsyncRead, AsyncReadExt, AsyncSeek, AsyncWrite, AsyncWriteExt, FsError, Pipe, VirtualFile,
+};
 use wasm_bindgen::{prelude::wasm_bindgen, JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{
@@ -267,6 +272,154 @@ fn get_chunk(next_chunk: JsValue) -> Result<Option<Vec<u8>>, Error> {
     let chunk = Uint8Array::new(&chunk);
 
     Ok(Some(chunk.to_vec()))
+}
+
+/// Console target.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[allow(dead_code)]
+pub enum ConsoleTarget {
+    /// Info.
+    Info,
+    /// Warning.
+    Warn,
+    /// Error.
+    Error,
+}
+
+/// File that writes to the JavaScript console.
+#[derive(Debug)]
+pub struct ConsoleFile {
+    target: ConsoleTarget,
+    line: Vec<u8>,
+}
+
+impl ConsoleFile {
+    /// Creates a new file that writes to the JavaScript console.
+    pub fn new(target: ConsoleTarget) -> Self {
+        Self {
+            target,
+            line: Vec::new(),
+        }
+    }
+
+    /// Output buffered line to console.
+    fn output(&mut self) {
+        let line = String::from_utf8_lossy(&self.line);
+        let value = &JsValue::from_str(&*line);
+
+        match self.target {
+            ConsoleTarget::Info => web_sys::console::info_1(value),
+            ConsoleTarget::Warn => web_sys::console::warn_1(value),
+            ConsoleTarget::Error => web_sys::console::error_1(value),
+        }
+
+        self.line.clear();
+    }
+}
+
+impl Drop for ConsoleFile {
+    fn drop(&mut self) {
+        if !self.line.is_empty() {
+            self.output();
+        }
+    }
+}
+
+impl VirtualFile for ConsoleFile {
+    fn last_accessed(&self) -> u64 {
+        0
+    }
+
+    fn last_modified(&self) -> u64 {
+        0
+    }
+
+    fn created_time(&self) -> u64 {
+        0
+    }
+
+    fn size(&self) -> u64 {
+        0
+    }
+
+    fn set_len(&mut self, _new_size: u64) -> virtual_fs::Result<()> {
+        Err(FsError::PermissionDenied)
+    }
+
+    fn unlink(&mut self) -> virtual_fs::Result<()> {
+        Ok(())
+    }
+
+    fn poll_read_ready(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<std::io::Result<usize>> {
+        Poll::Ready(Ok(8192))
+    }
+
+    fn poll_write_ready(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<std::io::Result<usize>> {
+        Poll::Ready(Ok(8192))
+    }
+}
+
+impl AsyncSeek for ConsoleFile {
+    fn start_seek(self: Pin<&mut Self>, _position: std::io::SeekFrom) -> std::io::Result<()> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "cannot seek console",
+        ))
+    }
+
+    fn poll_complete(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<u64>> {
+        Poll::Ready(Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "cannot seek console",
+        )))
+    }
+}
+
+impl AsyncWrite for ConsoleFile {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        _cx: &mut Context,
+        buf: &[u8],
+    ) -> Poll<Result<usize, std::io::Error>> {
+        let this = self.get_mut();
+
+        for &c in buf {
+            if c == b'\n' {
+                this.output();
+            } else {
+                this.line.push(c);
+            }
+        }
+
+        Poll::Ready(Ok(buf.len()))
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<Result<(), std::io::Error>> {
+        let this = self.get_mut();
+
+        if !this.line.is_empty() {
+            this.output();
+        }
+
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<Result<(), std::io::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+}
+
+impl AsyncRead for ConsoleFile {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        _cx: &mut Context,
+        _buf: &mut virtual_fs::ReadBuf,
+    ) -> Poll<std::io::Result<()>> {
+        Poll::Ready(Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "cannot read console",
+        )))
+    }
 }
 
 #[cfg(test)]
