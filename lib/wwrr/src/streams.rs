@@ -395,12 +395,6 @@ impl AsyncWrite for ConsoleFile {
     }
 
     fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<Result<(), std::io::Error>> {
-        let this = self.get_mut();
-
-        if !this.line.is_empty() {
-            this.output();
-        }
-
         Poll::Ready(Ok(()))
     }
 
