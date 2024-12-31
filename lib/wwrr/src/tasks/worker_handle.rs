@@ -153,7 +153,7 @@ fn import_meta_url() -> String {
     #[wasm_bindgen]
     #[allow(non_snake_case)]
     extern "C" {
-        #[wasm_bindgen(thread_local, js_namespace = ["import", "meta"], js_name = url)]
+        #[wasm_bindgen(thread_local_v2, js_namespace = ["import", "meta"], js_name = url)]
         static IMPORT_META_URL: String;
     }
 
