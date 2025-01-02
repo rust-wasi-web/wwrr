@@ -216,14 +216,14 @@ impl RunOptions {
         if self.streamStdout().unwrap_or_default() {
             builder.set_stdout(Box::new(stdout_file));
         } else {
-            builder.set_stdout(Box::new(ConsoleFile::new(ConsoleTarget::Info)));
+            builder.set_stdout(Box::new(ConsoleFile::new(ConsoleTarget::Log)));
         }
 
         let (stderr_file, stderr) = crate::streams::output_pipe();
         if self.streamStderr().unwrap_or_default() {
             builder.set_stderr(Box::new(stderr_file));
         } else {
-            builder.set_stderr(Box::new(ConsoleFile::new(ConsoleTarget::Info)));
+            builder.set_stderr(Box::new(ConsoleFile::new(ConsoleTarget::Log)));
         }
 
         let fs = self.filesystem()?;

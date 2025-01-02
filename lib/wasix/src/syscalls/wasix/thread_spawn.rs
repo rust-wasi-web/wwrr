@@ -239,12 +239,12 @@ pub(crate) fn thread_hold_internal<M: MemorySize + 'static>(
     let tid = env.tid();
 
     let Some(thread_set_actions) = unsafe { env.inner() }.thread_set_actions.clone() else {
-        tracing::warn!(tid = %tid, "attempt to hold thread without exporting wasi_thread_set_actions");
+        tracing::error!(tid = %tid, "attempt to hold thread without exporting wasi_thread_set_actions");
         return Ok(Errno::Notsup);
     };
 
     if env.thread_start_executed {
-        tracing::warn!(tid = %tid, "attempt to hold thread in cleanup");
+        tracing::error!(tid = %tid, "attempt to hold thread in cleanup");
         return Ok(Errno::Already);
     }
 
@@ -253,7 +253,7 @@ pub(crate) fn thread_hold_internal<M: MemorySize + 'static>(
     env.thread_release_rx = Some(rx);
 
     if let Err(err) = thread_set_actions.call(&mut ctx, ThreadActions::NO_FINISH.bits()) {
-        warn!("cannot set thread actions for holding: {err}");
+        tracing::error!("cannot set thread actions for holding: {err}");
     }
 
     tracing::debug!(tid = %tid, "thread will be held after start function finishes");
@@ -267,7 +267,7 @@ pub(crate) fn thread_release_internal<M: MemorySize + 'static>(
     let tid = env.tid();
 
     let Some(tx) = env.thread_release_tx.take() else {
-        tracing::warn!(tid = %tid, "attempt to release thread that is not being held");
+        tracing::error!(tid = %tid, "attempt to release thread that is not being held");
         return Ok(Errno::Already);
     };
 

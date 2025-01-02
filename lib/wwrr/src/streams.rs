@@ -278,6 +278,8 @@ fn get_chunk(next_chunk: JsValue) -> Result<Option<Vec<u8>>, Error> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[allow(dead_code)]
 pub enum ConsoleTarget {
+    /// Log.
+    Log,
     /// Info.
     Info,
     /// Warning.
@@ -308,6 +310,7 @@ impl ConsoleFile {
         let value = &JsValue::from_str(&*line);
 
         match self.target {
+            ConsoleTarget::Log => web_sys::console::log_1(value),
             ConsoleTarget::Info => web_sys::console::info_1(value),
             ConsoleTarget::Warn => web_sys::console::warn_1(value),
             ConsoleTarget::Error => web_sys::console::error_1(value),
@@ -399,7 +402,7 @@ impl AsyncWrite for ConsoleFile {
     }
 
     fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<Result<(), std::io::Error>> {
-        std::task::Poll::Ready(Ok(()))
+        Poll::Ready(Ok(()))
     }
 }
 

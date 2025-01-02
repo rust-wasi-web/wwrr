@@ -1,6 +1,7 @@
 use std::io::{ErrorKind, Write};
 
 use tokio::sync::mpsc;
+use tracing::Level;
 use tracing_subscriber::{
     fmt::{format::FmtSpan, MakeWriter},
     EnvFilter,
@@ -106,7 +107,13 @@ pub fn initialize_logger(log_config: LogConfig) -> Result<(), crate::utils::Erro
 #[derive(Debug)]
 struct ConsoleLogger {
     buffer: Vec<u8>,
-    sender: mpsc::UnboundedSender<String>,
+    sender: mpsc::UnboundedSender<LogMsg>,
+    level: Option<Level>,
+}
+
+struct LogMsg {
+    level: Option<Level>,
+    msg: String,
 }
 
 impl ConsoleLogger {
@@ -121,17 +128,45 @@ impl ConsoleLogger {
         let (sender, mut receiver) = mpsc::unbounded_channel();
 
         wasm_bindgen_futures::spawn_local(async move {
-            while let Some(msg) = receiver.recv().await {
+            while let Some(LogMsg { level, msg }) = receiver.recv().await {
                 let msg = format!("{prefix} {msg}");
                 let js_string = JsValue::from(msg);
-                web_sys::console::log_1(&js_string);
+                match level {
+                    Some(Level::DEBUG) => web_sys::console::debug_1(&js_string),
+                    Some(Level::INFO) => web_sys::console::info_1(&js_string),
+                    Some(Level::ERROR) => web_sys::console::error_1(&js_string),
+                    Some(Level::WARN) => web_sys::console::warn_1(&js_string),
+                    Some(Level::TRACE) => web_sys::console::trace_1(&js_string),
+                    None => web_sys::console::log_1(&js_string),
+                }
             }
         });
 
-        move || ConsoleLogger {
-            buffer: Vec::new(),
-            sender: sender.clone(),
+        struct MakeConsoleLogger {
+            sender: mpsc::UnboundedSender<LogMsg>,
         }
+
+        impl<'a> MakeWriter<'a> for MakeConsoleLogger {
+            type Writer = ConsoleLogger;
+
+            fn make_writer(&self) -> Self::Writer {
+                ConsoleLogger {
+                    buffer: Vec::new(),
+                    sender: self.sender.clone(),
+                    level: None,
+                }
+            }
+
+            fn make_writer_for(&self, meta: &tracing::Metadata) -> Self::Writer {
+                ConsoleLogger {
+                    buffer: Vec::new(),
+                    sender: self.sender.clone(),
+                    level: Some(*meta.level()),
+                }
+            }
+        }
+
+        MakeConsoleLogger { sender }
     }
 }
 
@@ -148,7 +183,10 @@ impl Write for ConsoleLogger {
             .map_err(|e| std::io::Error::new(ErrorKind::InvalidInput, e))?;
 
         self.sender
-            .send(text)
+            .send(LogMsg {
+                level: self.level,
+                msg: text,
+            })
             .map_err(|e| std::io::Error::new(ErrorKind::BrokenPipe, e))?;
 
         Ok(())
