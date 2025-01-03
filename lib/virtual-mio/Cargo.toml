@@ -10,8 +10,9 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+utils = { path = "../utils" }
+
 derivative = { workspace = true }
 futures = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 tracing = { workspace = true }
-

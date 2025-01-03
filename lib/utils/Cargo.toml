@@ -1,0 +1,60 @@
+[package]
+name = "utils"
+description = "WWRR utils"
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+js-sys = { workspace = true }
+
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+
+[dependencies.web-sys]
+workspace = true
+features = [
+    "BinaryType",
+    "Blob",
+    "BlobPropertyBag",
+    "console",
+    "DedicatedWorkerGlobalScope",
+    "DomException",
+    "ErrorEvent",
+    "File",
+    "FileReader",
+    "FileSystemDirectoryHandle",
+    "FileSystemFileHandle",
+    "FileSystemGetDirectoryOptions",
+    "FileSystemHandle",
+    "Headers",
+    "MessageEvent",
+    "Navigator",
+    "ProgressEvent",
+    "QueuingStrategy",
+    "ReadableByteStreamController",
+    "ReadableStream",
+    "ReadableStreamDefaultController",
+    "ReadableStreamDefaultReader",
+    "Request",
+    "RequestInit",
+    "RequestMode",
+    "Response",
+    "StorageManager",
+    "Url",
+    "WebSocket",
+    "Window",
+    "Worker",
+    "WorkerGlobalScope",
+    "WorkerNavigator",
+    "WorkerOptions",
+    "WorkerType",
+    "WritableStream",
+    "WritableStreamDefaultController",
+    "WritableStreamDefaultWriter",
+]

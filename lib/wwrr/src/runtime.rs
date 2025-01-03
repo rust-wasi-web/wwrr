@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex, Weak};
 
 use lazy_static::lazy_static;
 use once_cell::sync::Lazy;
+use utils::Error;
 use virtual_net::VirtualNetworking;
 use wasmer::VERSION;
 use wasmer_wasix::{runtime::module_cache::ThreadLocalCache, VirtualTaskManager};
@@ -11,7 +12,7 @@ lazy_static! {
     static ref DEFAULT_THREAD_POOL: Arc<ThreadPool> = Arc::new(ThreadPool::new());
 }
 
-use crate::{tasks::ThreadPool, utils::Error};
+use crate::tasks::ThreadPool;
 
 /// A weak reference to the global [`Runtime`].
 static GLOBAL_RUNTIME: Lazy<Mutex<Weak<Runtime>>> = Lazy::new(Mutex::default);

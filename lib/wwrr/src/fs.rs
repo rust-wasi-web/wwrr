@@ -6,11 +6,10 @@ use std::{
 use anyhow::Context;
 use js_sys::Reflect;
 use tracing::Instrument;
+use utils::{Error, StringOrBytes};
 use virtual_fs::{AsyncReadExt, AsyncWriteExt, FileSystem, FileType};
 use wasm_bindgen::{prelude::wasm_bindgen, JsCast, JsValue};
 use wasmer_wasix::runtime::task_manager::InlineWaker;
-
-use crate::{utils::Error, StringOrBytes};
 
 /// A directory that can be mounted inside a WASIX instance.
 #[derive(Debug, Clone)]
@@ -289,7 +288,7 @@ impl DirectoryInit {
 fn in_memory_filesystem(record: &js_sys::Object) -> Result<virtual_fs::mem_fs::FileSystem, Error> {
     let fs = virtual_fs::mem_fs::FileSystem::default();
 
-    for (key, contents) in crate::utils::object_entries(record)? {
+    for (key, contents) in utils::object_entries(record)? {
         let mut path = String::from(key);
         if !path.starts_with('/') {
             path.insert(0, '/');

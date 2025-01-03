@@ -154,7 +154,7 @@ fn copy_memory(memory: &JsValue, ty: MemoryType) -> Result<JsValue, WasiThreadEr
 #[derivative(Debug)]
 pub(crate) struct SpawnWasm {
     /// A blocking callback to run.
-    #[derivative(Debug(format_with = "crate::utils::hidden"))]
+    #[derivative(Debug(format_with = "utils::hidden"))]
     run: Box<TaskWasmRun>,
     /// How the memory should be instantiated to execute the [`SpawnWasm::run`]
     /// callback.

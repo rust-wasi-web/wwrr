@@ -5,7 +5,8 @@ use std::{
 
 use wasm_bindgen::prelude::wasm_bindgen;
 
-use crate::{runtime::Runtime, utils::Error};
+use crate::runtime::Runtime;
+use utils::Error;
 
 #[derive(Clone, Debug)]
 #[repr(transparent)]

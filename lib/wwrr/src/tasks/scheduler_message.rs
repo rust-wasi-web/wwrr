@@ -3,16 +3,14 @@ use std::marker::PhantomData;
 use bytes::Bytes;
 use derivative::Derivative;
 use js_sys::WebAssembly;
+use utils::Error;
 use wasm_bindgen::JsValue;
 use wasmer::AsJs;
 
-use crate::{
-    tasks::{
-        interop::{Deserializer, Serializer},
-        task_wasm::SpawnWasm,
-        AsyncTask, LocalAsyncModuleTask, LocalAsyncTask,
-    },
-    utils::Error,
+use crate::tasks::{
+    interop::{Deserializer, Serializer},
+    task_wasm::SpawnWasm,
+    AsyncTask, LocalAsyncModuleTask, LocalAsyncTask,
 };
 
 /// Messages sent from the [`crate::tasks::ThreadPool`] handle to the
@@ -21,9 +19,9 @@ use crate::{
 #[derivative(Debug)]
 pub(crate) enum SchedulerMessage {
     /// Run a promise on a worker thread.
-    SpawnAsync(#[derivative(Debug(format_with = "crate::utils::hidden"))] AsyncTask),
+    SpawnAsync(#[derivative(Debug(format_with = "utils::hidden"))] AsyncTask),
     /// Run a blocking operation on a worker thread.
-    SpawnBlocking(#[derivative(Debug(format_with = "crate::utils::hidden"))] LocalAsyncTask),
+    SpawnBlocking(#[derivative(Debug(format_with = "utils::hidden"))] LocalAsyncTask),
     /// A message sent from a worker thread.
     /// Mark a worker as idle.
     WorkerIdle { worker_id: u32 },
@@ -33,7 +31,7 @@ pub(crate) enum SchedulerMessage {
     /// [`js_sys::WebAssembly::Module`] to the worker.
     SpawnWithModule {
         module: wasmer::Module,
-        #[derivative(Debug(format_with = "crate::utils::hidden"))]
+        #[derivative(Debug(format_with = "utils::hidden"))]
         task: LocalAsyncModuleTask,
     },
     /// Run a task in the background, explicitly transferring the

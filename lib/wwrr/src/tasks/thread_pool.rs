@@ -4,14 +4,12 @@ use std::{fmt::Debug, future::Future, pin::Pin};
 use futures::future::LocalBoxFuture;
 use futures::FutureExt;
 use instant::Duration;
+use utils::GlobalScope;
 use wasm_bindgen_futures::JsFuture;
 use wasmer::Module;
 use wasmer_wasix::{runtime::task_manager::TaskWasm, VirtualTaskManager, WasiThreadError};
 
-use crate::{
-    tasks::{Scheduler, SchedulerMessage},
-    utils::GlobalScope,
-};
+use crate::tasks::{Scheduler, SchedulerMessage};
 
 /// A handle to a threadpool backed by Web Workers.
 #[derive(Debug, Clone)]
@@ -24,9 +22,7 @@ const CROSS_ORIGIN_WARNING: &str =
 
 impl ThreadPool {
     pub fn new() -> Self {
-        if let Some(cross_origin_isolated) =
-            crate::utils::GlobalScope::current().cross_origin_isolated()
-        {
+        if let Some(cross_origin_isolated) = utils::GlobalScope::current().cross_origin_isolated() {
             // Note: This will need to be tweaked when we add support for Deno and
             // NodeJS.
             web_sys::console::assert_with_condition_and_data_1(
@@ -72,7 +68,7 @@ impl VirtualTaskManager for ThreadPool {
             i32::MAX
         };
 
-        if virtual_mio::allow_wait() {
+        if GlobalScope::current().wait_allowed() {
             // Note: We can't use wasm_bindgen_futures::spawn_local() directly
             // because we might be invoked from inside a syscall. This causes a
             // deadlock because the syscall will block block until the future
@@ -135,7 +131,7 @@ impl VirtualTaskManager for ThreadPool {
 
     /// Returns the amount of parallelism that is possible on this platform
     fn thread_parallelism(&self) -> Result<usize, WasiThreadError> {
-        match crate::utils::GlobalScope::current().hardware_concurrency() {
+        match utils::GlobalScope::current().hardware_concurrency() {
             Some(n) => Ok(n.get()),
             None => Err(WasiThreadError::Unsupported),
         }
@@ -243,7 +239,7 @@ mod tests {
 
         // If the tasks ran correctly we should get a value. Otherwise, it'll
         // block forever.
-        let timeout = JsFuture::from(crate::utils::GlobalScope::current().sleep(1000));
+        let timeout = JsFuture::from(utils::GlobalScope::current().sleep(1000));
         futures::select! {
             _ = timeout.fuse() => {
                 panic!("The task was blocked");

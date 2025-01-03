@@ -3,7 +3,7 @@ use js_sys::Uint8Array;
 use wasm_bindgen::{closure::Closure, prelude::wasm_bindgen, JsCast, JsValue};
 use wasmer_wasix::WasiRuntimeError;
 
-use crate::utils::Error;
+use utils::Error;
 
 /// A handle connected to a running WASIX program.
 #[derive(Debug)]

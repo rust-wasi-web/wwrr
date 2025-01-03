@@ -29,7 +29,7 @@ impl WorkerHandle {
         wo.set_type(web_sys::WorkerType::Module);
 
         let worker =
-            web_sys::Worker::new_with_options(&WORKER_URL, &wo).map_err(crate::utils::js_error)?;
+            web_sys::Worker::new_with_options(&WORKER_URL, &wo).map_err(utils::js_error)?;
 
         let on_message: Closure<dyn FnMut(web_sys::MessageEvent)> = Closure::new({
             let sender = sender.clone();
@@ -50,7 +50,7 @@ impl WorkerHandle {
         // and linear memory as the scheduler. We need to initialize explicitly.
         init_message(worker_id)
             .and_then(|msg| worker.post_message(&msg))
-            .map_err(crate::utils::js_error)?;
+            .map_err(utils::js_error)?;
 
         Ok(WorkerHandle {
             id: worker_id,
@@ -67,9 +67,7 @@ impl WorkerHandle {
         tracing::trace!(?msg, worker.id = self.id(), "sending a message to a worker");
         let js = msg.into_js().map_err(|e| e.into_anyhow())?;
 
-        self.inner
-            .post_message(&js)
-            .map_err(crate::utils::js_error)?;
+        self.inner.post_message(&js).map_err(utils::js_error)?;
 
         Ok(())
     }
@@ -92,7 +90,7 @@ fn on_message(msg: web_sys::MessageEvent, sender: &Scheduler, worker_id: u32) {
     // worker, because we are the ones that spawned the worker, we can trust
     // the messages it emits.
     let result = unsafe { WorkerMessage::try_from_js(msg.data()) }
-        .map_err(|e| crate::utils::js_error(e.into()))
+        .map_err(|e| utils::js_error(e.into()))
         .context("Unable to parse the worker message")
         .and_then(|msg| {
             tracing::trace!(
@@ -138,11 +136,7 @@ fn init_message(id: u32) -> Result<JsValue, JsValue> {
         &JsString::from("import_url"),
         &JsValue::from(import_meta_url()),
     )?;
-    js_sys::Reflect::set(
-        &msg,
-        &JsString::from("module"),
-        &crate::utils::current_module(),
-    )?;
+    js_sys::Reflect::set(&msg, &JsString::from("module"), &utils::current_module())?;
 
     Ok(msg.into())
 }

@@ -10,6 +10,7 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
+utils = { path = "../utils" }
 virtual-fs = { path = "../virtual-fs" }
 virtual-mio = { path = "../virtual-mio" }
 virtual-net = { path = "../virtual-net" }

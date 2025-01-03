@@ -1,12 +1,10 @@
+use utils::Error;
 use wasm_bindgen::{JsCast, JsValue};
 use web_sys::DedicatedWorkerGlobalScope;
 
-use crate::{
-    tasks::{
-        interop::{Deserializer, Serializer},
-        SchedulerMessage,
-    },
-    utils::Error,
+use crate::tasks::{
+    interop::{Deserializer, Serializer},
+    SchedulerMessage,
 };
 
 /// A message the worker sends back to the scheduler.

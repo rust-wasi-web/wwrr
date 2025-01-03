@@ -1,11 +1,12 @@
 use futures::channel::oneshot;
 use futures::FutureExt;
 use std::sync::Arc;
+use utils::Error;
 use wasm_bindgen::{prelude::*, JsCast};
 use wasmer::ImportsObj;
 use wasmer_wasix::{Runtime as _, WasiEnvBuilder, WasiReactor};
 
-use crate::{instance::ExitCondition, utils::Error, Instance, RunOptions};
+use crate::{instance::ExitCondition, Instance, RunOptions};
 
 const DEFAULT_PROGRAM_NAME: &str = "wasm";
 

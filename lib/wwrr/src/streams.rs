@@ -6,6 +6,7 @@ use bytes::BytesMut;
 use futures::{future::Either, Stream};
 use js_sys::{JsString, Promise, Reflect, Uint8Array};
 use tracing::Instrument;
+use utils::Error;
 use virtual_fs::{
     AsyncRead, AsyncReadExt, AsyncSeek, AsyncWrite, AsyncWriteExt, FsError, Pipe, VirtualFile,
 };
@@ -14,8 +15,6 @@ use wasm_bindgen_futures::JsFuture;
 use web_sys::{
     ReadableStream, ReadableStreamDefaultController, ReadableStreamDefaultReader, WritableStream,
 };
-
-use crate::utils::Error;
 
 /// Set up a pipe where data written from JavaScript can be read by the WASIX
 /// process.

@@ -27,7 +27,7 @@ impl ThreadPoolWorker {
     }
 
     #[tracing::instrument(level = "debug", skip_all, fields(worker.id = self.id))]
-    pub async fn handle(&self, msg: JsValue) -> Result<(), crate::utils::Error> {
+    pub async fn handle(&self, msg: JsValue) -> Result<(), utils::Error> {
         // Safety: The message was created using PostMessagePayload::to_js()
         let msg = unsafe { PostMessagePayload::try_from_js(msg)? };
 
@@ -39,7 +39,7 @@ impl ThreadPoolWorker {
         }
     }
 
-    async fn execute_async(&self, job: AsyncJob) -> Result<(), crate::utils::Error> {
+    async fn execute_async(&self, job: AsyncJob) -> Result<(), utils::Error> {
         match job {
             AsyncJob::Thunk(thunk) => {
                 thunk().await;
@@ -49,7 +49,7 @@ impl ThreadPoolWorker {
         Ok(())
     }
 
-    async fn execute_blocking(&self, job: BlockingJob) -> Result<(), crate::utils::Error> {
+    async fn execute_blocking(&self, job: BlockingJob) -> Result<(), utils::Error> {
         match job {
             BlockingJob::Thunk(thunk) => {
                 let _guard = self.busy();
@@ -75,12 +75,12 @@ impl ThreadPoolWorker {
                         );
                         let wbg_js_promise: Promise =
                             js_sys::eval(&format!("import(\"{wbg_js_module_name}\")"))
-                                .map_err(crate::utils::Error::js)?
+                                .map_err(utils::Error::js)?
                                 .into();
                         Some(
                             JsFuture::from(wbg_js_promise)
                                 .await
-                                .map_err(crate::utils::Error::js)?,
+                                .map_err(utils::Error::js)?,
                         )
                     }
                     None => None,
@@ -110,13 +110,11 @@ impl ThreadPoolWorker {
 impl ThreadPoolWorker {
     #[wasm_bindgen(constructor)]
     pub fn new(id: u32) -> ThreadPoolWorker {
-        virtual_mio::set_allow_wait(true);
-
         ThreadPoolWorker { id }
     }
 
     #[wasm_bindgen(js_name = "handle")]
-    pub async fn js_handle(&self, msg: JsValue) -> Result<(), crate::utils::Error> {
+    pub async fn js_handle(&self, msg: JsValue) -> Result<(), utils::Error> {
         self.handle(msg).await
     }
 }

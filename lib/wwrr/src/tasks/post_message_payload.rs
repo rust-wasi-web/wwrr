@@ -34,10 +34,10 @@ impl PostMessagePayload {
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub(crate) enum BlockingJob {
-    Thunk(#[derivative(Debug(format_with = "crate::utils::hidden"))] LocalAsyncTask),
+    Thunk(#[derivative(Debug(format_with = "utils::hidden"))] LocalAsyncTask),
     SpawnWithModule {
         module: wasmer::Module,
-        #[derivative(Debug(format_with = "crate::utils::hidden"))]
+        #[derivative(Debug(format_with = "utils::hidden"))]
         task: LocalAsyncModuleTask,
     },
     SpawnWithModuleAndMemory {
@@ -52,7 +52,7 @@ pub(crate) enum BlockingJob {
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub(crate) enum AsyncJob {
-    Thunk(#[derivative(Debug(format_with = "crate::utils::hidden"))] AsyncTask),
+    Thunk(#[derivative(Debug(format_with = "utils::hidden"))] AsyncTask),
 }
 
 mod consts {
@@ -67,7 +67,7 @@ mod consts {
 }
 
 impl PostMessagePayload {
-    pub(crate) fn into_js(self) -> Result<JsValue, crate::utils::Error> {
+    pub(crate) fn into_js(self) -> Result<JsValue, utils::Error> {
         match self {
             PostMessagePayload::Async(AsyncJob::Thunk(task)) => {
                 Serializer::new(consts::TYPE_SPAWN_ASYNC)
@@ -105,7 +105,7 @@ impl PostMessagePayload {
     ///
     /// This can only be called if the original [`JsValue`] was created using
     /// [`PostMessagePayload::into_js()`].
-    pub(crate) unsafe fn try_from_js(value: JsValue) -> Result<Self, crate::utils::Error> {
+    pub(crate) unsafe fn try_from_js(value: JsValue) -> Result<Self, utils::Error> {
         let de = crate::tasks::interop::Deserializer::new(value);
 
         // Safety: Keep this in sync with PostMessagePayload::to_js()

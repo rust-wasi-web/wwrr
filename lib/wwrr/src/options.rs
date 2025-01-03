@@ -2,13 +2,14 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use anyhow::Context;
 use js_sys::Array;
+use utils::Error;
 use virtual_fs::TmpFileSystem;
 use wasm_bindgen::convert::TryFromJsValue;
 use wasm_bindgen::{prelude::wasm_bindgen, JsCast, JsValue, UnwrapThrowExt};
 use wasmer_wasix::WasiEnvBuilder;
 
 use crate::streams::{ConsoleFile, ConsoleTarget};
-use crate::{runtime::Runtime, utils::Error, Directory, DirectoryInit, JsRuntime, StringOrBytes};
+use crate::{runtime::Runtime, Directory, DirectoryInit, JsRuntime, StringOrBytes};
 
 #[wasm_bindgen]
 extern "C" {
@@ -106,7 +107,7 @@ extern "C" {
 impl CommonOptions {
     pub(crate) fn parse_args(&self) -> Result<Vec<String>, Error> {
         match self.args() {
-            Some(args) => crate::utils::js_string_array(args),
+            Some(args) => utils::js_string_array(args),
             None => Ok(Vec::new()),
         }
     }
@@ -114,7 +115,7 @@ impl CommonOptions {
     pub(crate) fn parse_env(&self) -> Result<BTreeMap<String, String>, Error> {
         match self.env().dyn_ref() {
             Some(env) => {
-                let vars = crate::utils::js_record_of_strings(env)?;
+                let vars = utils::js_record_of_strings(env)?;
                 Ok(vars.into_iter().collect())
             }
             None => Ok(BTreeMap::new()),
@@ -130,7 +131,7 @@ impl CommonOptions {
             return Ok(Vec::new());
         };
 
-        let entries = crate::utils::object_entries(&obj)?;
+        let entries = utils::object_entries(&obj)?;
         let mut mounted_directories = Vec::new();
 
         for (key, value) in &entries {

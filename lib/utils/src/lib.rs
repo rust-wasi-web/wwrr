@@ -1,3 +1,4 @@
+use std::cell::LazyCell;
 use std::{
     collections::BTreeMap,
     fmt::{Debug, Display},
@@ -11,7 +12,7 @@ use web_sys::{Window, WorkerGlobalScope};
 
 /// Try to extract the most appropriate error message from a [`JsValue`],
 /// falling back to a generic error message.
-pub(crate) fn js_error(value: JsValue) -> anyhow::Error {
+pub fn js_error(value: JsValue) -> anyhow::Error {
     if let Some(e) = value.dyn_ref::<js_sys::Error>() {
         anyhow::Error::msg(String::from(e.message()))
     } else if let Some(obj) = value.dyn_ref::<js_sys::Object>() {
@@ -25,27 +26,40 @@ pub(crate) fn js_error(value: JsValue) -> anyhow::Error {
 
 /// A strongly-typed wrapper around `globalThis`.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum GlobalScope {
+pub enum GlobalScope {
     Window(Window),
     Worker(WorkerGlobalScope),
-    Other(js_sys::Object),
 }
 
 impl GlobalScope {
+    /// Current global scope.
     pub fn current() -> Self {
-        let global_scope = js_sys::global();
+        thread_local! {
+            static INSTANCE: LazyCell<GlobalScope> = LazyCell::new(|| {
+                match js_sys::global().dyn_into() {
+                    Ok(window) => GlobalScope::Window(window),
+                    Err(global_scope) => match global_scope.dyn_into() {
+                        Ok(worker_global_scope) => GlobalScope::Worker(worker_global_scope),
+                        Err(other) => panic!("unrecognized global scope {other:?}"),
+                    },
+                }
+            });
+        }
 
-        match global_scope.dyn_into() {
-            Ok(window) => GlobalScope::Window(window),
-            Err(global_scope) => match global_scope.dyn_into() {
-                Ok(worker_global_scope) => GlobalScope::Worker(worker_global_scope),
-                Err(other) => GlobalScope::Other(other),
-            },
+        INSTANCE.with(|instance| (*instance).clone())
+    }
+
+    /// Whether waiting is allowed.
+    pub fn wait_allowed(&self) -> bool {
+        match self {
+            GlobalScope::Window(_) => false,
+            GlobalScope::Worker(_) => true,
         }
     }
 
+    /// Sleep for given duration.
     pub fn sleep(&self, milliseconds: i32) -> Promise {
-        Promise::new(&mut |resolve, reject| match self {
+        Promise::new(&mut |resolve, _reject| match self {
             GlobalScope::Window(window) => {
                 window
                     .set_timeout_with_callback_and_timeout_and_arguments_0(&resolve, milliseconds)
@@ -56,10 +70,6 @@ impl GlobalScope {
                     .set_timeout_with_callback_and_timeout_and_arguments_0(&resolve, milliseconds)
                     .unwrap();
             }
-            GlobalScope::Other(_) => {
-                let error = js_sys::Error::new("Unable to call setTimeout()");
-                reject.call1(&reject, &error).unwrap();
-            }
         })
     }
 
@@ -68,7 +78,6 @@ impl GlobalScope {
         match self {
             GlobalScope::Window(window) => window.performance().unwrap().now(),
             GlobalScope::Worker(worker) => worker.performance().unwrap().now(),
-            GlobalScope::Other(_) => unimplemented!("unable to get timestamp"),
         }
     }
 
@@ -79,7 +88,6 @@ impl GlobalScope {
         let concurrency = match self {
             GlobalScope::Window(scope) => scope.navigator().hardware_concurrency(),
             GlobalScope::Worker(scope) => scope.navigator().hardware_concurrency(),
-            GlobalScope::Other(_) => return None,
         };
 
         let concurrency = concurrency.round() as usize;
@@ -97,7 +105,6 @@ impl GlobalScope {
         match self {
             GlobalScope::Window(w) => w,
             GlobalScope::Worker(w) => w,
-            GlobalScope::Other(obj) => obj,
         }
     }
 }
@@ -111,11 +118,11 @@ pub enum Error {
 }
 
 impl Error {
-    pub(crate) fn js(error: impl Into<JsValue>) -> Self {
+    pub fn js(error: impl Into<JsValue>) -> Self {
         Error::JavaScript(error.into())
     }
 
-    pub(crate) fn into_anyhow(self) -> anyhow::Error {
+    pub fn into_anyhow(self) -> anyhow::Error {
         match self {
             Error::Rust(e) => e,
             Error::JavaScript(js) => js_error(js),
@@ -179,7 +186,7 @@ impl Display for Error {
     }
 }
 
-pub(crate) fn object_entries(obj: &js_sys::Object) -> Result<BTreeMap<JsString, JsValue>, Error> {
+pub fn object_entries(obj: &js_sys::Object) -> Result<BTreeMap<JsString, JsValue>, Error> {
     let mut entries = BTreeMap::new();
 
     for key in js_sys::Object::keys(obj) {
@@ -195,12 +202,12 @@ pub(crate) fn object_entries(obj: &js_sys::Object) -> Result<BTreeMap<JsString, 
 
 /// A dummy value that can be used in a [`Debug`] impl instead of showing the
 /// original value.
-pub(crate) fn hidden<T>(_value: T, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+pub fn hidden<T>(_value: T, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     f.write_str("_")
 }
 
 /// Get a reference to the currently running module.
-pub(crate) fn current_module() -> js_sys::WebAssembly::Module {
+pub fn current_module() -> js_sys::WebAssembly::Module {
     // FIXME: Switch this to something stable and portable
     //
     // We use an undocumented API to get a reference to the
@@ -218,7 +225,7 @@ pub(crate) fn current_module() -> js_sys::WebAssembly::Module {
     wasm_bindgen::module().dyn_into().unwrap()
 }
 
-pub(crate) fn js_string_array(array: js_sys::Array) -> Result<Vec<String>, Error> {
+pub fn js_string_array(array: js_sys::Array) -> Result<Vec<String>, Error> {
     let mut parsed = Vec::new();
 
     for arg in array {
@@ -235,10 +242,10 @@ pub(crate) fn js_string_array(array: js_sys::Array) -> Result<Vec<String>, Error
     Ok(parsed)
 }
 
-pub(crate) fn js_record_of_strings(obj: &js_sys::Object) -> Result<Vec<(String, String)>, Error> {
+pub fn js_record_of_strings(obj: &js_sys::Object) -> Result<Vec<(String, String)>, Error> {
     let mut parsed = Vec::new();
 
-    for (key, value) in crate::utils::object_entries(obj)? {
+    for (key, value) in object_entries(obj)? {
         let key: String = key.into();
         let value: String = value
             .dyn_into::<JsString>()

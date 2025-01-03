@@ -5,6 +5,7 @@ members = [
     "lib/derive",
     "lib/wwrr",
     "lib/types",
+    "lib/utils",
     "lib/virtual-fs",
     "lib/virtual-mio",
     "lib/virtual-net",

@@ -3,7 +3,7 @@ use js_sys::{BigInt, JsString, Object, Reflect};
 use serde::de::DeserializeOwned;
 use wasm_bindgen::{JsCast, JsValue};
 
-use crate::utils::Error;
+use utils::Error;
 
 const TYPE: &str = "type";
 
@@ -86,7 +86,7 @@ impl Serializer {
         let field = field.as_ref();
 
         if let Err(e) = Reflect::set(&self.obj, &JsValue::from_str(field), &value.into())
-            .map_err(crate::utils::js_error)
+            .map_err(utils::js_error)
             .with_context(|| format!("Unable to set \"{field}\""))
         {
             self.error = Some(e.into());

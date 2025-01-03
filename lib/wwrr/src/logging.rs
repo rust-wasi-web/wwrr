@@ -75,7 +75,7 @@ impl LogConfig {
 /// This function can only be called once. Subsequent calls will raise an
 /// exception.
 #[wasm_bindgen(js_name = "initializeLogger")]
-pub fn initialize_logger(log_config: LogConfig) -> Result<(), crate::utils::Error> {
+pub fn initialize_logger(log_config: LogConfig) -> Result<(), utils::Error> {
     let ansi = log_config.parse_ansi();
 
     let max_level = tracing::level_filters::STATIC_MAX_LEVEL

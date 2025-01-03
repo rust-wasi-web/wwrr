@@ -10,7 +10,6 @@ mod run;
 mod runtime;
 mod streams;
 mod tasks;
-mod utils;
 
 pub use crate::{
     fs::{Directory, DirectoryInit},
@@ -19,8 +18,8 @@ pub use crate::{
     logging::initialize_logger,
     options::{RunOptions, SpawnOptions},
     run::run_wasix,
-    utils::StringOrBytes,
 };
+pub use utils::StringOrBytes;
 
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
