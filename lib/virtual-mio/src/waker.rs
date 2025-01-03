@@ -1,10 +1,24 @@
-#![allow(dead_code, unused)]
+use std::cell::Cell;
 use std::{
     sync::{Arc, Condvar, Mutex},
     task::{Context, Poll, RawWaker, RawWakerVTable, Waker},
 };
 
 use futures::Future;
+
+thread_local! {
+    static ALLOW_WAIT: Cell<bool> = Cell::new(false);
+}
+
+/// Sets whether waiting is allowed on this thread.
+pub fn set_allow_wait(allow_wait: bool) {
+    ALLOW_WAIT.set(allow_wait);
+}
+
+/// Whehter waiting is allowed on this thread.
+pub fn allow_wait() -> bool {
+    ALLOW_WAIT.get()
+}
 
 /// Runs a Future on the current thread.
 pub struct InlineWaker {
@@ -42,16 +56,23 @@ impl InlineWaker {
         let waker = inline_waker.as_waker();
         let mut cx = Context::from_waker(&waker);
 
-        // We loop waiting for the waker to be woken, then we poll again
         let mut task = Box::pin(task);
-        loop {
-            let lock = inline_waker.lock.lock().unwrap();
-            match task.as_mut().poll(&mut cx) {
-                Poll::Pending => {
-                    inline_waker.condvar.wait(lock).ok();
+
+        if allow_wait() {
+            // We loop waiting for the waker to be woken, then we poll again
+            let mut lock = inline_waker.lock.lock().unwrap();
+            loop {
+                match task.as_mut().poll(&mut cx) {
+                    Poll::Pending => lock = inline_waker.condvar.wait(lock).unwrap(),
+                    Poll::Ready(ret) => return ret,
                 }
-                Poll::Ready(ret) => {
-                    return ret;
+            }
+        } else {
+            // We spin, since wait operations are not allowed on this thread.
+            loop {
+                match task.as_mut().poll(&mut cx) {
+                    Poll::Pending => std::thread::yield_now(),
+                    Poll::Ready(ret) => return ret,
                 }
             }
         }

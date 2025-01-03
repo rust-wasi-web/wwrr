@@ -11,6 +11,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 virtual-fs = { path = "../virtual-fs" }
+virtual-mio = { path = "../virtual-mio" }
 virtual-net = { path = "../virtual-net" }
 wasmer = { path = "../api" }
 wasmer-types = { path = "../types" }

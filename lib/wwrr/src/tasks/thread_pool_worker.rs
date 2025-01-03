@@ -110,6 +110,8 @@ impl ThreadPoolWorker {
 impl ThreadPoolWorker {
     #[wasm_bindgen(constructor)]
     pub fn new(id: u32) -> ThreadPoolWorker {
+        virtual_mio::set_allow_wait(true);
+
         ThreadPoolWorker { id }
     }
 

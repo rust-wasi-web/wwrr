@@ -63,6 +63,15 @@ impl GlobalScope {
         })
     }
 
+    /// Gets the current time in milliseconds.
+    pub fn now(&self) -> f64 {
+        match self {
+            GlobalScope::Window(window) => window.performance().unwrap().now(),
+            GlobalScope::Worker(worker) => worker.performance().unwrap().now(),
+            GlobalScope::Other(_) => unimplemented!("unable to get timestamp"),
+        }
+    }
+
     /// The amount of concurrency available on this system.
     ///
     /// Returns `None` if unable to determine the available concurrency.

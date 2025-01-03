@@ -1,3 +1,4 @@
+use std::task::{Context, Poll};
 use std::{fmt::Debug, future::Future, pin::Pin};
 
 use futures::future::LocalBoxFuture;
@@ -71,23 +72,47 @@ impl VirtualTaskManager for ThreadPool {
             i32::MAX
         };
 
-        // Note: We can't use wasm_bindgen_futures::spawn_local() directly
-        // because we might be invoked from inside a syscall. This causes a
-        // deadlock because the syscall will block block until the future
-        // resolves, but the JsFuture will never get a chance to mark itself as
-        // resolved because the JavaScript VM is still blocked by the syscall.
-        let _ = self.task_shared(Box::new(move || {
-            async move {
-                let global = GlobalScope::current();
-                let _ = JsFuture::from(global.sleep(time)).await;
-                let _ = tx.send(());
-            }
-            .boxed_local()
-        }));
+        if virtual_mio::allow_wait() {
+            // Note: We can't use wasm_bindgen_futures::spawn_local() directly
+            // because we might be invoked from inside a syscall. This causes a
+            // deadlock because the syscall will block block until the future
+            // resolves, but the JsFuture will never get a chance to mark itself as
+            // resolved because the JavaScript VM is still blocked by the syscall.
+            let _ = self.task_shared(Box::new(move || {
+                async move {
+                    let global = GlobalScope::current();
+                    let _ = JsFuture::from(global.sleep(time)).await;
+                    let _ = tx.send(());
+                }
+                .boxed_local()
+            }));
 
-        Box::pin(async move {
-            let _ = rx.await;
-        })
+            Box::pin(async move {
+                let _ = rx.await;
+            })
+        } else {
+            // If waiting is not allowed, we cannot expect spawn to work, and therefore
+            // our only choice is to busy wait on the main thread.
+            struct SpinWaiter {
+                until: f64,
+            }
+
+            impl Future for SpinWaiter {
+                type Output = ();
+                fn poll(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<Self::Output> {
+                    let this = self.as_ref();
+                    if GlobalScope::current().now() >= this.until {
+                        Poll::Ready(())
+                    } else {
+                        Poll::Pending
+                    }
+                }
+            }
+
+            Box::pin(SpinWaiter {
+                until: GlobalScope::current().now() + time as f64,
+            })
+        }
     }
 
     /// Starts an asynchronous task that will run on a shared worker pool

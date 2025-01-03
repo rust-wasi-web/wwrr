@@ -2332,6 +2332,7 @@ dependencies = [
  "derivative",
  "futures",
  "serde",
+ "tracing",
 ]
 
 [[package]]
@@ -3123,6 +3124,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "virtual-fs",
+ "virtual-mio",
  "virtual-net",
  "wasm-bindgen",
  "wasm-bindgen-futures",

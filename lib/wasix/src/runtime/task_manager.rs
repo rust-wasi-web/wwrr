@@ -197,12 +197,7 @@ pub trait VirtualTaskManager: std::fmt::Debug + Send + Sync + 'static {
         &self,
         module: Module,
         task: Box<dyn FnOnce(Module) -> LocalBoxFuture<'static, ()> + Send + 'static>,
-    ) -> Result<(), WasiThreadError> {
-        // Note: Ideally, this function and task_wasm() would be superseded by
-        // a more general mechanism for transferring non-thread safe values
-        // to the thread pool.
-        self.task_shared(Box::new(move || task(module)))
-    }
+    ) -> Result<(), WasiThreadError>;
 }
 
 impl<D, T> VirtualTaskManager for D
