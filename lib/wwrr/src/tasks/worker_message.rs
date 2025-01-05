@@ -14,6 +14,7 @@ pub(crate) enum WorkerMessage {
     MarkBusy,
     /// Mark this worker as idle.
     MarkIdle,
+    /// Message to scheduler.
     Scheduler(SchedulerMessage),
 }
 

@@ -1,14 +1,10 @@
 use std::fmt::Debug;
 
 use anyhow::{Context, Error};
-use js_sys::{Array, JsString, Uint8Array};
-use once_cell::sync::Lazy;
-use wasm_bindgen::{
-    prelude::{wasm_bindgen, Closure},
-    JsCast, JsValue,
-};
+use wasm_bindgen::{prelude::*, JsCast};
 
-use crate::tasks::{PostMessagePayload, Scheduler, SchedulerMessage, WorkerMessage};
+use super::worker::{init_message_worker, WORKER_URL};
+use crate::tasks::{PostMessagePayload, SchedulerMessage, WorkerMessage, SCHEDULER};
 
 /// A handle to a running [`web_sys::Worker`].
 ///
@@ -21,7 +17,8 @@ pub(crate) struct WorkerHandle {
 }
 
 impl WorkerHandle {
-    pub(crate) fn spawn(worker_id: u32, sender: Scheduler) -> Result<Self, Error> {
+    /// Spawns a new web worker.
+    pub(crate) fn spawn(worker_id: u32) -> Result<Self, Error> {
         let name = format!("worker-{worker_id}");
 
         let wo = web_sys::WorkerOptions::new();
@@ -31,12 +28,8 @@ impl WorkerHandle {
         let worker =
             web_sys::Worker::new_with_options(&WORKER_URL, &wo).map_err(utils::js_error)?;
 
-        let on_message: Closure<dyn FnMut(web_sys::MessageEvent)> = Closure::new({
-            let sender = sender.clone();
-            move |msg: web_sys::MessageEvent| {
-                on_message(msg, &sender, worker_id);
-            }
-        });
+        let on_message: Closure<dyn FnMut(web_sys::MessageEvent)> =
+            Closure::new(move |msg: web_sys::MessageEvent| on_message(msg, worker_id));
         let on_message: js_sys::Function = on_message.into_js_value().unchecked_into();
         worker.set_onmessage(Some(&on_message));
 
@@ -48,9 +41,8 @@ impl WorkerHandle {
         // The worker has technically been started, but it's kinda useless
         // because it hasn't been initialized with the same WebAssembly module
         // and linear memory as the scheduler. We need to initialize explicitly.
-        init_message(worker_id)
-            .and_then(|msg| worker.post_message(&msg))
-            .map_err(utils::js_error)?;
+        let init_msg = init_message_worker(worker_id);
+        worker.post_message(&init_msg).unwrap();
 
         Ok(WorkerHandle {
             id: worker_id,
@@ -58,6 +50,7 @@ impl WorkerHandle {
         })
     }
 
+    /// The id of the web worker.
     pub(crate) fn id(&self) -> u32 {
         self.id
     }
@@ -85,7 +78,7 @@ fn on_error(msg: web_sys::ErrorEvent, worker_id: u32) {
 }
 
 #[tracing::instrument(level = "trace", skip_all, fields(worker.id=worker_id))]
-fn on_message(msg: web_sys::MessageEvent, sender: &Scheduler, worker_id: u32) {
+fn on_message(msg: web_sys::MessageEvent, worker_id: u32) {
     // Safety: The only way we can receive this message is if it was from the
     // worker, because we are the ones that spawned the worker, we can trust
     // the messages it emits.
@@ -104,7 +97,7 @@ fn on_message(msg: web_sys::MessageEvent, sender: &Scheduler, worker_id: u32) {
                 WorkerMessage::MarkIdle => SchedulerMessage::WorkerIdle { worker_id },
                 WorkerMessage::Scheduler(msg) => msg,
             };
-            sender.send(msg).map_err(|_| Error::msg("Send failed"))
+            SCHEDULER.send(msg).map_err(|_| Error::msg("Send failed"))
         });
 
     if let Err(e) = result {
@@ -123,54 +116,3 @@ impl Drop for WorkerHandle {
         self.inner.terminate();
     }
 }
-
-/// Craft the special `"init"` message.
-fn init_message(id: u32) -> Result<JsValue, JsValue> {
-    let msg = js_sys::Object::new();
-
-    js_sys::Reflect::set(&msg, &JsString::from("type"), &JsString::from("init"))?;
-    js_sys::Reflect::set(&msg, &JsString::from("memory"), &wasm_bindgen::memory())?;
-    js_sys::Reflect::set(&msg, &JsString::from("id"), &JsValue::from(id))?;
-    js_sys::Reflect::set(
-        &msg,
-        &JsString::from("import_url"),
-        &JsValue::from(import_meta_url()),
-    )?;
-    js_sys::Reflect::set(&msg, &JsString::from("module"), &utils::current_module())?;
-
-    Ok(msg.into())
-}
-
-/// The URL used by the bootstrapping script to import the `wasm-bindgen` glue
-/// code.
-fn import_meta_url() -> String {
-    #[wasm_bindgen]
-    #[allow(non_snake_case)]
-    extern "C" {
-        #[wasm_bindgen(thread_local_v2, js_namespace = ["import", "meta"], js_name = url)]
-        static IMPORT_META_URL: String;
-    }
-
-    let import_meta_url = IMPORT_META_URL.with(|s| s.clone());
-
-    let import_url = crate::CUSTOM_WORKER_URL.lock().unwrap();
-    let import_url = import_url.as_deref().unwrap_or(&import_meta_url);
-
-    import_url.to_string()
-}
-
-/// A data URL containing our worker's bootstrap script.
-static WORKER_URL: Lazy<String> = Lazy::new(|| {
-    let script = include_str!("worker.js");
-
-    let bpb = web_sys::BlobPropertyBag::new();
-    bpb.set_type("application/javascript");
-
-    let blob = web_sys::Blob::new_with_u8_array_sequence_and_options(
-        Array::from_iter([Uint8Array::from(script.as_bytes())]).as_ref(),
-        &bpb,
-    )
-    .unwrap();
-
-    web_sys::Url::create_object_url_with_blob(&blob).unwrap()
-});

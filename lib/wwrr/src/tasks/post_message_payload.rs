@@ -266,7 +266,7 @@ mod tests {
     async fn round_trip_spawn_with_module_and_memory() {
         let module = wasmer::Module::new(ENVVAR_WASM).await.unwrap();
         let flag = Arc::new(AtomicBool::new(false));
-        let runtime = Runtime::new().with_default_pool();
+        let runtime = Runtime::new();
         let env = WasiEnvBuilder::new("program")
             .runtime(Arc::new(runtime))
             .build()

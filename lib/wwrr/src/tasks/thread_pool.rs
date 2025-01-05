@@ -9,13 +9,13 @@ use wasm_bindgen_futures::JsFuture;
 use wasmer::Module;
 use wasmer_wasix::{runtime::task_manager::TaskWasm, VirtualTaskManager, WasiThreadError};
 
-use crate::tasks::{Scheduler, SchedulerMessage};
+use crate::tasks::SchedulerMessage;
+
+use super::scheduler::SCHEDULER;
 
 /// A handle to a threadpool backed by Web Workers.
 #[derive(Debug, Clone)]
-pub struct ThreadPool {
-    scheduler: Scheduler,
-}
+pub struct ThreadPool {}
 
 const CROSS_ORIGIN_WARNING: &str =
     r#"You can only run packages from "Cross-Origin Isolated" websites."#;
@@ -31,8 +31,7 @@ impl ThreadPool {
             );
         }
 
-        let sender = Scheduler::spawn();
-        ThreadPool { scheduler: sender }
+        ThreadPool {}
     }
 
     /// Run an `async` function to completion on the threadpool.
@@ -41,12 +40,11 @@ impl ThreadPool {
         task: Box<dyn FnOnce() -> LocalBoxFuture<'static, ()> + Send>,
     ) -> Result<(), WasiThreadError> {
         self.send(SchedulerMessage::SpawnAsync(task));
-
         Ok(())
     }
 
     pub(crate) fn send(&self, msg: SchedulerMessage) {
-        self.scheduler.send(msg).expect("scheduler is dead");
+        SCHEDULER.send(msg).expect("scheduler is dead");
     }
 }
 

@@ -1,27 +1,23 @@
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, LazyLock, Mutex, Weak};
 
-use lazy_static::lazy_static;
-use once_cell::sync::Lazy;
 use utils::Error;
 use virtual_net::VirtualNetworking;
 use wasmer::VERSION;
 use wasmer_wasix::{runtime::module_cache::ThreadLocalCache, VirtualTaskManager};
 
-lazy_static! {
-    /// We initialize the ThreadPool lazily
-    static ref DEFAULT_THREAD_POOL: Arc<ThreadPool> = Arc::new(ThreadPool::new());
-}
-
 use crate::tasks::ThreadPool;
 
+/// Worker thread pool.
+static THREAD_POOL: LazyLock<Arc<dyn VirtualTaskManager>> =
+    LazyLock::new(|| Arc::new(ThreadPool::new()));
+
 /// A weak reference to the global [`Runtime`].
-static GLOBAL_RUNTIME: Lazy<Mutex<Weak<Runtime>>> = Lazy::new(Mutex::default);
+static GLOBAL_RUNTIME: Mutex<Weak<Runtime>> = Mutex::new(Weak::new());
 
 /// Runtime components used when running WebAssembly programs.
 #[derive(Clone, derivative::Derivative)]
 #[derivative(Debug)]
 pub struct Runtime {
-    task_manager: Option<Arc<dyn VirtualTaskManager>>,
     networking: Arc<dyn VirtualNetworking>,
     module_cache: Arc<ThreadLocalCache>,
 }
@@ -67,19 +63,8 @@ impl Runtime {
         Ok(rt)
     }
 
-    pub(crate) fn with_task_manager(&self, task_manager: Arc<ThreadPool>) -> Self {
-        let mut runtime = self.clone();
-        runtime.task_manager = Some(task_manager);
-        runtime
-    }
-
-    pub(crate) fn with_default_pool(&self) -> Self {
-        self.with_task_manager(DEFAULT_THREAD_POOL.clone())
-    }
-
     pub(crate) fn new() -> Self {
         Runtime {
-            task_manager: None,
             networking: Arc::new(virtual_net::UnsupportedVirtualNetworking::default()),
             module_cache: Arc::new(ThreadLocalCache::default()),
         }
@@ -92,7 +77,7 @@ impl wasmer_wasix::runtime::Runtime for Runtime {
     }
 
     fn task_manager(&self) -> &Arc<dyn VirtualTaskManager> {
-        &self.task_manager.as_ref().expect("Task manager not found")
+        &*THREAD_POOL
     }
 
     fn module_cache(
@@ -119,7 +104,7 @@ mod tests {
 
     #[wasm_bindgen_test]
     async fn execute_a_trivial_module() {
-        let runtime = Runtime::with_defaults().unwrap().with_default_pool();
+        let runtime = Runtime::with_defaults().unwrap();
         let module = Module::new(TRIVIAL_WAT).await.unwrap();
 
         WasiEnvBuilder::new("trivial")

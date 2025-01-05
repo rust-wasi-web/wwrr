@@ -38,6 +38,7 @@ mod scheduler_message;
 mod task_wasm;
 mod thread_pool;
 mod thread_pool_worker;
+mod worker;
 mod worker_handle;
 mod worker_message;
 
@@ -45,7 +46,7 @@ use futures::future::LocalBoxFuture;
 
 pub(crate) use self::{
     post_message_payload::{AsyncJob, BlockingJob, PostMessagePayload},
-    scheduler::Scheduler,
+    scheduler::SCHEDULER,
     scheduler_message::SchedulerMessage,
     thread_pool::ThreadPool,
     worker_handle::WorkerHandle,

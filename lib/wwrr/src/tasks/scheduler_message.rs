@@ -135,6 +135,7 @@ impl SchedulerMessage {
                 spawn_wasm,
             } => {
                 let mut ser = Serializer::new(consts::TYPE_SPAWN_WITH_MODULE_AND_MEMORY)
+                    .boxed(consts::MODULE_BYTES, module.serialize())
                     .set(consts::MODULE, module)
                     .boxed(consts::PTR, spawn_wasm);
 

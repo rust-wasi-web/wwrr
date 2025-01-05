@@ -1,3 +1,4 @@
+use std::sync::{LazyLock, OnceLock};
 use std::{
     collections::VecDeque,
     fmt::Debug,
@@ -5,104 +6,77 @@ use std::{
 };
 
 use anyhow::{Context, Error};
-use tokio::sync::mpsc::UnboundedSender;
-use tokio::sync::mpsc::{self};
-use tracing::Instrument;
-use wasm_bindgen::JsCast;
+use wasm_bindgen::{prelude::*, JsCast};
 use wasmer::AsJs;
 
+use crate::tasks::worker::{init_message_scheduler, WORKER_URL};
 use crate::tasks::{
     AsyncJob, BlockingJob, PostMessagePayload, SchedulerMessage, WorkerHandle, WorkerMessage,
 };
 
+/// The scheduler instance.
+pub static SCHEDULER: LazyLock<Scheduler> = LazyLock::new(Scheduler::spawn);
+
 /// A handle for interacting with the threadpool's scheduler.
 #[derive(Debug, Clone)]
-pub(crate) struct Scheduler {
-    scheduler_thread_id: u32,
-    channel: UnboundedSender<SchedulerMessage>,
+pub(crate) struct Scheduler {}
+
+thread_local! {
+    /// Web worker instance that hosts the scheduler.
+    ///
+    /// This is only set in the main thread.
+    static WORKER: OnceLock<web_sys::Worker> = OnceLock::new();
 }
 
 impl Scheduler {
-    /// Spin up a scheduler on the current thread and get a channel that can be
-    /// used to communicate with it.
-    pub(crate) fn spawn() -> Scheduler {
-        let (sender, mut receiver) = mpsc::unbounded_channel();
+    /// Spawn a web worker running the scheduler.
+    fn spawn() -> Scheduler {
+        tracing::info!("Spawning task scheduler");
 
-        let thread_id = wasmer::current_thread_id();
-        // Safety: we just got the thread ID.
-        let sender = unsafe { Scheduler::new(sender, thread_id) };
+        // Start web worker.
+        let wo = web_sys::WorkerOptions::new();
+        wo.set_name("scheduler");
+        wo.set_type(web_sys::WorkerType::Module);
+        let worker = web_sys::Worker::new_with_options(&WORKER_URL, &wo).unwrap();
 
-        let mut scheduler = SchedulerState::new(sender.clone());
+        // Send init message.
+        let init_msg = init_message_scheduler();
+        worker.post_message(&init_msg).unwrap();
 
-        tracing::debug!(thread_id, "Spinning up the scheduler");
-        wasm_bindgen_futures::spawn_local(
-            async move {
-                while let Some(msg) = receiver.recv().await {
-                    tracing::debug!(?msg, "Executing a message");
-
-                    if let Err(e) = scheduler.execute(msg) {
-                        tracing::error!(error = &*e, "An error occurred while handling a message");
-                    }
-                }
-
-                tracing::debug!("Shutting down the scheduler");
-                drop(scheduler);
-            }
-            .in_current_span()
-            .instrument(tracing::debug_span!("scheduler", thread_id = thread_id)),
-        );
-
-        sender
+        WORKER.with(|w| w.set(worker)).unwrap();
+        Self {}
     }
 
-    /// # Safety
-    ///
-    /// The [`SchedulerMessage`] type is marked as `!Send` because
-    /// [`wasmer::Module`] and friends are `!Send` when compiled for the
-    /// browser.
-    ///
-    /// The `scheduler_thread_id` must match the [`wasmer::current_thread_id()`]
-    /// otherwise these `!Send` values will be sent between threads.
-    unsafe fn new(channel: UnboundedSender<SchedulerMessage>, scheduler_thread_id: u32) -> Self {
-        debug_assert_eq!(scheduler_thread_id, wasmer::current_thread_id());
-        Scheduler {
-            channel,
-            scheduler_thread_id,
-        }
-    }
-
+    /// Sends a message to the scheduler.
     pub fn send(&self, msg: SchedulerMessage) -> Result<(), Error> {
-        if wasmer::current_thread_id() == self.scheduler_thread_id {
-            tracing::debug!(
-                current_thread = wasmer::current_thread_id(),
-                ?msg,
-                "Sending message to scheduler"
-            );
-            // It's safe to send the message to the scheduler.
-            self.channel
-                .send(msg)
-                .map_err(|_| Error::msg("Scheduler is dead"))?;
-            Ok(())
-        } else {
-            // We are in a child worker so we need to emit the message via
-            // postMessage() and let the WorkerHandle forward it to the
-            // scheduler.
-            WorkerMessage::Scheduler(msg)
-                .emit()
-                .map_err(|e| e.into_anyhow())?;
-            Ok(())
-        }
+        WORKER.with(|worker| {
+            match worker.get() {
+                Some(worker) => {
+                    // We are in the main thread and must send the message to the
+                    // scheduler web worker.
+                    let js_msg = msg.into_js().map_err(|e| e.into_anyhow())?;
+                    worker
+                        .post_message(&js_msg)
+                        .map_err(|e| utils::Error::js(e).into_anyhow())?;
+                    Ok(())
+                }
+                None => {
+                    // We are in a child worker so we need to emit the message via
+                    // postMessage() and let the WorkerHandle forward it to the
+                    // scheduler.
+                    WorkerMessage::Scheduler(msg)
+                        .emit()
+                        .map_err(|e| e.into_anyhow())?;
+                    Ok(())
+                }
+            }
+        })
     }
 }
 
-// Safety: The only way our !Send messages will be sent to the scheduler is if
-// they are on the same thread. This is enforced via Scheduler::new()'s
-// invariants.
-unsafe impl Send for Scheduler {}
-unsafe impl Sync for Scheduler {}
-
 /// The state for the actor in charge of the threadpool.
 #[derive(Debug)]
+#[wasm_bindgen(skip_typescript)]
 struct SchedulerState {
     /// Workers that are able to receive work.
     idle: VecDeque<WorkerHandle>,
@@ -111,18 +85,31 @@ struct SchedulerState {
     busy: VecDeque<WorkerHandle>,
     /// Workers that are busy and cannot be reused afterwards.
     busy_non_reusable: VecDeque<WorkerHandle>,
-    /// A channel that can be used to send messages to this scheduler.
-    mailbox: Scheduler,
 }
 
+#[wasm_bindgen]
 impl SchedulerState {
-    fn new(mailbox: Scheduler) -> Self {
+    /// Runs the scheduler on this web worker.
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
         SchedulerState {
             idle: VecDeque::new(),
             busy: VecDeque::new(),
             busy_non_reusable: VecDeque::new(),
-            mailbox,
         }
+    }
+
+    /// Handles a web worker message
+    #[wasm_bindgen]
+    pub fn handle(&mut self, msg: JsValue) -> Result<(), utils::Error> {
+        let msg = unsafe { SchedulerMessage::try_from_js(msg)? };
+
+        tracing::debug!(?msg, "Executing a message");
+        if let Err(e) = self.execute(msg) {
+            tracing::error!(error = &*e, "An error occurred while handling a message");
+        }
+
+        Ok(())
     }
 
     fn execute(&mut self, message: SchedulerMessage) -> Result<(), Error> {
@@ -232,7 +219,7 @@ impl SchedulerState {
         static NEXT_ID: AtomicU32 = AtomicU32::new(1);
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
 
-        let handle = WorkerHandle::spawn(id, self.mailbox.clone())?;
+        let handle = WorkerHandle::spawn(id)?;
         Ok(handle)
     }
 }
@@ -241,43 +228,5 @@ fn move_worker(worker_id: u32, from: &mut VecDeque<WorkerHandle>, to: &mut VecDe
     if let Some(ix) = from.iter().position(|w| w.id() == worker_id) {
         let worker = from.remove(ix).unwrap();
         to.push_back(worker);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use tokio::sync::oneshot;
-    use wasm_bindgen_test::wasm_bindgen_test;
-
-    use super::*;
-
-    #[wasm_bindgen_test]
-    async fn spawn_an_async_function() {
-        let (sender, receiver) = oneshot::channel();
-        let (tx, _) = mpsc::unbounded_channel();
-        let tx = unsafe { Scheduler::new(tx, wasmer::current_thread_id()) };
-        let mut scheduler = SchedulerState::new(tx);
-        let message = SchedulerMessage::SpawnAsync(Box::new(move || {
-            Box::pin(async move {
-                let _ = sender.send(42);
-            })
-        }));
-
-        // we start off with no workers
-        assert_eq!(scheduler.idle.len(), 0);
-        assert_eq!(scheduler.busy.len(), 0);
-
-        // then we run the message, which should start up a worker and send it
-        // the job
-        scheduler.execute(message).unwrap();
-
-        // One worker should have been created and added to the "ready" queue
-        // because it's just handling async workloads.
-        assert_eq!(scheduler.idle.len(), 1);
-        assert_eq!(scheduler.busy.len(), 0);
-
-        // Make sure the background thread actually ran something and sent us
-        // back a result
-        assert_eq!(receiver.await.unwrap(), 42);
     }
 }
