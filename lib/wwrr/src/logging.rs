@@ -1,6 +1,5 @@
 use std::io::{ErrorKind, Write};
 
-use tokio::sync::mpsc;
 use tracing::Level;
 use tracing_subscriber::{
     fmt::{format::FmtSpan, MakeWriter},
@@ -99,51 +98,21 @@ pub fn initialize_logger(log_config: LogConfig) -> Result<(), utils::Error> {
     Ok(())
 }
 
-/// A [`std::io::Write`] implementation which will pass all messages to the main
-/// thread for logging with [`web_sys::console`].
-///
-/// This is useful when using Web Workers for concurrency because their
-/// `console.log()` output isn't normally captured by test runners.
+/// A [`std::io::Write`] implementation which will log all message using
+/// [`web_sys::console`].
 #[derive(Debug)]
 struct ConsoleLogger {
     buffer: Vec<u8>,
-    sender: mpsc::UnboundedSender<LogMsg>,
+    ansi: bool,
     level: Option<Level>,
-}
-
-struct LogMsg {
-    level: Option<Level>,
-    msg: String,
 }
 
 impl ConsoleLogger {
+    const PREFIX: &str = "WWRR";
+
     fn spawn(ansi: bool) -> impl for<'w> MakeWriter<'w> + 'static {
-        const PREFIX: &str = "WWRR";
-        let prefix = if ansi {
-            format!("\x1b[35m{PREFIX}\x1b[0m")
-        } else {
-            PREFIX.to_string()
-        };
-
-        let (sender, mut receiver) = mpsc::unbounded_channel();
-
-        wasm_bindgen_futures::spawn_local(async move {
-            while let Some(LogMsg { level, msg }) = receiver.recv().await {
-                let msg = format!("{prefix} {msg}");
-                let js_string = JsValue::from(msg);
-                match level {
-                    Some(Level::DEBUG) => web_sys::console::debug_1(&js_string),
-                    Some(Level::INFO) => web_sys::console::info_1(&js_string),
-                    Some(Level::ERROR) => web_sys::console::error_1(&js_string),
-                    Some(Level::WARN) => web_sys::console::warn_1(&js_string),
-                    Some(Level::TRACE) => web_sys::console::trace_1(&js_string),
-                    None => web_sys::console::log_1(&js_string),
-                }
-            }
-        });
-
         struct MakeConsoleLogger {
-            sender: mpsc::UnboundedSender<LogMsg>,
+            ansi: bool,
         }
 
         impl<'a> MakeWriter<'a> for MakeConsoleLogger {
@@ -152,7 +121,7 @@ impl ConsoleLogger {
             fn make_writer(&self) -> Self::Writer {
                 ConsoleLogger {
                     buffer: Vec::new(),
-                    sender: self.sender.clone(),
+                    ansi: self.ansi,
                     level: None,
                 }
             }
@@ -160,13 +129,13 @@ impl ConsoleLogger {
             fn make_writer_for(&self, meta: &tracing::Metadata) -> Self::Writer {
                 ConsoleLogger {
                     buffer: Vec::new(),
-                    sender: self.sender.clone(),
+                    ansi: self.ansi,
                     level: Some(*meta.level()),
                 }
             }
         }
 
-        MakeConsoleLogger { sender }
+        MakeConsoleLogger { ansi }
     }
 }
 
@@ -178,16 +147,26 @@ impl Write for ConsoleLogger {
 
     fn flush(&mut self) -> std::io::Result<()> {
         let buffer = std::mem::take(&mut self.buffer);
-
         let text = String::from_utf8(buffer)
             .map_err(|e| std::io::Error::new(ErrorKind::InvalidInput, e))?;
 
-        self.sender
-            .send(LogMsg {
-                level: self.level,
-                msg: text,
-            })
-            .map_err(|e| std::io::Error::new(ErrorKind::BrokenPipe, e))?;
+        let prefix = if self.ansi {
+            format!("\x1b[35m{}\x1b[0m", Self::PREFIX)
+        } else {
+            Self::PREFIX.to_string()
+        };
+
+        let msg = format!("{prefix} {text}");
+        let js_string = JsValue::from(msg);
+
+        match self.level {
+            Some(Level::DEBUG) => web_sys::console::debug_1(&js_string),
+            Some(Level::INFO) => web_sys::console::info_1(&js_string),
+            Some(Level::ERROR) => web_sys::console::error_1(&js_string),
+            Some(Level::WARN) => web_sys::console::warn_1(&js_string),
+            Some(Level::TRACE) => web_sys::console::trace_1(&js_string),
+            None => web_sys::console::log_1(&js_string),
+        }
 
         Ok(())
     }

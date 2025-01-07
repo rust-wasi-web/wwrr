@@ -4,7 +4,8 @@ use anyhow::{Context, Error};
 use wasm_bindgen::{prelude::*, JsCast};
 
 use super::worker::{init_message_worker, WORKER_URL};
-use crate::tasks::{PostMessagePayload, SchedulerMessage, WorkerMessage, SCHEDULER};
+use crate::tasks::scheduler::SCHEDULER_STATE;
+use crate::tasks::{PostMessagePayload, SchedulerMessage, WorkerMessage};
 
 /// A handle to a running [`web_sys::Worker`].
 ///
@@ -97,7 +98,10 @@ fn on_message(msg: web_sys::MessageEvent, worker_id: u32) {
                 WorkerMessage::MarkIdle => SchedulerMessage::WorkerIdle { worker_id },
                 WorkerMessage::Scheduler(msg) => msg,
             };
-            SCHEDULER.send(msg).map_err(|_| Error::msg("Send failed"))
+
+            SCHEDULER_STATE
+                .with(|ss| ss.get().unwrap().borrow_mut().execute(msg))
+                .map_err(|_| Error::msg("Send failed"))
         });
 
     if let Err(e) = result {

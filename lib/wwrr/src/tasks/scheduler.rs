@@ -1,4 +1,5 @@
-use std::sync::{LazyLock, OnceLock};
+use std::cell::{OnceCell, RefCell};
+use std::sync::LazyLock;
 use std::{
     collections::VecDeque,
     fmt::Debug,
@@ -6,7 +7,10 @@ use std::{
 };
 
 use anyhow::{Context, Error};
+use tokio::sync::oneshot;
+use utils::GlobalScope;
 use wasm_bindgen::{prelude::*, JsCast};
+use wasm_bindgen_futures::JsFuture;
 use wasmer::AsJs;
 
 use crate::tasks::worker::{init_message_scheduler, WORKER_URL};
@@ -25,7 +29,7 @@ thread_local! {
     /// Web worker instance that hosts the scheduler.
     ///
     /// This is only set in the main thread.
-    static WORKER: OnceLock<web_sys::Worker> = OnceLock::new();
+    static WORKER: OnceCell<web_sys::Worker> = OnceCell::new();
 }
 
 impl Scheduler {
@@ -72,12 +76,44 @@ impl Scheduler {
             }
         })
     }
+
+    /// Pings the scheduler and waits for a reply.
+    pub async fn ping(&self) -> Result<(), Error> {
+        let (tx, rx) = oneshot::channel();
+        self.send(SchedulerMessage::Ping { reply: tx })?;
+        rx.await.context("scheduler is dead")?;
+        Ok(())
+    }
+}
+
+thread_local! {
+    /// The scheduler running on this web worker.
+    pub static SCHEDULER_STATE: OnceCell<RefCell<SchedulerState>> = OnceCell::new();
+}
+
+/// Scheduler worker.
+#[wasm_bindgen(skip_typescript)]
+struct SchedulerWorker {}
+
+#[wasm_bindgen]
+impl SchedulerWorker {
+    /// Starts the scheduler on this web worker.
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        SCHEDULER_STATE.with(|ss| ss.set(RefCell::new(SchedulerState::new())).unwrap());
+        Self {}
+    }
+
+    /// Hnadles a scheduler message.
+    #[wasm_bindgen]
+    pub fn handle(&self, msg: JsValue) -> Result<(), utils::Error> {
+        SCHEDULER_STATE.with(|ss| ss.get().unwrap().borrow_mut().handle(msg))
+    }
 }
 
 /// The state for the actor in charge of the threadpool.
 #[derive(Debug)]
-#[wasm_bindgen(skip_typescript)]
-struct SchedulerState {
+pub(crate) struct SchedulerState {
     /// Workers that are able to receive work.
     idle: VecDeque<WorkerHandle>,
     /// Workers that are currently blocked on synchronous operations and can't
@@ -85,22 +121,22 @@ struct SchedulerState {
     busy: VecDeque<WorkerHandle>,
     /// Workers that are busy and cannot be reused afterwards.
     busy_non_reusable: VecDeque<WorkerHandle>,
+    /// Global scope.
+    global: GlobalScope,
 }
 
-#[wasm_bindgen]
 impl SchedulerState {
     /// Runs the scheduler on this web worker.
-    #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
         SchedulerState {
             idle: VecDeque::new(),
             busy: VecDeque::new(),
             busy_non_reusable: VecDeque::new(),
+            global: GlobalScope::current(),
         }
     }
 
-    /// Handles a web worker message
-    #[wasm_bindgen]
+    /// Parses a web worker message and then executes it.
     pub fn handle(&mut self, msg: JsValue) -> Result<(), utils::Error> {
         let msg = unsafe { SchedulerMessage::try_from_js(msg)? };
 
@@ -112,7 +148,8 @@ impl SchedulerState {
         Ok(())
     }
 
-    fn execute(&mut self, message: SchedulerMessage) -> Result<(), Error> {
+    /// Executes a scheduler message.
+    pub fn execute(&mut self, message: SchedulerMessage) -> Result<(), Error> {
         match message {
             SchedulerMessage::SpawnAsync(task) => {
                 self.post_message(PostMessagePayload::Async(AsyncJob::Thunk(task)))
@@ -161,6 +198,18 @@ impl SchedulerState {
                     busy_workers=?self.busy.iter().map(|w| w.id()).collect::<Vec<_>>(),
                     "Worker marked as idle",
                 );
+                Ok(())
+            }
+            SchedulerMessage::Sleep { duration, notify } => {
+                let global = self.global.clone();
+                wasm_bindgen_futures::spawn_local(async move {
+                    let _ = JsFuture::from(global.sleep(duration)).await;
+                    let _ = notify.send(());
+                });
+                Ok(())
+            }
+            SchedulerMessage::Ping { reply } => {
+                let _ = reply.send(());
                 Ok(())
             }
             SchedulerMessage::Markers { uninhabited, .. } => match uninhabited {},

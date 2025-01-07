@@ -3,6 +3,7 @@ use std::marker::PhantomData;
 use bytes::Bytes;
 use derivative::Derivative;
 use js_sys::WebAssembly;
+use tokio::sync::oneshot;
 use utils::Error;
 use wasm_bindgen::JsValue;
 use wasmer::AsJs;
@@ -40,6 +41,18 @@ pub(crate) enum SchedulerMessage {
         module: wasmer::Module,
         memory: Option<wasmer::Memory>,
         spawn_wasm: SpawnWasm,
+    },
+    /// Send a notification at the specified time.
+    Sleep {
+        /// Duration to sleep in milliseconds.
+        duration: i32,
+        /// Notify channel.
+        notify: oneshot::Sender<()>,
+    },
+    /// Pings the scheduler.
+    Ping {
+        /// Reply channel.
+        reply: oneshot::Sender<()>,
     },
     #[doc(hidden)]
     #[allow(dead_code)]
@@ -101,6 +114,15 @@ impl SchedulerMessage {
                     spawn_wasm,
                 })
             }
+            consts::TYPE_SLEEP => {
+                let duration = de.serde(consts::DURATION)?;
+                let notify = de.boxed(consts::NOTIFY)?;
+                Ok(SchedulerMessage::Sleep { duration, notify })
+            }
+            consts::TYPE_PING => {
+                let reply = de.boxed(consts::REPLY)?;
+                Ok(SchedulerMessage::Ping { reply })
+            }
             other => {
                 tracing::warn!(r#type = other, "Unknown message type");
                 Err(anyhow::anyhow!("Unknown message type, \"{other}\"").into())
@@ -146,6 +168,13 @@ impl SchedulerMessage {
 
                 ser.finish()
             }
+            SchedulerMessage::Sleep { duration, notify } => Serializer::new(consts::TYPE_SLEEP)
+                .set(consts::DURATION, duration)
+                .boxed(consts::NOTIFY, notify)
+                .finish(),
+            SchedulerMessage::Ping { reply } => Serializer::new(consts::TYPE_PING)
+                .boxed(consts::REPLY, reply)
+                .finish(),
             SchedulerMessage::Markers { uninhabited, .. } => match uninhabited {},
         }
     }
@@ -158,9 +187,14 @@ mod consts {
     pub const TYPE_WORKER_BUSY: &str = "worker-busy";
     pub const TYPE_SPAWN_WITH_MODULE: &str = "spawn-with-module";
     pub const TYPE_SPAWN_WITH_MODULE_AND_MEMORY: &str = "spawn-with-module-and-memory";
+    pub const TYPE_SLEEP: &str = "sleep";
+    pub const TYPE_PING: &str = "ping";
     pub const MEMORY: &str = "memory";
     pub const MODULE: &str = "module";
     pub const MODULE_BYTES: &str = "module-bytes";
     pub const PTR: &str = "ptr";
     pub const WORKER_ID: &str = "worker-id";
+    pub const DURATION: &str = "duration";
+    pub const NOTIFY: &str = "notify";
+    pub const REPLY: &str = "reply";
 }

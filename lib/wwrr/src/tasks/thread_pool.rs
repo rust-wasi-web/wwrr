@@ -2,10 +2,8 @@ use std::task::{Context, Poll};
 use std::{fmt::Debug, future::Future, pin::Pin};
 
 use futures::future::LocalBoxFuture;
-use futures::FutureExt;
 use instant::Duration;
 use utils::GlobalScope;
-use wasm_bindgen_futures::JsFuture;
 use wasmer::Module;
 use wasmer_wasix::{runtime::task_manager::TaskWasm, VirtualTaskManager, WasiThreadError};
 
@@ -58,8 +56,6 @@ impl VirtualTaskManager for ThreadPool {
         &self,
         time: Duration,
     ) -> Pin<Box<dyn Future<Output = ()> + Send + Sync + 'static>> {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-
         let time = if time.as_millis() < i32::MAX as u128 {
             time.as_millis() as i32
         } else {
@@ -72,32 +68,27 @@ impl VirtualTaskManager for ThreadPool {
             // deadlock because the syscall will block block until the future
             // resolves, but the JsFuture will never get a chance to mark itself as
             // resolved because the JavaScript VM is still blocked by the syscall.
-            let _ = self.task_shared(Box::new(move || {
-                async move {
-                    let global = GlobalScope::current();
-                    let _ = JsFuture::from(global.sleep(time)).await;
-                    let _ = tx.send(());
-                }
-                .boxed_local()
-            }));
-
-            Box::pin(async move {
-                let _ = rx.await;
-            })
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            self.send(SchedulerMessage::Sleep {
+                duration: time,
+                notify: tx,
+            });
+            Box::pin(async move { rx.await.unwrap() })
         } else {
-            // If waiting is not allowed, we cannot expect spawn to work, and therefore
-            // our only choice is to busy wait on the main thread.
+            // If we are on the main browser thread, waiting is not allowed.
+            // Thus our only choice is to spin wait.
             struct SpinWaiter {
                 until: f64,
             }
 
             impl Future for SpinWaiter {
                 type Output = ();
-                fn poll(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<Self::Output> {
+                fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
                     let this = self.as_ref();
                     if GlobalScope::current().now() >= this.until {
                         Poll::Ready(())
                     } else {
+                        cx.waker().wake_by_ref();
                         Poll::Pending
                     }
                 }

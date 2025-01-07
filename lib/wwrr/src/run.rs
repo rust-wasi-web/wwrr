@@ -6,6 +6,7 @@ use wasm_bindgen::{prelude::*, JsCast};
 use wasmer::ImportsObj;
 use wasmer_wasix::{Runtime as _, WasiEnvBuilder, WasiReactor};
 
+use crate::tasks::SCHEDULER;
 use crate::{instance::ExitCondition, Instance, RunOptions};
 
 const DEFAULT_PROGRAM_NAME: &str = "wasm";
@@ -127,6 +128,9 @@ pub async fn load_wasix(
     if !is_memory_shared(our_memory.dyn_ref().unwrap()) {
         return Err(anyhow::anyhow!("wwrr memory is not shared").into());
     }
+
+    // Initialize scheduler.
+    SCHEDULER.ping().await?;
 
     let runtime = config.runtime().resolve()?.into_inner();
 
