@@ -86,31 +86,3 @@ impl wasmer_wasix::runtime::Runtime for Runtime {
         self.module_cache.clone()
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use wasm_bindgen_test::wasm_bindgen_test;
-    use wasmer::Module;
-    use wasmer_wasix::WasiEnvBuilder;
-
-    use super::*;
-
-    pub(crate) const TRIVIAL_WAT: &[u8] = br#"(
-        module
-            (memory $memory 0)
-            (export "memory" (memory $memory))
-            (func (export "_start") nop)
-        )"#;
-
-    #[wasm_bindgen_test]
-    async fn execute_a_trivial_module() {
-        let runtime = Runtime::with_defaults().unwrap();
-        let module = Module::new(TRIVIAL_WAT).await.unwrap();
-
-        WasiEnvBuilder::new("trivial")
-            .runtime(Arc::new(runtime))
-            .run(module)
-            .await
-            .unwrap();
-    }
-}

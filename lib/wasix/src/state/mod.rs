@@ -19,7 +19,6 @@ mod builder;
 mod env;
 mod func_env;
 mod handles;
-mod run;
 mod types;
 
 use std::{
@@ -30,7 +29,6 @@ use std::{
     time::Duration,
 };
 
-use run::*;
 use virtual_fs::{FileOpener, FileSystem, FsError, OpenOptions, VirtualFile};
 use wasmer_wasix_types::wasi::{Errno, Fd as WasiFd, Rights, Snapshot0Clockid};
 

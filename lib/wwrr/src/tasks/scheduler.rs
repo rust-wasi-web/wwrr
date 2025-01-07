@@ -1,38 +1,30 @@
-use std::cell::{OnceCell, RefCell};
 use std::collections::HashMap;
-use std::sync::LazyLock;
 use std::{
     fmt::Debug,
     sync::atomic::{AtomicU32, Ordering},
 };
 
-use anyhow::{Context, Error};
-use tokio::sync::oneshot;
+use anyhow::{anyhow, Context, Error};
+use tokio::sync::{mpsc, oneshot};
 use utils::GlobalScope;
 use wasm_bindgen::{prelude::*, JsCast};
 use wasm_bindgen_futures::JsFuture;
-use wasmer::AsJs;
+use wasmer::{AsJs, Memory, Module};
 
+use super::scheduler_message::SchedulerMsg;
+use crate::tasks::scheduler_message::SchedulerInit;
 use crate::tasks::worker::{init_message_scheduler, WORKER_URL};
-use crate::tasks::{PostMessagePayload, SchedulerMessage, WorkerHandle, WorkerMessage};
-
-/// The scheduler instance.
-pub static SCHEDULER: LazyLock<Scheduler> = LazyLock::new(Scheduler::spawn);
+use crate::tasks::{PostMessagePayload, WorkerHandle};
 
 /// A handle for interacting with the threadpool's scheduler.
 #[derive(Debug, Clone)]
-pub(crate) struct Scheduler {}
-
-thread_local! {
-    /// Web worker instance that hosts the scheduler.
-    ///
-    /// This is only set in the main thread.
-    static WORKER: OnceCell<web_sys::Worker> = OnceCell::new();
+pub(crate) struct Scheduler {
+    msg_tx: mpsc::UnboundedSender<SchedulerMsg>,
 }
 
 impl Scheduler {
     /// Spawn a web worker running the scheduler.
-    fn spawn() -> Scheduler {
+    pub fn spawn(module: Module, memory: Memory) -> Self {
         tracing::info!("Spawning task scheduler");
 
         // Start web worker.
@@ -41,52 +33,41 @@ impl Scheduler {
         wo.set_type(web_sys::WorkerType::Module);
         let worker = web_sys::Worker::new_with_options(&WORKER_URL, &wo).unwrap();
 
-        // Send init message.
-        let init_msg = init_message_scheduler();
-        worker.post_message(&init_msg).unwrap();
+        // Send init message to load WebAssembly module.
+        let wasm_init_msg = init_message_scheduler();
+        worker.post_message(&wasm_init_msg).unwrap();
 
-        WORKER.with(|w| w.set(worker)).unwrap();
-        Self {}
+        // Send scheduler init message.
+        let (msg_tx, msg_rx) = mpsc::unbounded_channel();
+        let scheduler_init = SchedulerInit {
+            msg_tx: msg_tx.clone(),
+            msg_rx,
+            module,
+            memory,
+            _not_send: std::marker::PhantomData,
+        };
+        worker
+            .post_message(&scheduler_init.into_js().unwrap())
+            .unwrap();
+
+        Self { msg_tx }
     }
 
     /// Sends a message to the scheduler.
-    pub fn send(&self, msg: SchedulerMessage) -> Result<(), Error> {
-        WORKER.with(|worker| {
-            match worker.get() {
-                Some(worker) => {
-                    // We are in the main thread and must send the message to the
-                    // scheduler web worker.
-                    let js_msg = msg.into_js().map_err(|e| e.into_anyhow())?;
-                    worker
-                        .post_message(&js_msg)
-                        .map_err(|e| utils::Error::js(e).into_anyhow())?;
-                    Ok(())
-                }
-                None => {
-                    // We are in a child worker so we need to emit the message via
-                    // postMessage() and let the WorkerHandle forward it to the
-                    // scheduler.
-                    WorkerMessage::Scheduler(msg)
-                        .emit()
-                        .map_err(|e| e.into_anyhow())?;
-                    Ok(())
-                }
-            }
-        })
+    pub fn send(&self, msg: SchedulerMsg) -> Result<(), Error> {
+        self.msg_tx
+            .send(msg)
+            .map_err(|_| anyhow!("scheduler died"))?;
+        Ok(())
     }
 
     /// Pings the scheduler and waits for a reply.
     pub async fn ping(&self) -> Result<(), Error> {
         let (tx, rx) = oneshot::channel();
-        self.send(SchedulerMessage::Ping { reply: tx })?;
-        rx.await.context("scheduler is dead")?;
+        self.send(SchedulerMsg::Ping(tx))?;
+        rx.await.context("scheduler does not respond to ping")?;
         Ok(())
     }
-}
-
-thread_local! {
-    /// The scheduler running on this web worker.
-    pub static SCHEDULER_STATE: OnceCell<RefCell<SchedulerState>> = OnceCell::new();
 }
 
 /// Scheduler worker.
@@ -98,14 +79,16 @@ impl SchedulerWorker {
     /// Starts the scheduler on this web worker.
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
-        SCHEDULER_STATE.with(|ss| ss.set(RefCell::new(SchedulerState::new())).unwrap());
         Self {}
     }
 
     /// Hnadles a scheduler message.
     #[wasm_bindgen]
-    pub fn handle(&self, msg: JsValue) -> Result<(), utils::Error> {
-        SCHEDULER_STATE.with(|ss| ss.get().unwrap().borrow_mut().handle(msg))
+    pub fn handle(&mut self, msg: JsValue) -> Result<(), utils::Error> {
+        tracing::info!("Initializing scheduler");
+        let scheduler_init = unsafe { SchedulerInit::try_from_js(msg) }?;
+        SchedulerState::spawn(scheduler_init);
+        Ok(())
     }
 }
 
@@ -116,52 +99,68 @@ pub(crate) struct SchedulerState {
     global: GlobalScope,
     /// Workers that are busy and cannot be reused afterwards.
     workers: HashMap<u32, WorkerHandle>,
+    /// Message sender.
+    msg_tx: mpsc::UnboundedSender<SchedulerMsg>,
+    /// Message receiver.
+    msg_rx: mpsc::UnboundedReceiver<SchedulerMsg>,
+    /// WebAssembly module for spawning threads.
+    module: wasmer::Module,
+    /// WebAssembly memory for spawning threads.
+    memory: wasmer::Memory,
 }
 
 impl SchedulerState {
     /// Runs the scheduler on this web worker.
-    pub fn new() -> Self {
-        SchedulerState {
+    pub fn spawn(init: SchedulerInit) {
+        let SchedulerInit {
+            msg_tx,
+            msg_rx,
+            module,
+            memory,
+            _not_send,
+        } = init;
+
+        let this = Self {
             global: GlobalScope::current(),
             workers: HashMap::new(),
-        }
+            msg_tx,
+            msg_rx,
+            module,
+            memory,
+        };
+        wasm_bindgen_futures::spawn_local(this.run());
     }
 
-    /// Parses a web worker message and then executes it.
-    pub fn handle(&mut self, msg: JsValue) -> Result<(), utils::Error> {
-        let msg = unsafe { SchedulerMessage::try_from_js(msg)? };
-
-        tracing::debug!(?msg, "Executing a message");
-        if let Err(e) = self.execute(msg) {
-            tracing::error!(error = &*e, "An error occurred while handling a message");
+    /// Scheduler main loop.
+    async fn run(mut self) {
+        while let Some(msg) = self.msg_rx.recv().await {
+            if let Err(e) = self.execute(msg) {
+                tracing::error!(error = &*e, "An error occurred while handling a message");
+            }
         }
-
-        Ok(())
     }
 
     /// Executes a scheduler message.
-    pub fn execute(&mut self, message: SchedulerMessage) -> Result<(), Error> {
+    pub fn execute(&mut self, message: SchedulerMsg) -> Result<(), Error> {
         match message {
-            SchedulerMessage::SpawnWithModuleAndMemory {
-                module,
-                memory,
-                spawn_wasm,
-            } => {
-                let temp_store = wasmer::Store::default();
-                let memory = memory.map(|m| m.as_jsvalue(&temp_store).dyn_into().unwrap());
-
+            SchedulerMsg::SpawnWasm(spawn_wasm) => {
                 self.post_message(PostMessagePayload::SpawnWithModuleAndMemory {
-                    module,
-                    memory,
+                    module: self.module.clone(),
+                    memory: Some(
+                        self.memory
+                            .as_jsvalue(&wasmer::Store::default())
+                            .dyn_into()
+                            .unwrap(),
+                    ),
                     spawn_wasm,
                 })
             }
-            SchedulerMessage::WorkerDone { worker_id } => {
+            SchedulerMsg::WorkerDone(worker_id) => {
                 self.workers.remove(&worker_id).unwrap();
                 tracing::trace!(worker.id = worker_id, "Worker is done",);
                 Ok(())
             }
-            SchedulerMessage::Sleep { duration, notify } => {
+            SchedulerMsg::Sleep { duration, notify } => {
                 let global = self.global.clone();
                 wasm_bindgen_futures::spawn_local(async move {
                     let _ = JsFuture::from(global.sleep(duration)).await;
@@ -169,11 +168,10 @@ impl SchedulerState {
                 });
                 Ok(())
             }
-            SchedulerMessage::Ping { reply } => {
-                let _ = reply.send(());
+            SchedulerMsg::Ping(tx) => {
+                let _ = tx.send(());
                 Ok(())
             }
-            SchedulerMessage::Markers { uninhabited, .. } => match uninhabited {},
         }
     }
 
@@ -196,7 +194,10 @@ impl SchedulerState {
         static NEXT_ID: AtomicU32 = AtomicU32::new(1);
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
 
-        let handle = WorkerHandle::spawn(id)?;
+        let scheduler = Scheduler {
+            msg_tx: self.msg_tx.clone(),
+        };
+        let handle = WorkerHandle::spawn(id, scheduler)?;
         Ok(handle)
     }
 }

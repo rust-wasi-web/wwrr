@@ -40,10 +40,7 @@ mod thread_pool;
 mod thread_pool_worker;
 mod worker;
 mod worker_handle;
-mod worker_message;
 
 pub(crate) use self::{
-    post_message_payload::PostMessagePayload, scheduler::SCHEDULER,
-    scheduler_message::SchedulerMessage, thread_pool::ThreadPool, worker_handle::WorkerHandle,
-    worker_message::WorkerMessage,
+    post_message_payload::PostMessagePayload, thread_pool::ThreadPool, worker_handle::WorkerHandle,
 };

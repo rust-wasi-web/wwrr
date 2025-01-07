@@ -732,7 +732,7 @@ impl WasiEnvBuilder {
     /// Returns the error from `WasiFs::new` if there's an error
     // FIXME: use a proper custom error type
     #[allow(clippy::result_large_err)]
-    pub async fn instantiate(
+    async fn instantiate(
         self,
         module: Module,
         store: &mut impl AsStoreMut,
@@ -740,45 +740,6 @@ impl WasiEnvBuilder {
     ) -> Result<(Instance, WasiFunctionEnv), WasiRuntimeError> {
         let init = self.build_init()?;
         WasiEnv::instantiate(init, module, store, imports_obj).await
-    }
-
-    /// Run the WASI command module by executing its `_start` function.
-    #[allow(clippy::result_large_err)]
-    pub async fn run(self, module: Module) -> Result<(), WasiRuntimeError> {
-        let mut store = wasmer::Store::default();
-        self.run_with_store(module, &mut store).await
-    }
-
-    /// Run the WASI command module by executing its `_start` function.
-    #[allow(clippy::result_large_err)]
-    pub async fn run_with_store(
-        self,
-        module: Module,
-        store: &mut Store,
-    ) -> Result<(), WasiRuntimeError> {
-        let (instance, env) = self
-            .instantiate(module, store, ImportsObj::default())
-            .await?;
-
-        let start = instance.exports.get_function("_start")?;
-        env.data(&store).thread.set_status_running();
-
-        let result = crate::run_wasi_func_start(start, store);
-        let (result, exit_code) = super::wasi_exit_code(result);
-
-        let pid = env.data(&store).pid();
-        let tid = env.data(&store).tid();
-        tracing::trace!(
-            %pid,
-            %tid,
-            %exit_code,
-            error=result.as_ref().err().map(|e| e as &dyn std::error::Error),
-            "main exit",
-        );
-
-        env.on_exit(store, Some(exit_code));
-
-        result
     }
 
     /// Load a WASI reactor module and provide its exports.

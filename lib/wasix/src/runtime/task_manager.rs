@@ -96,8 +96,10 @@ impl<'a, 'b> TaskWasm<'a, 'b> {
 /// [`VirtualTaskManager::spawn_with_module()`] for higher level code.
 ///
 /// [#4158]: https://github.com/wasmerio/wasmer/issues/4158
-#[allow(unused_variables)]
 pub trait VirtualTaskManager: std::fmt::Debug + Send + Sync + 'static {
+    /// Initializes the task manager.
+    fn init(&self, module: Module, memory: Memory) -> LocalBoxFuture<()>;
+
     /// Build a new Webassembly memory.
     ///
     /// May return `None` if the memory can just be auto-constructed.
@@ -174,6 +176,10 @@ where
     D: Deref<Target = T> + std::fmt::Debug + Send + Sync + 'static,
     T: VirtualTaskManager + ?Sized,
 {
+    fn init(&self, module: Module, memory: Memory) -> LocalBoxFuture<()> {
+        (**self).init(module, memory)
+    }
+
     fn build_memory(
         &self,
         store: &mut StoreMut,
@@ -197,4 +203,3 @@ where
         (**self).thread_parallelism()
     }
 }
-

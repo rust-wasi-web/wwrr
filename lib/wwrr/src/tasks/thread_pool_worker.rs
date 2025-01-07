@@ -1,27 +1,40 @@
+use std::cell::OnceCell;
+
+use anyhow::anyhow;
 use js_sys::Promise;
 use wasm_bindgen::{prelude::wasm_bindgen, JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::DedicatedWorkerGlobalScope;
 
-use crate::tasks::{PostMessagePayload, WorkerMessage};
+use crate::tasks::PostMessagePayload;
+
+use super::scheduler::Scheduler;
+use super::scheduler_message::SchedulerMsg;
 
 /// The Rust state for a worker in the threadpool.
 #[wasm_bindgen(skip_typescript)]
 #[derive(Debug)]
 pub struct ThreadPoolWorker {
     id: u32,
+    scheduler: OnceCell<Scheduler>,
 }
 
 impl ThreadPoolWorker {
     fn busy(&self) -> impl Drop {
-        struct BusyGuard;
+        struct BusyGuard {
+            id: u32,
+            scheduler: Scheduler,
+        }
         impl Drop for BusyGuard {
             fn drop(&mut self) {
-                let _ = WorkerMessage::Done.emit();
+                let _ = self.scheduler.send(SchedulerMsg::WorkerDone(self.id));
             }
         }
 
-        BusyGuard
+        BusyGuard {
+            id: self.id,
+            scheduler: self.scheduler.get().expect("worker uninitialized").clone(),
+        }
     }
 
     #[tracing::instrument(level = "debug", skip_all, fields(worker.id = self.id))]
@@ -32,6 +45,12 @@ impl ThreadPoolWorker {
         tracing::trace!(?msg, "Handling a message");
 
         match msg {
+            PostMessagePayload::Init { scheduler } => {
+                tracing::info!("worker initialized");
+                self.scheduler
+                    .set(scheduler)
+                    .map_err(|_| anyhow!("worker already initialized"))?;
+            }
             PostMessagePayload::SpawnWithModuleAndMemory {
                 module,
                 memory,
@@ -82,7 +101,11 @@ impl ThreadPoolWorker {
 impl ThreadPoolWorker {
     #[wasm_bindgen(constructor)]
     pub fn new(id: u32) -> ThreadPoolWorker {
-        ThreadPoolWorker { id }
+        // We need a way to give it the channel!
+        ThreadPoolWorker {
+            id,
+            scheduler: OnceCell::new(),
+        }
     }
 
     #[wasm_bindgen(js_name = "handle")]

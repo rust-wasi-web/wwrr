@@ -10,9 +10,7 @@ use virtual_fs::{
     AsyncRead, AsyncReadExt, AsyncSeek, AsyncWrite, AsyncWriteExt, FsError, Pipe, VirtualFile,
 };
 use wasm_bindgen::{prelude::wasm_bindgen, JsCast, JsValue};
-use web_sys::{
-    ReadableStream, ReadableStreamDefaultController, WritableStream,
-};
+use web_sys::{ReadableStream, ReadableStreamDefaultController, WritableStream};
 
 /// Set up a pipe where data written from JavaScript can be read by the WASIX
 /// process.

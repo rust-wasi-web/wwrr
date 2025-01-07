@@ -387,6 +387,10 @@ impl WasiEnv {
             }
         }
 
+        // Initialize the task manager.
+        let memory = func_env.data(&store).try_memory_clone().unwrap();
+        func_env.data(&store).tasks().init(module, memory).await;
+
         // If this module exports an _initialize function, run that first.
         if call_initialize {
             if let Ok(initialize) = instance.exports.get_function("_initialize") {

@@ -26,6 +26,7 @@ impl Deserializer {
         self.string(TYPE)
     }
 
+    #[allow(dead_code)]
     pub fn serde<T: DeserializeOwned>(&self, field: &str) -> Result<T, Error> {
         let raw: JsValue = self.js(field)?;
         let deserialized = serde_wasm_bindgen::from_value(raw).map_err(Error::js)?;

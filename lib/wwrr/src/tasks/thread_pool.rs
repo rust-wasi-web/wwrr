@@ -1,16 +1,20 @@
+use std::sync::OnceLock;
 use std::task::{Context, Poll};
 use std::{fmt::Debug, future::Future, pin::Pin};
 
+use futures::future::LocalBoxFuture;
+use futures::FutureExt;
 use instant::Duration;
 use utils::GlobalScope;
+use wasmer::{Memory, Module};
 use wasmer_wasix::{runtime::task_manager::TaskWasm, VirtualTaskManager, WasiThreadError};
 
-use crate::tasks::SchedulerMessage;
-use super::scheduler::SCHEDULER;
+use super::scheduler::Scheduler;
+use super::scheduler_message::SchedulerMsg;
 
 /// A handle to a threadpool backed by Web Workers.
 #[derive(Debug, Clone)]
-pub struct ThreadPool {}
+pub struct ThreadPool(OnceLock<Scheduler>);
 
 const CROSS_ORIGIN_WARNING: &str =
     r#"You can only run packages from "Cross-Origin Isolated" websites."#;
@@ -26,16 +30,26 @@ impl ThreadPool {
             );
         }
 
-        ThreadPool {}
+        Self(OnceLock::new())
     }
 
-    pub(crate) fn send(&self, msg: SchedulerMessage) {
-        SCHEDULER.send(msg).expect("scheduler is dead");
+    pub(crate) fn send(&self, msg: SchedulerMsg) {
+        let scheduler = self.0.get().expect("thread pool not initialized");
+        scheduler.send(msg).expect("scheduler is dead");
     }
 }
 
 #[async_trait::async_trait]
 impl VirtualTaskManager for ThreadPool {
+    fn init(&self, module: Module, memory: Memory) -> LocalBoxFuture<()> {
+        async move {
+            let scheduler = Scheduler::spawn(module, memory);
+            scheduler.ping().await.unwrap();
+            self.0.set(scheduler).unwrap();
+        }
+        .boxed_local()
+    }
+
     /// Invokes whenever a WASM thread goes idle. In some runtimes (like
     /// singlethreaded execution environments) they will need to do asynchronous
     /// work whenever the main thread goes idle and this is the place to hook
@@ -57,7 +71,7 @@ impl VirtualTaskManager for ThreadPool {
             // resolves, but the JsFuture will never get a chance to mark itself as
             // resolved because the JavaScript VM is still blocked by the syscall.
             let (tx, rx) = tokio::sync::oneshot::channel();
-            self.send(SchedulerMessage::Sleep {
+            self.send(SchedulerMsg::Sleep {
                 duration: time,
                 notify: tx,
             });

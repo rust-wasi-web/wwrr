@@ -1,11 +1,11 @@
 use std::fmt::Debug;
 
-use anyhow::{Context, Error};
+use anyhow::Error;
 use wasm_bindgen::{prelude::*, JsCast};
 
+use super::scheduler::Scheduler;
 use super::worker::{init_message_worker, WORKER_URL};
-use crate::tasks::scheduler::SCHEDULER_STATE;
-use crate::tasks::{PostMessagePayload, SchedulerMessage, WorkerMessage};
+use crate::tasks::PostMessagePayload;
 
 /// A handle to a running [`web_sys::Worker`].
 ///
@@ -19,7 +19,7 @@ pub(crate) struct WorkerHandle {
 
 impl WorkerHandle {
     /// Spawns a new web worker.
-    pub(crate) fn spawn(worker_id: u32) -> Result<Self, Error> {
+    pub(crate) fn spawn(worker_id: u32, scheduler: Scheduler) -> Result<Self, Error> {
         let name = format!("worker-{worker_id}");
 
         let wo = web_sys::WorkerOptions::new();
@@ -28,11 +28,6 @@ impl WorkerHandle {
 
         let worker =
             web_sys::Worker::new_with_options(&WORKER_URL, &wo).map_err(utils::js_error)?;
-
-        let on_message: Closure<dyn FnMut(web_sys::MessageEvent)> =
-            Closure::new(move |msg: web_sys::MessageEvent| on_message(msg, worker_id));
-        let on_message: js_sys::Function = on_message.into_js_value().unchecked_into();
-        worker.set_onmessage(Some(&on_message));
 
         let on_error: Closure<dyn FnMut(web_sys::ErrorEvent)> =
             Closure::new(move |msg| on_error(msg, worker_id));
@@ -44,6 +39,12 @@ impl WorkerHandle {
         // and linear memory as the scheduler. We need to initialize explicitly.
         let init_msg = init_message_worker(worker_id);
         worker.post_message(&init_msg).unwrap();
+
+        // Provide channel to scheduler to worker.
+        let init_worker_msg = PostMessagePayload::Init { scheduler };
+        worker
+            .post_message(&init_worker_msg.into_js().unwrap())
+            .unwrap();
 
         Ok(WorkerHandle {
             id: worker_id,
@@ -76,41 +77,6 @@ fn on_error(msg: web_sys::ErrorEvent, worker_id: u32) {
         column = %msg.colno(),
         "An error occurred",
     );
-}
-
-#[tracing::instrument(level = "trace", skip_all, fields(worker.id=worker_id))]
-fn on_message(msg: web_sys::MessageEvent, worker_id: u32) {
-    // Safety: The only way we can receive this message is if it was from the
-    // worker, because we are the ones that spawned the worker, we can trust
-    // the messages it emits.
-    let result = unsafe { WorkerMessage::try_from_js(msg.data()) }
-        .map_err(|e| utils::js_error(e.into()))
-        .context("Unable to parse the worker message")
-        .and_then(|msg| {
-            tracing::trace!(
-                ?msg,
-                worker.id = worker_id,
-                "Received a message from worker"
-            );
-
-            let msg = match msg {
-                WorkerMessage::Done => SchedulerMessage::WorkerDone { worker_id },
-                WorkerMessage::Scheduler(msg) => msg,
-            };
-
-            SCHEDULER_STATE
-                .with(|ss| ss.get().unwrap().borrow_mut().execute(msg))
-                .map_err(|_| Error::msg("Send failed"))
-        });
-
-    if let Err(e) = result {
-        tracing::warn!(
-            error = &*e,
-            msg.origin = msg.origin(),
-            msg.last_event_id = msg.last_event_id(),
-            "Unable to handle a message from the worker",
-        );
-    }
 }
 
 impl Drop for WorkerHandle {
