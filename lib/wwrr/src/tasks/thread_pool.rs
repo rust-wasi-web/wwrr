@@ -1,14 +1,11 @@
 use std::task::{Context, Poll};
 use std::{fmt::Debug, future::Future, pin::Pin};
 
-use futures::future::LocalBoxFuture;
 use instant::Duration;
 use utils::GlobalScope;
-use wasmer::Module;
 use wasmer_wasix::{runtime::task_manager::TaskWasm, VirtualTaskManager, WasiThreadError};
 
 use crate::tasks::SchedulerMessage;
-
 use super::scheduler::SCHEDULER;
 
 /// A handle to a threadpool backed by Web Workers.
@@ -30,15 +27,6 @@ impl ThreadPool {
         }
 
         ThreadPool {}
-    }
-
-    /// Run an `async` function to completion on the threadpool.
-    pub fn spawn(
-        &self,
-        task: Box<dyn FnOnce() -> LocalBoxFuture<'static, ()> + Send>,
-    ) -> Result<(), WasiThreadError> {
-        self.send(SchedulerMessage::SpawnAsync(task));
-        Ok(())
     }
 
     pub(crate) fn send(&self, msg: SchedulerMessage) {
@@ -100,15 +88,6 @@ impl VirtualTaskManager for ThreadPool {
         }
     }
 
-    /// Starts an asynchronous task that will run on a shared worker pool
-    /// This task must not block the execution or it could cause a deadlock
-    fn task_shared(
-        &self,
-        task: Box<dyn FnOnce() -> LocalBoxFuture<'static, ()> + Send + 'static>,
-    ) -> Result<(), WasiThreadError> {
-        self.spawn(Box::new(move || Box::pin(async move { task().await })))
-    }
-
     /// Starts an asynchronous task will will run on a dedicated thread
     /// pulled from the worker pool that has a stateful thread local variable
     /// It is ok for this task to block execution and any async futures within its scope
@@ -123,119 +102,6 @@ impl VirtualTaskManager for ThreadPool {
         match utils::GlobalScope::current().hardware_concurrency() {
             Some(n) => Ok(n.get()),
             None => Err(WasiThreadError::Unsupported),
-        }
-    }
-
-    fn spawn_with_module(
-        &self,
-        module: wasmer::Module,
-        task: Box<dyn FnOnce(Module) -> LocalBoxFuture<'static, ()> + Send + 'static>,
-    ) -> Result<(), WasiThreadError> {
-        self.send(SchedulerMessage::SpawnWithModule { task, module });
-
-        Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use futures::{channel::oneshot, FutureExt};
-    use wasm_bindgen_futures::JsFuture;
-    use wasm_bindgen_test::wasm_bindgen_test;
-
-    use super::*;
-
-    #[wasm_bindgen_test]
-    async fn transfer_module_to_worker() {
-        let wasm: &[u8] = include_bytes!("../../../../test-assets/envvar.wasm");
-        let module = wasmer::Module::new(wasm).await.unwrap();
-        let pool = ThreadPool::new();
-
-        let (sender, receiver) = oneshot::channel();
-        pool.spawn_with_module(
-            module.clone(),
-            Box::new(move |module| {
-                async move {
-                    let exports = module.exports().count();
-                    sender.send(exports).unwrap();
-                }
-                .boxed_local()
-            }),
-        )
-        .unwrap();
-
-        let exports = receiver.await.unwrap();
-        assert_eq!(exports, 5);
-    }
-
-    #[wasm_bindgen_test]
-    async fn spawned_tasks_can_communicate_with_the_main_thread() {
-        let pool = ThreadPool::new();
-        let (sender, receiver) = oneshot::channel();
-
-        pool.task_shared(Box::new(move || {
-            Box::pin(async move {
-                sender.send(42_u32).unwrap();
-            })
-        }))
-        .unwrap();
-
-        tracing::info!("Waiting for result");
-        let result = receiver.await.unwrap();
-        tracing::info!("Received {result}");
-        assert_eq!(result, 42);
-    }
-
-    /// This is a regression test for [#355].
-    ///
-    /// Here is a description of the original bug:
-    ///
-    /// > There is a small time between spawning a new Web Worker and when it
-    /// > starts handling its first message. During this time, the worker will be
-    /// > considered "idle" and the scheduler will start sending work to it.
-    /// >
-    /// > That means if you spawn a large number of WASIX threads in quick
-    /// > succession, all of those blocking tasks can be sent to the same newly
-    /// > spawned worker, rather than being sent to their own worker. If the
-    /// > threads depend on each other to make progress, we'll trigger a deadlock.
-    /// >
-    /// > This is what we're seeing when running `ffmpeg`.
-    ///
-    /// [#355]: https://github.com/wasmerio/wasmer-js/pull/355
-    #[wasm_bindgen_test]
-    async fn spawn_interdependent_blocking_tasks_out_of_order() {
-        let (sender_1, receiver_1) = oneshot::channel();
-        let (sender_2, mut receiver_2) = oneshot::channel();
-        // Set things up so we can run 2 blocking tasks at the same time.
-        let pool = ThreadPool::new();
-
-        // Note: The second task depends on the first one completing
-        let first_task = Box::new(move || async move { sender_1.send(()).unwrap() }.boxed_local());
-        let second_task = Box::new(move || {
-            async move {
-                futures::executor::block_on(receiver_1).unwrap();
-                // let the main thread know we're done
-                sender_2.send(()).unwrap();
-            }
-            .boxed_local()
-        });
-
-        // Schedule the tasks out of order in quick succession... If there is a
-        // race condition where both blocking tasks get sent to the same newly
-        // created worker, this triggers it pretty reliably.
-        pool.task_shared(second_task).unwrap();
-        pool.task_shared(first_task).unwrap();
-
-        // If the tasks ran correctly we should get a value. Otherwise, it'll
-        // block forever.
-        let timeout = JsFuture::from(utils::GlobalScope::current().sleep(1000));
-        futures::select! {
-            _ = timeout.fuse() => {
-                panic!("The task was blocked");
-            }
-            _ = receiver_2 => {
-                // Finished successfully
-            }
         }
     }
 }

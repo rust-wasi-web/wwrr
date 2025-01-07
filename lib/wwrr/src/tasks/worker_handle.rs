@@ -94,8 +94,7 @@ fn on_message(msg: web_sys::MessageEvent, worker_id: u32) {
             );
 
             let msg = match msg {
-                WorkerMessage::MarkBusy => SchedulerMessage::WorkerBusy { worker_id },
-                WorkerMessage::MarkIdle => SchedulerMessage::WorkerIdle { worker_id },
+                WorkerMessage::Done => SchedulerMessage::WorkerDone { worker_id },
                 WorkerMessage::Scheduler(msg) => msg,
             };
 

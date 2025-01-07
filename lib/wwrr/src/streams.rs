@@ -3,17 +3,15 @@ use std::task::{Context, Poll};
 
 use anyhow::Context as _;
 use bytes::BytesMut;
-use futures::{future::Either, Stream};
-use js_sys::{JsString, Promise, Reflect, Uint8Array};
+use js_sys::{JsString, Promise, Uint8Array};
 use tracing::Instrument;
 use utils::Error;
 use virtual_fs::{
     AsyncRead, AsyncReadExt, AsyncSeek, AsyncWrite, AsyncWriteExt, FsError, Pipe, VirtualFile,
 };
 use wasm_bindgen::{prelude::wasm_bindgen, JsCast, JsValue};
-use wasm_bindgen_futures::JsFuture;
 use web_sys::{
-    ReadableStream, ReadableStreamDefaultController, ReadableStreamDefaultReader, WritableStream,
+    ReadableStream, ReadableStreamDefaultController, WritableStream,
 };
 
 /// Set up a pipe where data written from JavaScript can be read by the WASIX
@@ -229,50 +227,6 @@ impl ReadableStreamSource {
     }
 }
 
-pub(crate) fn read_to_end(stream: ReadableStream) -> impl Stream<Item = Result<Vec<u8>, Error>> {
-    let reader = match ReadableStreamDefaultReader::new(&stream) {
-        Ok(reader) => reader,
-        Err(_) => {
-            tracing::trace!(
-                "The ReadableStream is already locked. Leaving it up to the user to consume."
-            );
-            return Either::Left(futures::stream::empty());
-        }
-    };
-
-    struct DropGuard(ReadableStreamDefaultReader);
-    impl Drop for DropGuard {
-        fn drop(&mut self) {
-            // Make sure the reader lock always gets released so the caller
-            // isn't left with an unusable stream
-            self.0.release_lock();
-        }
-    }
-
-    let stream = futures::stream::try_unfold(DropGuard(reader), move |reader| async {
-        let next_chunk = JsFuture::from(reader.0.read()).await.map_err(Error::js)?;
-        let chunk = get_chunk(next_chunk)?;
-        Ok(chunk.map(|c| (c, reader)))
-    });
-
-    Either::Right(stream)
-}
-
-fn get_chunk(next_chunk: JsValue) -> Result<Option<Vec<u8>>, Error> {
-    let done = JsValue::from_str("done");
-    let value = JsValue::from_str("value");
-
-    let done = Reflect::get(&next_chunk, &done).map_err(Error::js)?;
-    if done.is_truthy() {
-        return Ok(None);
-    }
-
-    let chunk = Reflect::get(&next_chunk, &value).map_err(Error::js)?;
-    let chunk = Uint8Array::new(&chunk);
-
-    Ok(Some(chunk.to_vec()))
-}
-
 /// Console target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[allow(dead_code)]
@@ -420,11 +374,60 @@ impl AsyncRead for ConsoleFile {
 
 #[cfg(test)]
 mod tests {
-    use futures::TryStreamExt;
+    use futures::future::Either;
+    use futures::{Stream, TryStreamExt};
+    use js_sys::Reflect;
     use wasm_bindgen_futures::JsFuture;
     use wasm_bindgen_test::wasm_bindgen_test;
+    use web_sys::ReadableStreamDefaultReader;
 
     use super::*;
+
+    pub(crate) fn read_to_end(
+        stream: ReadableStream,
+    ) -> impl Stream<Item = Result<Vec<u8>, Error>> {
+        let reader = match ReadableStreamDefaultReader::new(&stream) {
+            Ok(reader) => reader,
+            Err(_) => {
+                tracing::trace!(
+                    "The ReadableStream is already locked. Leaving it up to the user to consume."
+                );
+                return Either::Left(futures::stream::empty());
+            }
+        };
+
+        struct DropGuard(ReadableStreamDefaultReader);
+        impl Drop for DropGuard {
+            fn drop(&mut self) {
+                // Make sure the reader lock always gets released so the caller
+                // isn't left with an unusable stream
+                self.0.release_lock();
+            }
+        }
+
+        let stream = futures::stream::try_unfold(DropGuard(reader), move |reader| async {
+            let next_chunk = JsFuture::from(reader.0.read()).await.map_err(Error::js)?;
+            let chunk = get_chunk(next_chunk)?;
+            Ok(chunk.map(|c| (c, reader)))
+        });
+
+        Either::Right(stream)
+    }
+
+    fn get_chunk(next_chunk: JsValue) -> Result<Option<Vec<u8>>, Error> {
+        let done = JsValue::from_str("done");
+        let value = JsValue::from_str("value");
+
+        let done = Reflect::get(&next_chunk, &done).map_err(Error::js)?;
+        if done.is_truthy() {
+            return Ok(None);
+        }
+
+        let chunk = Reflect::get(&next_chunk, &value).map_err(Error::js)?;
+        let chunk = Uint8Array::new(&chunk);
+
+        Ok(Some(chunk.to_vec()))
+    }
 
     #[wasm_bindgen_test]
     async fn writing_to_the_pipe_is_readable_from_js() {

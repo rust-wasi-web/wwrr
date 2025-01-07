@@ -1,7 +1,7 @@
 use std::cell::{OnceCell, RefCell};
+use std::collections::HashMap;
 use std::sync::LazyLock;
 use std::{
-    collections::VecDeque,
     fmt::Debug,
     sync::atomic::{AtomicU32, Ordering},
 };
@@ -14,9 +14,7 @@ use wasm_bindgen_futures::JsFuture;
 use wasmer::AsJs;
 
 use crate::tasks::worker::{init_message_scheduler, WORKER_URL};
-use crate::tasks::{
-    AsyncJob, BlockingJob, PostMessagePayload, SchedulerMessage, WorkerHandle, WorkerMessage,
-};
+use crate::tasks::{PostMessagePayload, SchedulerMessage, WorkerHandle, WorkerMessage};
 
 /// The scheduler instance.
 pub static SCHEDULER: LazyLock<Scheduler> = LazyLock::new(Scheduler::spawn);
@@ -114,25 +112,18 @@ impl SchedulerWorker {
 /// The state for the actor in charge of the threadpool.
 #[derive(Debug)]
 pub(crate) struct SchedulerState {
-    /// Workers that are able to receive work.
-    idle: VecDeque<WorkerHandle>,
-    /// Workers that are currently blocked on synchronous operations and can't
-    /// receive work at this time.
-    busy: VecDeque<WorkerHandle>,
-    /// Workers that are busy and cannot be reused afterwards.
-    busy_non_reusable: VecDeque<WorkerHandle>,
     /// Global scope.
     global: GlobalScope,
+    /// Workers that are busy and cannot be reused afterwards.
+    workers: HashMap<u32, WorkerHandle>,
 }
 
 impl SchedulerState {
     /// Runs the scheduler on this web worker.
     pub fn new() -> Self {
         SchedulerState {
-            idle: VecDeque::new(),
-            busy: VecDeque::new(),
-            busy_non_reusable: VecDeque::new(),
             global: GlobalScope::current(),
+            workers: HashMap::new(),
         }
     }
 
@@ -151,18 +142,6 @@ impl SchedulerState {
     /// Executes a scheduler message.
     pub fn execute(&mut self, message: SchedulerMessage) -> Result<(), Error> {
         match message {
-            SchedulerMessage::SpawnAsync(task) => {
-                self.post_message(PostMessagePayload::Async(AsyncJob::Thunk(task)))
-            }
-            SchedulerMessage::SpawnBlocking(task) => {
-                self.post_message(PostMessagePayload::Blocking(BlockingJob::Thunk(task)))
-            }
-            SchedulerMessage::SpawnWithModule { module, task } => {
-                self.post_message(PostMessagePayload::Blocking(BlockingJob::SpawnWithModule {
-                    module,
-                    task,
-                }))
-            }
             SchedulerMessage::SpawnWithModuleAndMemory {
                 module,
                 memory,
@@ -171,33 +150,15 @@ impl SchedulerState {
                 let temp_store = wasmer::Store::default();
                 let memory = memory.map(|m| m.as_jsvalue(&temp_store).dyn_into().unwrap());
 
-                self.post_message(PostMessagePayload::Blocking(
-                    BlockingJob::SpawnWithModuleAndMemory {
-                        module,
-                        memory,
-                        spawn_wasm,
-                    },
-                ))
+                self.post_message(PostMessagePayload::SpawnWithModuleAndMemory {
+                    module,
+                    memory,
+                    spawn_wasm,
+                })
             }
-            SchedulerMessage::WorkerBusy { worker_id } => {
-                move_worker(worker_id, &mut self.idle, &mut self.busy);
-                tracing::trace!(
-                    worker.id=worker_id,
-                    idle_workers=?self.idle.iter().map(|w| w.id()).collect::<Vec<_>>(),
-                    busy_workers=?self.busy.iter().map(|w| w.id()).collect::<Vec<_>>(),
-                    "Worker marked as busy",
-                );
-                Ok(())
-            }
-            SchedulerMessage::WorkerIdle { worker_id } => {
-                self.busy_non_reusable.retain(|w| w.id() != worker_id);
-                move_worker(worker_id, &mut self.busy, &mut self.idle);
-                tracing::trace!(
-                    worker.id=worker_id,
-                    idle_workers=?self.idle.iter().map(|w| w.id()).collect::<Vec<_>>(),
-                    busy_workers=?self.busy.iter().map(|w| w.id()).collect::<Vec<_>>(),
-                    "Worker marked as idle",
-                );
+            SchedulerMessage::WorkerDone { worker_id } => {
+                self.workers.remove(&worker_id).unwrap();
+                tracing::trace!(worker.id = worker_id, "Worker is done",);
                 Ok(())
             }
             SchedulerMessage::Sleep { duration, notify } => {
@@ -216,49 +177,16 @@ impl SchedulerState {
         }
     }
 
-    /// Send a task to one of the worker threads, preferring workers that aren't
-    /// running synchronous work.
+    /// Spawns a worker and sends a message to it.
     fn post_message(&mut self, msg: PostMessagePayload) -> Result<(), Error> {
-        let reusable = msg.is_woker_reusable();
-        let would_block = msg.would_block();
-
-        let worker = self.next_available_worker()?;
+        let worker = self.start_worker()?;
         worker
             .send(msg)
             .with_context(|| format!("Unable to send a message to worker {}", worker.id()))?;
 
-        if reusable {
-            if would_block {
-                self.busy.push_back(worker);
-            } else {
-                self.idle.push_back(worker);
-            }
-        } else {
-            self.busy_non_reusable.push_back(worker);
-        }
+        self.workers.insert(worker.id(), worker);
 
         Ok(())
-    }
-
-    fn next_available_worker(&mut self) -> Result<WorkerHandle, Error> {
-        // First, try to send the message to an idle worker
-        if let Some(worker) = self.idle.pop_front() {
-            tracing::trace!(
-                worker.id = worker.id(),
-                "Sending the message to an idle worker"
-            );
-            return Ok(worker);
-        }
-
-        // Rather than sending the task to one of the blocking workers,
-        // let's spawn a new worker
-
-        let worker = self.start_worker()?;
-        tracing::trace!(
-            worker.id = worker.id(),
-            "Sending the message to a new worker"
-        );
-        Ok(worker)
     }
 
     fn start_worker(&mut self) -> Result<WorkerHandle, Error> {
@@ -270,12 +198,5 @@ impl SchedulerState {
 
         let handle = WorkerHandle::spawn(id)?;
         Ok(handle)
-    }
-}
-
-fn move_worker(worker_id: u32, from: &mut VecDeque<WorkerHandle>, to: &mut VecDeque<WorkerHandle>) {
-    if let Some(ix) = from.iter().position(|w| w.id() == worker_id) {
-        let worker = from.remove(ix).unwrap();
-        to.push_back(worker);
     }
 }

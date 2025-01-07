@@ -159,17 +159,6 @@ pub trait VirtualTaskManager: std::fmt::Debug + Send + Sync + 'static {
         time: Duration,
     ) -> Pin<Box<dyn Future<Output = ()> + Send + Sync + 'static>>;
 
-    /// Run an asynchronous operation on the thread pool.
-    ///
-    /// This task must not block execution or it could cause deadlocks.
-    ///
-    /// See the "Thread Safety" documentation on [`VirtualTaskManager`] for
-    /// limitations on what a `task` can and can't contain.
-    fn task_shared(
-        &self,
-        task: Box<dyn FnOnce() -> LocalBoxFuture<'static, ()> + Send + 'static>,
-    ) -> Result<(), WasiThreadError>;
-
     /// Run a WebAssembly operation on the thread pool.
     ///
     /// This is primarily used inside the context of a syscall and allows
@@ -178,26 +167,6 @@ pub trait VirtualTaskManager: std::fmt::Debug + Send + Sync + 'static {
 
     /// Returns the amount of parallelism that is possible on this platform.
     fn thread_parallelism(&self) -> Result<usize, WasiThreadError>;
-
-    /// Schedule a task to run on the threadpool, explicitly
-    /// transferring a [`Module`] to the task.
-    ///
-    /// This should be preferred over [`VirtualTaskManager::task_dedicated()`]
-    /// where possible because [`wasmer::Module`] is actually `!Send` in the
-    /// browser and can only be transferred to background threads via
-    /// an explicit `postMessage()`. See [#4158] for more details.
-    ///
-    /// This is very similar to [`VirtualTaskManager::task_wasm()`], but
-    /// intended for use outside of a syscall context. For example, when you are
-    /// running in the browser and want to run a WebAssembly module in the
-    /// background.
-    ///
-    /// [#4158]: https://github.com/wasmerio/wasmer/issues/4158
-    fn spawn_with_module(
-        &self,
-        module: Module,
-        task: Box<dyn FnOnce(Module) -> LocalBoxFuture<'static, ()> + Send + 'static>,
-    ) -> Result<(), WasiThreadError>;
 }
 
 impl<D, T> VirtualTaskManager for D
@@ -220,13 +189,6 @@ where
         (**self).sleep_now(time)
     }
 
-    fn task_shared(
-        &self,
-        task: Box<dyn FnOnce() -> LocalBoxFuture<'static, ()> + Send + 'static>,
-    ) -> Result<(), WasiThreadError> {
-        (**self).task_shared(task)
-    }
-
     fn task_wasm(&self, task: TaskWasm) -> Result<(), WasiThreadError> {
         (**self).task_wasm(task)
     }
@@ -234,49 +196,5 @@ where
     fn thread_parallelism(&self) -> Result<usize, WasiThreadError> {
         (**self).thread_parallelism()
     }
-
-    fn spawn_with_module(
-        &self,
-        module: Module,
-        task: Box<dyn FnOnce(Module) -> LocalBoxFuture<'static, ()> + Send + 'static>,
-    ) -> Result<(), WasiThreadError> {
-        (**self).spawn_with_module(module, task)
-    }
 }
 
-/// Generic utility methods for VirtualTaskManager
-pub trait VirtualTaskManagerExt {
-    /// Runs the work in the background via the task managers shared background
-    /// threads while blocking the current execution until it finishs
-    fn spawn_and_block_on<A>(
-        &self,
-        task: impl Future<Output = A> + Send + 'static,
-    ) -> Result<A, anyhow::Error>
-    where
-        A: Send + 'static;
-}
-
-impl<D, T> VirtualTaskManagerExt for D
-where
-    D: Deref<Target = T>,
-    T: VirtualTaskManager + ?Sized,
-{
-    /// Runs the work in the background via the task managers shared background
-    /// threads while blocking the current execution until it finishs
-    fn spawn_and_block_on<A>(
-        &self,
-        task: impl Future<Output = A> + Send + 'static,
-    ) -> Result<A, anyhow::Error>
-    where
-        A: Send + 'static,
-    {
-        let (tx, rx) = ::tokio::sync::oneshot::channel();
-        let work = Box::pin(async move {
-            let ret = task.await;
-            tx.send(ret).ok();
-        });
-        self.task_shared(Box::new(move || work)).unwrap();
-        rx.blocking_recv()
-            .map_err(|_| anyhow::anyhow!("task execution failed - result channel dropped"))
-    }
-}

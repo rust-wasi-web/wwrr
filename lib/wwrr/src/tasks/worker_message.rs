@@ -10,10 +10,8 @@ use crate::tasks::{
 /// A message the worker sends back to the scheduler.
 #[derive(Debug)]
 pub(crate) enum WorkerMessage {
-    /// Mark this worker as busy.
-    MarkBusy,
-    /// Mark this worker as idle.
-    MarkIdle,
+    /// Mark this worker as done.
+    Done,
     /// Message to scheduler.
     Scheduler(SchedulerMessage),
 }
@@ -23,8 +21,7 @@ impl WorkerMessage {
         let de = Deserializer::new(value);
 
         match de.ty()?.as_str() {
-            consts::TYPE_BUSY => Ok(WorkerMessage::MarkBusy),
-            consts::TYPE_IDLE => Ok(WorkerMessage::MarkIdle),
+            consts::TYPE_DONE => Ok(WorkerMessage::Done),
             consts::TYPE_SCHEDULER => {
                 let value: JsValue = de.js(consts::MESSAGE)?;
                 let msg = SchedulerMessage::try_from_js(value)?;
@@ -36,8 +33,7 @@ impl WorkerMessage {
 
     pub(crate) fn into_js(self) -> Result<JsValue, Error> {
         match self {
-            WorkerMessage::MarkBusy => Serializer::new(consts::TYPE_BUSY).finish(),
-            WorkerMessage::MarkIdle => Serializer::new(consts::TYPE_IDLE).finish(),
+            WorkerMessage::Done => Serializer::new(consts::TYPE_DONE).finish(),
             WorkerMessage::Scheduler(msg) => {
                 let msg = msg.into_js()?;
                 Serializer::new(consts::TYPE_SCHEDULER)
@@ -66,8 +62,7 @@ impl WorkerMessage {
 }
 
 mod consts {
-    pub const TYPE_BUSY: &str = "busy";
-    pub const TYPE_IDLE: &str = "idle";
+    pub const TYPE_DONE: &str = "done";
     pub const TYPE_SCHEDULER: &str = "scheduler";
     pub const MESSAGE: &str = "msg";
 }
@@ -77,35 +72,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn round_trip_busy() {
-        let msg = WorkerMessage::MarkBusy;
+    fn round_trip_done() {
+        let msg = WorkerMessage::Done;
 
         let js = msg.into_js().unwrap();
         let round_tripped = unsafe { WorkerMessage::try_from_js(js).unwrap() };
 
-        assert!(matches!(round_tripped, WorkerMessage::MarkBusy));
-    }
-
-    #[test]
-    fn round_trip_idle() {
-        let msg = WorkerMessage::MarkIdle;
-
-        let js = msg.into_js().unwrap();
-        let round_tripped = unsafe { WorkerMessage::try_from_js(js).unwrap() };
-
-        assert!(matches!(round_tripped, WorkerMessage::MarkIdle));
+        assert!(matches!(round_tripped, WorkerMessage::Done));
     }
 
     #[test]
     fn round_trip_scheduler_message() {
-        let msg = WorkerMessage::Scheduler(SchedulerMessage::WorkerBusy { worker_id: 42 });
+        let msg = WorkerMessage::Scheduler(SchedulerMessage::WorkerDone { worker_id: 42 });
 
         let js = msg.into_js().unwrap();
         let round_tripped = unsafe { WorkerMessage::try_from_js(js).unwrap() };
 
         assert!(matches!(
             round_tripped,
-            WorkerMessage::Scheduler(SchedulerMessage::WorkerBusy { worker_id: 42 })
+            WorkerMessage::Scheduler(SchedulerMessage::WorkerDone { worker_id: 42 })
         ));
     }
 }

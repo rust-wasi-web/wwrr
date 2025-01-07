@@ -3,7 +3,7 @@ use wasm_bindgen::{prelude::wasm_bindgen, JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::DedicatedWorkerGlobalScope;
 
-use crate::tasks::{AsyncJob, BlockingJob, PostMessagePayload, WorkerMessage};
+use crate::tasks::{PostMessagePayload, WorkerMessage};
 
 /// The Rust state for a worker in the threadpool.
 #[wasm_bindgen(skip_typescript)]
@@ -17,11 +17,9 @@ impl ThreadPoolWorker {
         struct BusyGuard;
         impl Drop for BusyGuard {
             fn drop(&mut self) {
-                let _ = WorkerMessage::MarkIdle.emit();
+                let _ = WorkerMessage::Done.emit();
             }
         }
-
-        let _ = WorkerMessage::MarkBusy.emit();
 
         BusyGuard
     }
@@ -34,33 +32,7 @@ impl ThreadPoolWorker {
         tracing::trace!(?msg, "Handling a message");
 
         match msg {
-            PostMessagePayload::Async(async_job) => self.execute_async(async_job).await,
-            PostMessagePayload::Blocking(blocking) => self.execute_blocking(blocking).await,
-        }
-    }
-
-    async fn execute_async(&self, job: AsyncJob) -> Result<(), utils::Error> {
-        match job {
-            AsyncJob::Thunk(thunk) => {
-                thunk().await;
-            }
-        }
-
-        Ok(())
-    }
-
-    async fn execute_blocking(&self, job: BlockingJob) -> Result<(), utils::Error> {
-        match job {
-            BlockingJob::Thunk(thunk) => {
-                let _guard = self.busy();
-                thunk().await;
-            }
-            BlockingJob::SpawnWithModule { module, task } => {
-                let _guard = self.busy();
-                task(module.into()).await;
-                self.close();
-            }
-            BlockingJob::SpawnWithModuleAndMemory {
+            PostMessagePayload::SpawnWithModuleAndMemory {
                 module,
                 memory,
                 spawn_wasm,

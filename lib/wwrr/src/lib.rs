@@ -2,7 +2,6 @@
 wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
 
 pub mod fs;
-mod instance;
 mod js_runtime;
 mod logging;
 mod options;
@@ -13,11 +12,9 @@ mod tasks;
 
 pub use crate::{
     fs::{Directory, DirectoryInit},
-    instance::{Instance, JsOutput},
     js_runtime::JsRuntime,
     logging::initialize_logger,
     options::{RunOptions, SpawnOptions},
-    run::run_wasix,
 };
 pub use utils::StringOrBytes;
 

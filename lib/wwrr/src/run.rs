@@ -1,13 +1,12 @@
-use futures::channel::oneshot;
-use futures::FutureExt;
 use std::sync::Arc;
 use utils::Error;
+
 use wasm_bindgen::{prelude::*, JsCast};
 use wasmer::ImportsObj;
-use wasmer_wasix::{Runtime as _, WasiEnvBuilder, WasiReactor};
+use wasmer_wasix::{WasiEnvBuilder, WasiReactor};
 
 use crate::tasks::SCHEDULER;
-use crate::{instance::ExitCondition, Instance, RunOptions};
+use crate::RunOptions;
 
 const DEFAULT_PROGRAM_NAME: &str = "wasm";
 
@@ -28,64 +27,6 @@ impl WasmModule {
 
         Ok(runtime.load_module(&buffer.to_vec()).await?)
     }
-}
-
-/// Run a WASIX program.
-///
-/// # WASI Compatibility
-///
-/// The WASIX standard is a superset of [WASI preview 1][preview-1], so programs
-/// compiled to WASI will run without any problems.
-///
-/// [WASI Preview 2][preview-2] is a backwards incompatible rewrite of WASI
-/// to use the experimental [Component Model Proposal][component-model]. That
-/// means programs compiled for WASI Preview 2 will fail to load.
-///
-/// [preview-1]: https://github.com/WebAssembly/WASI/blob/main/legacy/README.md
-/// [preview-2]: https://github.com/WebAssembly/WASI/blob/main/preview2/README.md
-/// [component-model]: https://github.com/WebAssembly/component-model
-#[wasm_bindgen(js_name = "runWasix")]
-pub async fn run_wasix(wasm_module: WasmModule, config: RunOptions) -> Result<Instance, Error> {
-    run_wasix_inner(wasm_module, config).await
-}
-
-#[tracing::instrument(level = "debug", skip_all)]
-async fn run_wasix_inner(wasm_module: WasmModule, config: RunOptions) -> Result<Instance, Error> {
-    let runtime = config.runtime().resolve()?.into_inner();
-
-    let program_name = config
-        .program()
-        .as_string()
-        .unwrap_or_else(|| DEFAULT_PROGRAM_NAME.to_string());
-
-    let mut builder = WasiEnvBuilder::new(program_name).runtime(runtime.clone());
-    let (stdin, stdout, stderr) = config.configure_builder(&mut builder)?;
-
-    let (exit_code_tx, exit_code_rx) = oneshot::channel();
-
-    let module: wasmer::Module = wasm_module.to_module(&*runtime).await?;
-
-    // Note: The WasiEnvBuilder::run() method blocks, so we need to run it on
-    // the thread pool.
-    let tasks = runtime.task_manager().clone();
-    tasks.spawn_with_module(
-        module,
-        Box::new(move |module| {
-            async move {
-                let _span = tracing::debug_span!("run").entered();
-                let result = builder.run(module).await.map_err(anyhow::Error::new);
-                let _ = exit_code_tx.send(ExitCondition::from_result(result));
-            }
-            .boxed_local()
-        }),
-    )?;
-
-    Ok(Instance {
-        stdin,
-        stdout,
-        stderr,
-        exit: exit_code_rx,
-    })
 }
 
 /// A handle connected to a loaded WASIX program.
