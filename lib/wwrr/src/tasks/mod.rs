@@ -32,7 +32,7 @@
 //! [`Scheduler`]: scheduler::Scheduler
 
 mod interop;
-mod post_message_payload;
+mod worker_message;
 mod scheduler;
 mod scheduler_message;
 mod task_wasm;
@@ -42,5 +42,5 @@ mod worker;
 mod worker_handle;
 
 pub(crate) use self::{
-    post_message_payload::PostMessagePayload, thread_pool::ThreadPool, worker_handle::WorkerHandle,
+    worker_message::WorkerInit, thread_pool::ThreadPool, worker_handle::WorkerHandle,
 };

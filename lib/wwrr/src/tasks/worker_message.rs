@@ -8,57 +8,58 @@ use utils::Error;
 use wasm_bindgen::JsValue;
 use wasmer::{AsJs, MemoryType};
 
-use crate::tasks::{
-    interop::{Deserializer, Serializer},
-    task_wasm::SpawnWasm,
-};
+use super::interop::Deserializer;
+use super::scheduler::Scheduler;
+use crate::tasks::{interop::Serializer, task_wasm::SpawnWasm};
 
-/// Messages sent from the [`crate::tasks::ThreadPool`] handle to the
-/// `Scheduler`.
+/// A message sent from scheduler to worker.
 #[derive(Debug)]
-pub(crate) enum SchedulerMsg {
-    /// Message from worker that it is done.
-    WorkerDone(u32),
-    /// Send a notification at the specified time.
-    Sleep {
-        /// Duration to sleep in milliseconds.
-        duration: i32,
-        /// Notify channel.
-        notify: oneshot::Sender<()>,
-    },
-    /// Pings the scheduler.
-    Ping(oneshot::Sender<()>),
-    /// Spawn a thread on a new web worker.
+pub(crate) enum WorkerMsg {
+    /// Spawn a thread.
     SpawnWasm(SpawnWasm),
 }
 
-/// Scheduler initialization message sent as web worker message.
+/// A message that will be sent from the scheduler to init a worker.
 #[derive(Debug)]
-pub(crate) struct SchedulerInit {
-    /// Message sender.
-    pub msg_tx: mpsc::UnboundedSender<SchedulerMsg>,
+pub(crate) struct WorkerInit {
+    /// Scheduler
+    pub scheduler: Scheduler,
+    /// Ready notification to scheduler.
+    pub ready_tx: oneshot::Sender<()>,
     /// Message receiver.
-    pub msg_rx: mpsc::UnboundedReceiver<SchedulerMsg>,
-    /// WebAssembly module for spawning threads.
+    pub msg_rx: mpsc::UnboundedReceiver<WorkerMsg>,
+    /// WebAssembly module for thread.
     pub module: wasmer::Module,
-    /// WebAssembly memory for spawning threads.
+    /// WebAssembly memory for thread.
     pub memory: wasmer::Memory,
     /// [`wasmer::Module`] and friends are `!Send` in practice.
     pub _not_send: PhantomData<*const ()>,
 }
 
-impl SchedulerInit {
+mod consts {
+    pub(crate) const TYPE_INIT: &str = "init-worker";
+    pub(crate) const SCHEDULER: &str = "scheduler";
+    pub(crate) const READY_TX: &str = "ready-tx";
+    pub(crate) const MSG_RX: &str = "msg-rx";
+    pub(crate) const MODULE: &str = "module";
+    pub(crate) const MODULE_BYTES: &str = "module-bytes";
+    pub(crate) const MEMORY: &str = "memory";
+    pub(crate) const MEMORY_TYPE: &str = "memory-type";
+}
+
+impl WorkerInit {
     pub(crate) fn into_js(self) -> Result<JsValue, Error> {
         let Self {
-            msg_tx,
+            scheduler,
+            ready_tx,
             msg_rx,
             module,
             memory,
             _not_send,
         } = self;
-
         Serializer::new(consts::TYPE_INIT)
-            .boxed(consts::MSG_TX, msg_tx)
+            .boxed(consts::SCHEDULER, scheduler)
+            .boxed(consts::READY_TX, ready_tx)
             .boxed(consts::MSG_RX, msg_rx)
             .boxed(consts::MODULE_BYTES, module.serialize())
             .set(consts::MODULE, module)
@@ -70,18 +71,20 @@ impl SchedulerInit {
     pub(crate) unsafe fn try_from_js(value: JsValue) -> Result<Self, Error> {
         let de = Deserializer::new(value);
         if de.ty()? != consts::TYPE_INIT {
-            return Err(anyhow!("invalid schduler init message type").into());
+            return Err(anyhow!("invalid worker init message type").into());
         }
 
-        let msg_tx = de.boxed(consts::MSG_TX)?;
-        let msg_rx = de.boxed(consts::MSG_RX)?;
+        let scheduler: Scheduler = de.boxed(consts::SCHEDULER)?;
+        let ready_tx: oneshot::Sender<()> = de.boxed(consts::READY_TX)?;
+        let msg_rx: mpsc::UnboundedReceiver<WorkerMsg> = de.boxed(consts::MSG_RX)?;
         let module: WebAssembly::Module = de.js(consts::MODULE)?;
         let module_bytes: Bytes = de.boxed(consts::MODULE_BYTES)?;
         let memory: JsValue = de.js(consts::MEMORY)?;
         let memory_type: MemoryType = de.boxed(consts::MEMORY_TYPE)?;
 
         Ok(Self {
-            msg_tx,
+            scheduler,
+            ready_tx,
             msg_rx,
             module: wasmer::Module::from_module_and_binary(module, &module_bytes),
             memory: wasmer::Memory::from_jsvalue(
@@ -93,14 +96,4 @@ impl SchedulerInit {
             _not_send: PhantomData,
         })
     }
-}
-
-mod consts {
-    pub const TYPE_INIT: &str = "init-scheduler";
-    pub const MSG_TX: &str = "msg-tx";
-    pub const MSG_RX: &str = "msg-rx";
-    pub const MODULE: &str = "module";
-    pub const MODULE_BYTES: &str = "module-bytes";
-    pub const MEMORY: &str = "memory";
-    pub const MEMORY_TYPE: &str = "memory-type";
 }

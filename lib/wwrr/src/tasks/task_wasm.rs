@@ -5,7 +5,7 @@
 use anyhow::Context;
 use derivative::Derivative;
 use wasm_bindgen::JsValue;
-use wasmer::{AsJs, AsStoreRef, Memory, MemoryType, Store};
+use wasmer::{AsStoreRef, MemoryType, Store};
 use wasmer_wasix::{
     runtime::{
         task_manager::{TaskWasm, TaskWasmRun, TaskWasmRunProperties},
@@ -75,31 +75,19 @@ pub(crate) struct SpawnWasm {
 }
 
 impl SpawnWasm {
-    /// Prepare the WebAssembly task for execution, waiting for any triggers to
-    /// resolve.
-    pub(crate) async fn begin(self) -> ReadySpawnWasm {
-        ReadySpawnWasm(self)
-    }
-}
-
-/// A [`SpawnWasm`] instance that is ready to be executed.
-#[derive(Debug)]
-pub struct ReadySpawnWasm(SpawnWasm);
-
-impl ReadySpawnWasm {
     /// Execute the callback, blocking until it has completed.
     pub(crate) async fn execute(
         self,
         wasm_module: wasmer::Module,
-        wasm_memory: JsValue,
+        wasm_memory: wasmer::Memory,
         wbg_js_module: Option<JsValue>,
     ) -> Result<(), anyhow::Error> {
-        let ReadySpawnWasm(SpawnWasm {
+        let Self {
             run,
             run_type,
             env,
             store_snapshot,
-        }) = self;
+        } = self;
 
         // Invoke the callback which will run the web assembly module
         let (ctx, store) = build_ctx_and_store(
@@ -126,25 +114,19 @@ impl ReadySpawnWasm {
 
 async fn build_ctx_and_store(
     module: wasmer::Module,
-    memory: JsValue,
+    memory: wasmer::Memory,
     env: WasiEnv,
     store_snapshot: Option<StoreSnapshot>,
     run_type: WasmMemoryType,
     wbg_js_module: Option<JsValue>,
 ) -> Option<(WasiFunctionEnv, Store)> {
     // Make a fake store which will hold the memory we just transferred
-    let mut temp_store = env.runtime().new_store();
+    let temp_store = env.runtime().new_store();
     let spawn_type = match run_type {
         WasmMemoryType::CreateMemory => SpawnMemoryType::CreateMemory,
         WasmMemoryType::CreateMemoryOfType(mem) => SpawnMemoryType::CreateMemoryOfType(mem),
         WasmMemoryType::ShareMemory(ty) => {
-            let memory = match Memory::from_jsvalue(&mut temp_store, &ty, &memory) {
-                Ok(a) => a,
-                Err(_) => {
-                    tracing::error!("Failed to receive memory for module");
-                    return None;
-                }
-            };
+            assert_eq!(ty, memory.ty(&temp_store.as_store_ref()));
             SpawnMemoryType::ShareMemory(memory, temp_store.as_store_ref())
         }
     };

@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
+use std::sync::{Arc, Mutex};
 use std::{
     fmt::Debug,
     sync::atomic::{AtomicU32, Ordering},
@@ -7,14 +8,15 @@ use std::{
 use anyhow::{anyhow, Context, Error};
 use tokio::sync::{mpsc, oneshot};
 use utils::GlobalScope;
-use wasm_bindgen::{prelude::*, JsCast};
+use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
-use wasmer::{AsJs, Memory, Module};
+use wasmer::{Memory, Module};
 
 use super::scheduler_message::SchedulerMsg;
+use super::worker_message::WorkerMsg;
 use crate::tasks::scheduler_message::SchedulerInit;
 use crate::tasks::worker::{init_message_scheduler, WORKER_URL};
-use crate::tasks::{PostMessagePayload, WorkerHandle};
+use crate::tasks::WorkerHandle;
 
 /// A handle for interacting with the threadpool's scheduler.
 #[derive(Debug, Clone)]
@@ -76,13 +78,13 @@ struct SchedulerWorker {}
 
 #[wasm_bindgen]
 impl SchedulerWorker {
-    /// Starts the scheduler on this web worker.
+    /// Preinitializes the scheduler.
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
         Self {}
     }
 
-    /// Hnadles a scheduler message.
+    /// Handles the init message and starts the scheduler.
     #[wasm_bindgen]
     pub fn handle(&mut self, msg: JsValue) -> Result<(), utils::Error> {
         tracing::info!("Initializing scheduler");
@@ -98,7 +100,9 @@ pub(crate) struct SchedulerState {
     /// Global scope.
     global: GlobalScope,
     /// Workers that are busy and cannot be reused afterwards.
-    workers: HashMap<u32, WorkerHandle>,
+    active_workers: HashMap<u32, WorkerHandle>,
+    /// Workers that are ready to be used.
+    ready_workers: Arc<Mutex<VecDeque<WorkerHandle>>>,
     /// Message sender.
     msg_tx: mpsc::UnboundedSender<SchedulerMsg>,
     /// Message receiver.
@@ -122,7 +126,8 @@ impl SchedulerState {
 
         let this = Self {
             global: GlobalScope::current(),
-            workers: HashMap::new(),
+            active_workers: HashMap::new(),
+            ready_workers: Arc::new(Mutex::new(VecDeque::new())),
             msg_tx,
             msg_rx,
             module,
@@ -133,30 +138,37 @@ impl SchedulerState {
 
     /// Scheduler main loop.
     async fn run(mut self) {
+        tracing::info!("prespawning workers");
+        for _ in 1..=8 {
+            let worker = Self::start_worker(
+                self.msg_tx.clone(),
+                self.module.clone(),
+                self.memory.clone(),
+            )
+            .await
+            .unwrap();
+            self.ready_workers.lock().unwrap().push_back(worker);
+        }
+
         while let Some(msg) = self.msg_rx.recv().await {
             if let Err(e) = self.execute(msg) {
                 tracing::error!(error = &*e, "An error occurred while handling a message");
             }
         }
+
+        tracing::info!("scheduler exiting");
     }
 
     /// Executes a scheduler message.
     pub fn execute(&mut self, message: SchedulerMsg) -> Result<(), Error> {
         match message {
             SchedulerMsg::SpawnWasm(spawn_wasm) => {
-                self.post_message(PostMessagePayload::SpawnWithModuleAndMemory {
-                    module: self.module.clone(),
-                    memory: Some(
-                        self.memory
-                            .as_jsvalue(&wasmer::Store::default())
-                            .dyn_into()
-                            .unwrap(),
-                    ),
-                    spawn_wasm,
-                })
+                tracing::info!("scheduler spawn module");
+                self.post_message(WorkerMsg::SpawnWasm(spawn_wasm))?;
+                Ok(())
             }
             SchedulerMsg::WorkerDone(worker_id) => {
-                self.workers.remove(&worker_id).unwrap();
+                self.active_workers.remove(&worker_id).unwrap();
                 tracing::trace!(worker.id = worker_id, "Worker is done",);
                 Ok(())
             }
@@ -176,28 +188,45 @@ impl SchedulerState {
     }
 
     /// Spawns a worker and sends a message to it.
-    fn post_message(&mut self, msg: PostMessagePayload) -> Result<(), Error> {
-        let worker = self.start_worker()?;
+    fn post_message(&mut self, msg: WorkerMsg) -> Result<(), Error> {
+        let ready_workers = self.ready_workers.clone();
+
+        let worker = ready_workers
+            .lock()
+            .unwrap()
+            .pop_front()
+            .expect("no workers available");
         worker
             .send(msg)
             .with_context(|| format!("Unable to send a message to worker {}", worker.id()))?;
 
-        self.workers.insert(worker.id(), worker);
+        self.active_workers.insert(worker.id(), worker);
+
+        // Refill worker pool.
+        let msg_tx = self.msg_tx.clone();
+        let module = self.module.clone();
+        let memory = self.memory.clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            let new_worker = Self::start_worker(msg_tx, module, memory).await.unwrap();
+            ready_workers.lock().unwrap().push_back(new_worker);
+        });
 
         Ok(())
     }
 
-    fn start_worker(&mut self) -> Result<WorkerHandle, Error> {
+    async fn start_worker(
+        msg_tx: mpsc::UnboundedSender<SchedulerMsg>,
+        module: wasmer::Module,
+        memory: wasmer::Memory,
+    ) -> Result<WorkerHandle, Error> {
         // Note: By using a monotonically incrementing counter, we can make sure
         // every single worker created with this shared linear memory will get a
         // unique ID.
         static NEXT_ID: AtomicU32 = AtomicU32::new(1);
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
 
-        let scheduler = Scheduler {
-            msg_tx: self.msg_tx.clone(),
-        };
-        let handle = WorkerHandle::spawn(id, scheduler)?;
+        let scheduler = Scheduler { msg_tx };
+        let handle = WorkerHandle::spawn(id, scheduler, module, memory).await?;
         Ok(handle)
     }
 }
