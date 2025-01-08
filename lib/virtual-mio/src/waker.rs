@@ -37,7 +37,7 @@ impl InlineWaker {
 
     /// Runs the specified Future blocking the current thread.
     pub fn block_on<'a, A>(task: impl Future<Output = A> + 'a) -> A {
-        const SPIN_TIMEOUT_MS: f64 = 3000.;
+        const SPIN_TIMEOUT_MS: f64 = 10_000.;
 
         // Create the waker
         let inline_waker = Self::new();
