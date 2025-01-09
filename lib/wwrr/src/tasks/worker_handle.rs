@@ -1,8 +1,8 @@
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
-use anyhow::Error;
 use anyhow::anyhow;
+use anyhow::Error;
 use tokio::sync::{mpsc, oneshot};
 use wasm_bindgen::{prelude::*, JsCast};
 
@@ -20,6 +20,7 @@ pub(crate) struct WorkerHandle {
     id: u32,
     web_worker: web_sys::Worker,
     msg_tx: mpsc::UnboundedSender<WorkerMsg>,
+    terminate: bool,
 }
 
 impl WorkerHandle {
@@ -29,6 +30,7 @@ impl WorkerHandle {
         scheduler: Scheduler,
         module: wasmer::Module,
         memory: wasmer::Memory,
+        wbg_js_module_name: String,
     ) -> Result<Self, Error> {
         let name = format!("worker-{id}");
 
@@ -59,6 +61,7 @@ impl WorkerHandle {
             msg_rx,
             module,
             memory,
+            wbg_js_module_name,
             _not_send: PhantomData,
         };
         web_worker
@@ -74,6 +77,7 @@ impl WorkerHandle {
             id,
             web_worker,
             msg_tx,
+            terminate: true,
         })
     }
 
@@ -87,6 +91,11 @@ impl WorkerHandle {
         tracing::trace!(?msg, worker.id = self.id(), "sending a message to a worker");
         self.msg_tx.send(msg).map_err(|_| anyhow!("worker died"))?;
         Ok(())
+    }
+
+    /// Sets whether the worker is terminated when this handle is dropped.
+    pub(crate) fn set_terminate(&mut self, terminate: bool) {
+        self.terminate = terminate;
     }
 }
 
@@ -103,7 +112,9 @@ fn on_error(msg: web_sys::ErrorEvent, worker_id: u32) {
 
 impl Drop for WorkerHandle {
     fn drop(&mut self) {
-        tracing::trace!(worker.id = self.id(), "Terminating worker");
-        self.web_worker.terminate();
+        if self.terminate {
+            tracing::trace!(worker.id = self.id(), "Terminating worker");
+            self.web_worker.terminate();
+        }
     }
 }

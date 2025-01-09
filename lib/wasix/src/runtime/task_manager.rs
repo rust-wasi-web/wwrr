@@ -98,7 +98,12 @@ impl<'a, 'b> TaskWasm<'a, 'b> {
 /// [#4158]: https://github.com/wasmerio/wasmer/issues/4158
 pub trait VirtualTaskManager: std::fmt::Debug + Send + Sync + 'static {
     /// Initializes the task manager.
-    fn init(&self, module: Module, memory: Memory) -> LocalBoxFuture<()>;
+    fn init(
+        &self,
+        module: Module,
+        memory: Memory,
+        wbg_js_module_name: String,
+    ) -> LocalBoxFuture<()>;
 
     /// Build a new Webassembly memory.
     ///
@@ -176,8 +181,13 @@ where
     D: Deref<Target = T> + std::fmt::Debug + Send + Sync + 'static,
     T: VirtualTaskManager + ?Sized,
 {
-    fn init(&self, module: Module, memory: Memory) -> LocalBoxFuture<()> {
-        (**self).init(module, memory)
+    fn init(
+        &self,
+        module: Module,
+        memory: Memory,
+        wbg_js_module_name: String,
+    ) -> LocalBoxFuture<()> {
+        (**self).init(module, memory, wbg_js_module_name)
     }
 
     fn build_memory(

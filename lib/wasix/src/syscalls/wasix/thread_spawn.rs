@@ -9,6 +9,7 @@ use crate::{
     WasiThreadHandle,
 };
 
+use ::utils::GlobalScope;
 use future::FutureExt;
 use tokio::sync::oneshot;
 use wasmer_wasix_types::wasi::{ThreadActions, ThreadStart};
@@ -86,6 +87,11 @@ pub fn thread_spawn_internal_using_layout<M: MemorySize>(
     thread_handle: Arc<WasiThreadHandle>,
     start_ptr_offset: M::Offset,
 ) -> Result<(), Errno> {
+    tracing::info!(
+        "thread_spawn_internal_using layout at {} ms",
+        GlobalScope::current().now()
+    );
+
     // We extract the memory which will be passed to the thread
     let env = ctx.data();
     let tasks = env.tasks().clone();

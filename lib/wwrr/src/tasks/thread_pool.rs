@@ -41,9 +41,14 @@ impl ThreadPool {
 
 #[async_trait::async_trait]
 impl VirtualTaskManager for ThreadPool {
-    fn init(&self, module: Module, memory: Memory) -> LocalBoxFuture<()> {
+    fn init(
+        &self,
+        module: Module,
+        memory: Memory,
+        wbg_js_module_name: String,
+    ) -> LocalBoxFuture<()> {
         async move {
-            let scheduler = Scheduler::spawn(module, memory);
+            let scheduler = Scheduler::spawn(module, memory, wbg_js_module_name);
             scheduler.ping().await.unwrap();
             self.0.set(scheduler).unwrap();
         }
@@ -64,12 +69,18 @@ impl VirtualTaskManager for ThreadPool {
             i32::MAX
         };
 
-        if GlobalScope::current().wait_allowed() {
+        if GlobalScope::current().wait_allowed()  {
             // Note: We can't use wasm_bindgen_futures::spawn_local() directly
             // because we might be invoked from inside a syscall. This causes a
             // deadlock because the syscall will block block until the future
             // resolves, but the JsFuture will never get a chance to mark itself as
             // resolved because the JavaScript VM is still blocked by the syscall.
+            tracing::info!("sleep with allowed wait for {time} ms at {} ms", GlobalScope::current().now());
+
+            // So what are the options?
+            // 1. Sleep worker!
+            
+
             let (tx, rx) = tokio::sync::oneshot::channel();
             self.send(SchedulerMsg::Sleep {
                 duration: time,

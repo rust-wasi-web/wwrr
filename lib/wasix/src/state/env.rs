@@ -134,7 +134,7 @@ pub struct WasiEnvInit {
     pub additional_imports: Imports,
 
     /// Name of wasm-bindgen generated JavaScript module.
-    pub wbg_js_module_name: Option<String>,
+    pub wbg_js_module_name: String,
 }
 
 impl WasiEnvInit {
@@ -192,9 +192,6 @@ pub struct WasiEnv {
     /// (this is normally used so that the instance can be reused later on)
     pub(crate) disable_fs_cleanup: bool,
 
-    /// Name of wasm-bindgen generated JavaScript module.
-    pub wbg_js_module_name: Option<String>,
-
     /// Whether the thread start was executed.
     pub(crate) thread_start_executed: bool,
     /// Triggers the finishing of a held thread.
@@ -227,7 +224,6 @@ impl Clone for WasiEnv {
             owned_handles: self.owned_handles.clone(),
             runtime: self.runtime.clone(),
             disable_fs_cleanup: self.disable_fs_cleanup,
-            wbg_js_module_name: self.wbg_js_module_name.clone(),
             thread_start_executed: Default::default(),
             thread_release_tx: Default::default(),
             thread_release_rx: Default::default(),
@@ -273,7 +269,6 @@ impl WasiEnv {
             owned_handles: Vec::new(),
             runtime: init.runtime,
             disable_fs_cleanup: false,
-            wbg_js_module_name: init.wbg_js_module_name,
             thread_start_executed: false,
             thread_release_tx: None,
             thread_release_rx: None,
@@ -299,6 +294,7 @@ impl WasiEnv {
         }
 
         let additional_imports = init.additional_imports.clone();
+        let wbg_js_module_name = init.wbg_js_module_name.clone();
 
         let env = Self::from_init(init)?;
         let pid = env.process.pid();
@@ -389,7 +385,11 @@ impl WasiEnv {
 
         // Initialize the task manager.
         let memory = func_env.data(&store).try_memory_clone().unwrap();
-        func_env.data(&store).tasks().init(module, memory).await;
+        func_env
+            .data(&store)
+            .tasks()
+            .init(module, memory, wbg_js_module_name)
+            .await;
 
         // If this module exports an _initialize function, run that first.
         if call_initialize {

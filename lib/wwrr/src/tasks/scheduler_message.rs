@@ -17,8 +17,8 @@ use crate::tasks::{
 /// `Scheduler`.
 #[derive(Debug)]
 pub(crate) enum SchedulerMsg {
-    /// Message from worker that it is done.
-    WorkerDone(u32),
+    /// Message from worker that it is exiting.
+    WorkerExit(u32),
     /// Send a notification at the specified time.
     Sleep {
         /// Duration to sleep in milliseconds.
@@ -43,6 +43,8 @@ pub(crate) struct SchedulerInit {
     pub module: wasmer::Module,
     /// WebAssembly memory for spawning threads.
     pub memory: wasmer::Memory,
+    /// wasm-bindgen generated module name.
+    pub wbg_js_module_name: String,
     /// [`wasmer::Module`] and friends are `!Send` in practice.
     pub _not_send: PhantomData<*const ()>,
 }
@@ -54,6 +56,7 @@ impl SchedulerInit {
             msg_rx,
             module,
             memory,
+            wbg_js_module_name,
             _not_send,
         } = self;
 
@@ -64,6 +67,7 @@ impl SchedulerInit {
             .set(consts::MODULE, module)
             .boxed(consts::MEMORY_TYPE, memory.ty(&wasmer::Store::default()))
             .set(consts::MEMORY, memory.as_jsvalue(&wasmer::Store::default()))
+            .boxed(consts::WBG_JS_MODULE_NAME, wbg_js_module_name)
             .finish()
     }
 
@@ -79,6 +83,7 @@ impl SchedulerInit {
         let module_bytes: Bytes = de.boxed(consts::MODULE_BYTES)?;
         let memory: JsValue = de.js(consts::MEMORY)?;
         let memory_type: MemoryType = de.boxed(consts::MEMORY_TYPE)?;
+        let wbg_js_module_name: String = de.boxed(consts::WBG_JS_MODULE_NAME)?;
 
         Ok(Self {
             msg_tx,
@@ -90,6 +95,7 @@ impl SchedulerInit {
                 &memory,
             )
             .map_err(Error::js)?,
+            wbg_js_module_name,
             _not_send: PhantomData,
         })
     }
@@ -103,4 +109,5 @@ mod consts {
     pub const MODULE_BYTES: &str = "module-bytes";
     pub const MEMORY: &str = "memory";
     pub const MEMORY_TYPE: &str = "memory-type";
+    pub const WBG_JS_MODULE_NAME: &str = "wbg-js-module-name";
 }

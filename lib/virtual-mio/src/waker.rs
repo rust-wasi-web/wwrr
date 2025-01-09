@@ -8,23 +8,23 @@ use utils::GlobalScope;
 
 /// Runs a Future on the current thread.
 pub struct InlineWaker {
-    lock: Mutex<()>,
+    woken: Mutex<bool>,
     condvar: Condvar,
 }
 
 impl InlineWaker {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
-            lock: Mutex::new(()),
+            woken: Mutex::new(false),
             condvar: Condvar::new(),
         })
     }
 
     fn wake_now(&self) {
-        // Note: This guard should be there to prevent race conditions however in the
-        // browser it causes a lock up - some strange browser issue. What I suspect
-        // is that the Condvar::wait call is not releasing the mutex lock
-        // let _guard = self.lock.lock().unwrap();
+        {
+            let mut woken = self.woken.lock().unwrap();
+            *woken = true;
+        }
 
         self.condvar.notify_all();
     }
@@ -50,10 +50,15 @@ impl InlineWaker {
 
         if global.wait_allowed() {
             // We loop waiting for the waker to be woken, then we poll again
-            let mut lock = inline_waker.lock.lock().unwrap();
             loop {
                 match task.as_mut().poll(&mut cx) {
-                    Poll::Pending => lock = inline_waker.condvar.wait(lock).unwrap(),
+                    Poll::Pending => {
+                        let mut woken = inline_waker.woken.lock().unwrap();
+                        while !*woken {
+                            woken = inline_waker.condvar.wait(woken).unwrap();
+                        }
+                        *woken = false;
+                    }
                     Poll::Ready(ret) => return ret,
                 }
             }

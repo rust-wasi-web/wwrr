@@ -103,6 +103,8 @@ pub enum WasiStateCreationError {
     WasiIncludePackageError(String),
     #[error("control plane error")]
     ControlPlane(#[from] ControlPlaneError),
+    #[error("wasm-bindgen generated module name missing")]
+    WbgJsModuleNameMissing,
 }
 
 fn validate_mapped_dir_alias(alias: &str) -> Result<(), WasiStateCreationError> {
@@ -713,7 +715,9 @@ impl WasiEnvBuilder {
             thread: None,
             call_initialize: true,
             additional_imports: self.additional_imports,
-            wbg_js_module_name: self.wbg_js_module_name,
+            wbg_js_module_name: self
+                .wbg_js_module_name
+                .ok_or(WasiStateCreationError::WbgJsModuleNameMissing)?,
         };
 
         Ok(init)

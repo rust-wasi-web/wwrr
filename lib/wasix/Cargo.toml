@@ -13,6 +13,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+utils = { path = "../utils" }
 virtual-fs = { path = "../virtual-fs", features = ["no-time"] }
 virtual-mio = { path = "../virtual-mio" }
 virtual-net = { path = "../virtual-net", features = ["rkyv"] }

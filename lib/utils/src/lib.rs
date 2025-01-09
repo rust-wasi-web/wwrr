@@ -1,4 +1,5 @@
 use std::cell::LazyCell;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::{
     collections::BTreeMap,
     fmt::{Debug, Display},
@@ -75,10 +76,24 @@ impl GlobalScope {
 
     /// Gets the current time in milliseconds.
     pub fn now(&self) -> f64 {
-        match self {
-            GlobalScope::Window(window) => window.performance().unwrap().now(),
-            GlobalScope::Worker(worker) => worker.performance().unwrap().now(),
-        }
+        let now = match self {
+            GlobalScope::Window(window) => {
+                let performance = window.performance().unwrap();
+                performance.now() + performance.time_origin()
+            }
+            GlobalScope::Worker(worker) => {
+                let performance = worker.performance().unwrap();
+                performance.now() + performance.time_origin()
+            }
+        };
+
+        static START: AtomicU64 = AtomicU64::new(0);
+        let start =
+            match START.compare_exchange(0, now as u64, Ordering::Relaxed, Ordering::Relaxed) {
+                Ok(_) => now as u64,
+                Err(start) => start,
+            };
+        now - start as f64
     }
 
     /// The amount of concurrency available on this system.

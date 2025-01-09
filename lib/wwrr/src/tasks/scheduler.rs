@@ -26,7 +26,7 @@ pub(crate) struct Scheduler {
 
 impl Scheduler {
     /// Spawn a web worker running the scheduler.
-    pub fn spawn(module: Module, memory: Memory) -> Self {
+    pub fn spawn(module: Module, memory: Memory, wbg_js_module_name: String) -> Self {
         tracing::info!("Spawning task scheduler");
 
         // Start web worker.
@@ -46,6 +46,7 @@ impl Scheduler {
             msg_rx,
             module,
             memory,
+            wbg_js_module_name,
             _not_send: std::marker::PhantomData,
         };
         worker
@@ -57,6 +58,10 @@ impl Scheduler {
 
     /// Sends a message to the scheduler.
     pub fn send(&self, msg: SchedulerMsg) -> Result<(), Error> {
+        tracing::info!(
+            "send scheduler message {msg:?} at {} ms",
+            GlobalScope::current().now()
+        );
         self.msg_tx
             .send(msg)
             .map_err(|_| anyhow!("scheduler died"))?;
@@ -111,6 +116,8 @@ pub(crate) struct SchedulerState {
     module: wasmer::Module,
     /// WebAssembly memory for spawning threads.
     memory: wasmer::Memory,
+    /// wasm-bindgen generated module name.
+    wbg_js_module_name: String,
 }
 
 impl SchedulerState {
@@ -121,6 +128,7 @@ impl SchedulerState {
             msg_rx,
             module,
             memory,
+            wbg_js_module_name,
             _not_send,
         } = init;
 
@@ -132,6 +140,7 @@ impl SchedulerState {
             msg_rx,
             module,
             memory,
+            wbg_js_module_name,
         };
         wasm_bindgen_futures::spawn_local(this.run());
     }
@@ -144,6 +153,7 @@ impl SchedulerState {
                 self.msg_tx.clone(),
                 self.module.clone(),
                 self.memory.clone(),
+                self.wbg_js_module_name.clone(),
             )
             .await
             .unwrap();
@@ -163,19 +173,45 @@ impl SchedulerState {
     pub fn execute(&mut self, message: SchedulerMsg) -> Result<(), Error> {
         match message {
             SchedulerMsg::SpawnWasm(spawn_wasm) => {
-                tracing::info!("scheduler spawn module");
+                tracing::info!(
+                    "scheduler spawn module at {} ms",
+                    GlobalScope::current().now()
+                );
                 self.post_message(WorkerMsg::SpawnWasm(spawn_wasm))?;
                 Ok(())
             }
-            SchedulerMsg::WorkerDone(worker_id) => {
-                self.active_workers.remove(&worker_id).unwrap();
-                tracing::trace!(worker.id = worker_id, "Worker is done",);
+            SchedulerMsg::WorkerExit(worker_id) => {
+                let mut worker = self.active_workers.remove(&worker_id).unwrap();
+                worker.set_terminate(false);
+                tracing::trace!(worker.id = worker_id, "Worker has exited");
                 Ok(())
             }
             SchedulerMsg::Sleep { duration, notify } => {
                 let global = self.global.clone();
+                tracing::info!("sleep at scheduler for {duration} ms starting at {} ms", global.now());
+
+                // Do we need that kind of sleep?
+                // I.e. using the global event loop in Firefoxy?
+                // Can't we just add a sleeper here?
+                // I.e. we could select over a sleep?
+                // Would a Tokio sleep work?
+                // No, because we don't have any runtime.
+                // So can we write our own sleep future?
+                // We have the condvar wait stuff in WASM.
+                // So is there a way to make this a future?
+                // So using the condvar thingy will block.
+                // Yeah, not easy I guess!
+                // Or maybe?!
+                // Question is if we really want this sleep thingy here?
+                // I mean we could use WASM sleep?
+                
+
+
+
                 wasm_bindgen_futures::spawn_local(async move {
+                    tracing::info!("sleep at scheduler for {duration} ms starting in spawned future at {} ms", global.now());
                     let _ = JsFuture::from(global.sleep(duration)).await;
+                    tracing::info!("sleep at scheduler for {duration} ms done at {} ms", global.now());
                     let _ = notify.send(());
                 });
                 Ok(())
@@ -203,13 +239,16 @@ impl SchedulerState {
         self.active_workers.insert(worker.id(), worker);
 
         // Refill worker pool.
-        let msg_tx = self.msg_tx.clone();
-        let module = self.module.clone();
-        let memory = self.memory.clone();
-        wasm_bindgen_futures::spawn_local(async move {
-            let new_worker = Self::start_worker(msg_tx, module, memory).await.unwrap();
-            ready_workers.lock().unwrap().push_back(new_worker);
-        });
+        // let msg_tx = self.msg_tx.clone();
+        // let module = self.module.clone();
+        // let memory = self.memory.clone();
+        // let wbg_js_module_name = self.wbg_js_module_name.clone();
+        // wasm_bindgen_futures::spawn_local(async move {
+        //     let new_worker = Self::start_worker(msg_tx, module, memory, wbg_js_module_name)
+        //         .await
+        //         .unwrap();
+        //     ready_workers.lock().unwrap().push_back(new_worker);
+        // });
 
         Ok(())
     }
@@ -218,6 +257,7 @@ impl SchedulerState {
         msg_tx: mpsc::UnboundedSender<SchedulerMsg>,
         module: wasmer::Module,
         memory: wasmer::Memory,
+        wbg_js_module_name: String,
     ) -> Result<WorkerHandle, Error> {
         // Note: By using a monotonically incrementing counter, we can make sure
         // every single worker created with this shared linear memory will get a
@@ -226,7 +266,7 @@ impl SchedulerState {
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
 
         let scheduler = Scheduler { msg_tx };
-        let handle = WorkerHandle::spawn(id, scheduler, module, memory).await?;
+        let handle = WorkerHandle::spawn(id, scheduler, module, memory, wbg_js_module_name).await?;
         Ok(handle)
     }
 }

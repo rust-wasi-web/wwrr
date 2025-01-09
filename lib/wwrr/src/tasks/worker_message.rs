@@ -32,19 +32,22 @@ pub(crate) struct WorkerInit {
     pub module: wasmer::Module,
     /// WebAssembly memory for thread.
     pub memory: wasmer::Memory,
+    /// wasm-bindgen generated module name.
+    pub wbg_js_module_name: String,
     /// [`wasmer::Module`] and friends are `!Send` in practice.
     pub _not_send: PhantomData<*const ()>,
 }
 
 mod consts {
-    pub(crate) const TYPE_INIT: &str = "init-worker";
-    pub(crate) const SCHEDULER: &str = "scheduler";
-    pub(crate) const READY_TX: &str = "ready-tx";
-    pub(crate) const MSG_RX: &str = "msg-rx";
-    pub(crate) const MODULE: &str = "module";
-    pub(crate) const MODULE_BYTES: &str = "module-bytes";
-    pub(crate) const MEMORY: &str = "memory";
-    pub(crate) const MEMORY_TYPE: &str = "memory-type";
+    pub const TYPE_INIT: &str = "init-worker";
+    pub const SCHEDULER: &str = "scheduler";
+    pub const READY_TX: &str = "ready-tx";
+    pub const MSG_RX: &str = "msg-rx";
+    pub const MODULE: &str = "module";
+    pub const MODULE_BYTES: &str = "module-bytes";
+    pub const MEMORY: &str = "memory";
+    pub const MEMORY_TYPE: &str = "memory-type";
+    pub const WBG_JS_MODULE_NAME: &str = "wbg-js-module-name";
 }
 
 impl WorkerInit {
@@ -55,6 +58,7 @@ impl WorkerInit {
             msg_rx,
             module,
             memory,
+            wbg_js_module_name,
             _not_send,
         } = self;
         Serializer::new(consts::TYPE_INIT)
@@ -65,6 +69,7 @@ impl WorkerInit {
             .set(consts::MODULE, module)
             .boxed(consts::MEMORY_TYPE, memory.ty(&wasmer::Store::default()))
             .set(consts::MEMORY, memory.as_jsvalue(&wasmer::Store::default()))
+            .boxed(consts::WBG_JS_MODULE_NAME, wbg_js_module_name)
             .finish()
     }
 
@@ -81,6 +86,7 @@ impl WorkerInit {
         let module_bytes: Bytes = de.boxed(consts::MODULE_BYTES)?;
         let memory: JsValue = de.js(consts::MEMORY)?;
         let memory_type: MemoryType = de.boxed(consts::MEMORY_TYPE)?;
+        let wbg_js_module_name: String = de.boxed(consts::WBG_JS_MODULE_NAME)?;
 
         Ok(Self {
             scheduler,
@@ -93,6 +99,7 @@ impl WorkerInit {
                 &memory,
             )
             .map_err(Error::js)?,
+            wbg_js_module_name,
             _not_send: PhantomData,
         })
     }
