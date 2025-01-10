@@ -10,7 +10,7 @@ use wasmer::{Memory, MemoryType, Module, Store, StoreMut, StoreRef};
 use crate::os::task::thread::WasiThreadError;
 use crate::{StoreSnapshot, WasiEnv, WasiFunctionEnv};
 
-pub use virtual_mio::waker::*;
+pub use virtual_mio::InlineWaker;
 
 #[derive(Debug)]
 pub enum SpawnMemoryType<'a> {

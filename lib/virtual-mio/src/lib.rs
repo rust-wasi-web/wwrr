@@ -1,7 +1,9 @@
 mod arc;
 mod interest;
-pub mod waker;
+mod sleep;
+mod waker;
 
 pub use arc::*;
 pub use interest::*;
+pub use sleep::*;
 pub use waker::*;

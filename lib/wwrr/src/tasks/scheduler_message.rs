@@ -19,13 +19,6 @@ use crate::tasks::{
 pub(crate) enum SchedulerMsg {
     /// Message from worker that it is exiting.
     WorkerExit(u32),
-    /// Send a notification at the specified time.
-    Sleep {
-        /// Duration to sleep in milliseconds.
-        duration: i32,
-        /// Notify channel.
-        notify: oneshot::Sender<()>,
-    },
     /// Pings the scheduler.
     Ping(oneshot::Sender<()>),
     /// Spawn a thread on a new web worker.

@@ -51,7 +51,7 @@ impl GlobalScope {
     }
 
     /// Whether waiting is allowed.
-    pub fn wait_allowed(&self) -> bool {
+    pub fn is_wait_allowed(&self) -> bool {
         match self {
             GlobalScope::Window(_) => false,
             GlobalScope::Worker(_) => true,

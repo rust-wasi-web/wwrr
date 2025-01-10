@@ -9,8 +9,8 @@ use anyhow::{anyhow, Context, Error};
 use tokio::sync::{mpsc, oneshot};
 use utils::GlobalScope;
 use wasm_bindgen::prelude::*;
-use wasm_bindgen_futures::JsFuture;
 use wasmer::{Memory, Module};
+use web_sys::DedicatedWorkerGlobalScope;
 
 use super::scheduler_message::SchedulerMsg;
 use super::worker_message::WorkerMsg;
@@ -102,8 +102,6 @@ impl SchedulerWorker {
 /// The state for the actor in charge of the threadpool.
 #[derive(Debug)]
 pub(crate) struct SchedulerState {
-    /// Global scope.
-    global: GlobalScope,
     /// Workers that are busy and cannot be reused afterwards.
     active_workers: HashMap<u32, WorkerHandle>,
     /// Workers that are ready to be used.
@@ -133,7 +131,6 @@ impl SchedulerState {
         } = init;
 
         let this = Self {
-            global: GlobalScope::current(),
             active_workers: HashMap::new(),
             ready_workers: Arc::new(Mutex::new(VecDeque::new())),
             msg_tx,
@@ -167,6 +164,10 @@ impl SchedulerState {
         }
 
         tracing::info!("scheduler exiting");
+        wasm_bindgen_futures::spawn_local(async move {
+            let scope: DedicatedWorkerGlobalScope = js_sys::global().dyn_into().unwrap();
+            scope.close();
+        });
     }
 
     /// Executes a scheduler message.
@@ -184,36 +185,6 @@ impl SchedulerState {
                 let mut worker = self.active_workers.remove(&worker_id).unwrap();
                 worker.set_terminate(false);
                 tracing::trace!(worker.id = worker_id, "Worker has exited");
-                Ok(())
-            }
-            SchedulerMsg::Sleep { duration, notify } => {
-                let global = self.global.clone();
-                tracing::info!("sleep at scheduler for {duration} ms starting at {} ms", global.now());
-
-                // Do we need that kind of sleep?
-                // I.e. using the global event loop in Firefoxy?
-                // Can't we just add a sleeper here?
-                // I.e. we could select over a sleep?
-                // Would a Tokio sleep work?
-                // No, because we don't have any runtime.
-                // So can we write our own sleep future?
-                // We have the condvar wait stuff in WASM.
-                // So is there a way to make this a future?
-                // So using the condvar thingy will block.
-                // Yeah, not easy I guess!
-                // Or maybe?!
-                // Question is if we really want this sleep thingy here?
-                // I mean we could use WASM sleep?
-                
-
-
-
-                wasm_bindgen_futures::spawn_local(async move {
-                    tracing::info!("sleep at scheduler for {duration} ms starting in spawned future at {} ms", global.now());
-                    let _ = JsFuture::from(global.sleep(duration)).await;
-                    tracing::info!("sleep at scheduler for {duration} ms done at {} ms", global.now());
-                    let _ = notify.send(());
-                });
                 Ok(())
             }
             SchedulerMsg::Ping(tx) => {
@@ -239,16 +210,16 @@ impl SchedulerState {
         self.active_workers.insert(worker.id(), worker);
 
         // Refill worker pool.
-        // let msg_tx = self.msg_tx.clone();
-        // let module = self.module.clone();
-        // let memory = self.memory.clone();
-        // let wbg_js_module_name = self.wbg_js_module_name.clone();
-        // wasm_bindgen_futures::spawn_local(async move {
-        //     let new_worker = Self::start_worker(msg_tx, module, memory, wbg_js_module_name)
-        //         .await
-        //         .unwrap();
-        //     ready_workers.lock().unwrap().push_back(new_worker);
-        // });
+        let msg_tx = self.msg_tx.clone();
+        let module = self.module.clone();
+        let memory = self.memory.clone();
+        let wbg_js_module_name = self.wbg_js_module_name.clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            let new_worker = Self::start_worker(msg_tx, module, memory, wbg_js_module_name)
+                .await
+                .unwrap();
+            ready_workers.lock().unwrap().push_back(new_worker);
+        });
 
         Ok(())
     }

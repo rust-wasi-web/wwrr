@@ -1,3 +1,7 @@
+use std::error::Error;
+use std::ptr;
+use std::time::Duration;
+use std::{fmt, mem};
 use std::{
     sync::{Arc, Condvar, Mutex},
     task::{Context, Poll, RawWaker, RawWakerVTable, Waker},
@@ -8,15 +12,22 @@ use utils::GlobalScope;
 
 /// Runs a Future on the current thread.
 pub struct InlineWaker {
+    signature: [u8; 4],
     woken: Mutex<bool>,
     condvar: Condvar,
+    timeout: Mutex<Option<Duration>>,
 }
 
 impl InlineWaker {
+    const SIGNATURE: [u8; 4] = *b"IlWk";
+
+    /// Create a new wake that runs the future on the current thread.
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
+            signature: Self::SIGNATURE,
             woken: Mutex::new(false),
             condvar: Condvar::new(),
+            timeout: Mutex::new(None),
         })
     }
 
@@ -29,6 +40,7 @@ impl InlineWaker {
         self.condvar.notify_all();
     }
 
+    /// Convert to [`Waker`].
     pub fn as_waker(self: &Arc<Self>) -> Waker {
         let s: *const Self = Arc::into_raw(Arc::clone(self));
         let raw_waker = RawWaker::new(s as *const (), &VTABLE);
@@ -48,18 +60,30 @@ impl InlineWaker {
 
         let global = GlobalScope::current();
 
-        if global.wait_allowed() {
-            // We loop waiting for the waker to be woken, then we poll again
+        if global.is_wait_allowed() {
+            // We loop waiting for the waker to be woken, then we poll again.
             loop {
                 match task.as_mut().poll(&mut cx) {
+                    Poll::Ready(ret) => return ret,
                     Poll::Pending => {
                         let mut woken = inline_waker.woken.lock().unwrap();
-                        while !*woken {
-                            woken = inline_waker.condvar.wait(woken).unwrap();
+                        let timeout = inline_waker.timeout.lock().unwrap().take();
+
+                        if !*woken {
+                            match timeout {
+                                Some(timeout) => {
+                                    woken = inline_waker
+                                        .condvar
+                                        .wait_timeout(woken, timeout)
+                                        .unwrap()
+                                        .0;
+                                }
+                                None => woken = inline_waker.condvar.wait(woken).unwrap(),
+                            }
                         }
+
                         *woken = false;
                     }
-                    Poll::Ready(ret) => return ret,
                 }
             }
         } else {
@@ -68,12 +92,60 @@ impl InlineWaker {
 
             while global.now() <= until {
                 match task.as_mut().poll(&mut cx) {
-                    Poll::Pending => std::thread::yield_now(),
                     Poll::Ready(ret) => return ret,
+                    Poll::Pending => std::thread::yield_now(),
                 }
             }
 
             panic!("timeout while blocking main thread");
+        }
+    }
+
+    /// Sets the timeout after which the waker wakes, even if not explictly woken.
+    ///
+    /// If multiple timeouts are set, the shortest timeout is used.
+    pub fn set_timeout(&self, duration: Duration) {
+        let mut timeout = self.timeout.lock().unwrap();
+        match &mut *timeout {
+            Some(timeout) => *timeout = (*timeout).min(duration),
+            None => *timeout = Some(duration),
+        }
+    }
+
+    /// Whether waiting is allowed on the current thread.
+    pub fn is_wait_allowed(&self) -> bool {
+        GlobalScope::current().is_wait_allowed()
+    }
+}
+
+/// The provided waker is not an [`InlineWaker`].
+#[derive(Clone, Debug)]
+pub struct NotInlineWaker {}
+
+impl fmt::Display for NotInlineWaker {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "the waker is not an InlineWaker")
+    }
+}
+
+impl Error for NotInlineWaker {}
+
+impl TryFrom<&Waker> for &InlineWaker {
+    type Error = NotInlineWaker;
+
+    fn try_from(waker: &Waker) -> Result<Self, Self::Error> {
+        unsafe {
+            let data = waker.data();
+
+            // This is not 100% safe, since we might try to read past the end of memory,
+            // but we accept that risk for now.
+            let sig: [u8; 4] =
+                ptr::read(data.byte_add(mem::offset_of!(InlineWaker, signature)) as _);
+            if sig != InlineWaker::SIGNATURE {
+                return Err(NotInlineWaker {});
+            }
+
+            Ok(&*(data as *const InlineWaker))
         }
     }
 }

@@ -1,11 +1,10 @@
 use std::sync::OnceLock;
-use std::task::{Context, Poll};
 use std::{fmt::Debug, future::Future, pin::Pin};
 
 use futures::future::LocalBoxFuture;
 use futures::FutureExt;
 use instant::Duration;
-use utils::GlobalScope;
+use virtual_mio::InlineSleep;
 use wasmer::{Memory, Module};
 use wasmer_wasix::{runtime::task_manager::TaskWasm, VirtualTaskManager, WasiThreadError};
 
@@ -55,62 +54,11 @@ impl VirtualTaskManager for ThreadPool {
         .boxed_local()
     }
 
-    /// Invokes whenever a WASM thread goes idle. In some runtimes (like
-    /// singlethreaded execution environments) they will need to do asynchronous
-    /// work whenever the main thread goes idle and this is the place to hook
-    /// for that.
     fn sleep_now(
         &self,
         time: Duration,
     ) -> Pin<Box<dyn Future<Output = ()> + Send + Sync + 'static>> {
-        let time = if time.as_millis() < i32::MAX as u128 {
-            time.as_millis() as i32
-        } else {
-            i32::MAX
-        };
-
-        if GlobalScope::current().wait_allowed()  {
-            // Note: We can't use wasm_bindgen_futures::spawn_local() directly
-            // because we might be invoked from inside a syscall. This causes a
-            // deadlock because the syscall will block block until the future
-            // resolves, but the JsFuture will never get a chance to mark itself as
-            // resolved because the JavaScript VM is still blocked by the syscall.
-            tracing::info!("sleep with allowed wait for {time} ms at {} ms", GlobalScope::current().now());
-
-            // So what are the options?
-            // 1. Sleep worker!
-            
-
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            self.send(SchedulerMsg::Sleep {
-                duration: time,
-                notify: tx,
-            });
-            Box::pin(async move { rx.await.unwrap() })
-        } else {
-            // If we are on the main browser thread, waiting is not allowed.
-            // Thus our only choice is to spin wait.
-            struct SpinWaiter {
-                until: f64,
-            }
-
-            impl Future for SpinWaiter {
-                type Output = ();
-                fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-                    let this = self.as_ref();
-                    if GlobalScope::current().now() >= this.until {
-                        Poll::Ready(())
-                    } else {
-                        cx.waker().wake_by_ref();
-                        Poll::Pending
-                    }
-                }
-            }
-
-            Box::pin(SpinWaiter {
-                until: GlobalScope::current().now() + time as f64,
-            })
-        }
+        Box::pin(InlineSleep::new(time))
     }
 
     /// Starts an asynchronous task will will run on a dedicated thread
