@@ -48,6 +48,8 @@ type CommonOptions = {
      * files.
      */
     mount?: Record<string, DirectoryInit | Directory>;
+    /** Number of web workers to pre-start to execute threads */
+    prestarted_workers?: number;
 };
 
 /**
@@ -102,6 +104,9 @@ extern "C" {
 
     #[wasm_bindgen(method, getter)]
     fn mount(this: &CommonOptions) -> OptionalDirectories;
+
+    #[wasm_bindgen(method, getter)]
+    fn prestarted_workers(this: &CommonOptions) -> Option<usize>;
 }
 
 impl CommonOptions {
@@ -230,6 +235,10 @@ impl RunOptions {
         let fs = self.filesystem()?;
         builder.set_fs(Box::new(fs));
         builder.add_preopen_dir("/")?;
+
+        if let Some(n) = self.prestarted_workers() {
+            builder.set_prestarted_workers(n);
+        }
 
         Ok((stdin, stdout, stderr))
     }

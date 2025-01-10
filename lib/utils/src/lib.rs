@@ -109,6 +109,7 @@ impl GlobalScope {
         NonZeroUsize::new(concurrency)
     }
 
+    /// Whether the current site is cross-origin isolated.
     pub fn cross_origin_isolated(&self) -> Option<bool> {
         let obj = self.as_object();
         js_sys::Reflect::get(obj, &JsValue::from_str("crossOriginIsolated"))
@@ -116,11 +117,39 @@ impl GlobalScope {
             .and_then(|obj| obj.as_bool())
     }
 
+    /// Browser information.
+    pub fn navigator(&self) -> NavigatorInfo {
+        let user_agent = match self {
+            Self::Window(scope) => scope.navigator().user_agent().unwrap(),
+            Self::Worker(scope) => scope.navigator().user_agent().unwrap(),
+        };
+
+        NavigatorInfo(user_agent)
+    }
+
     fn as_object(&self) -> &js_sys::Object {
         match self {
             GlobalScope::Window(w) => w,
             GlobalScope::Worker(w) => w,
         }
+    }
+}
+
+/// Browser information.
+#[derive(Debug, Clone)]
+pub struct NavigatorInfo(String);
+
+impl NavigatorInfo {
+    fn is_firefox_like(&self) -> bool {
+        self.0.to_lowercase().contains("firefox")
+    }
+
+    /// Whether the browser has events loop that are independent between workers.
+    ///
+    /// Currently this is not the case for Firefox. When the UI thread is blocked by
+    /// running code, some events like timeouts will not fire on web workers.
+    pub fn has_independent_event_loops(&self) -> bool {
+        !self.is_firefox_like()
     }
 }
 

@@ -38,6 +38,8 @@ pub(crate) struct SchedulerInit {
     pub memory: wasmer::Memory,
     /// wasm-bindgen generated module name.
     pub wbg_js_module_name: String,
+    /// Number of workers to pre-start.
+    pub prestarted_workers: usize,
     /// [`wasmer::Module`] and friends are `!Send` in practice.
     pub _not_send: PhantomData<*const ()>,
 }
@@ -50,6 +52,7 @@ impl SchedulerInit {
             module,
             memory,
             wbg_js_module_name,
+            prestarted_workers,
             _not_send,
         } = self;
 
@@ -61,6 +64,7 @@ impl SchedulerInit {
             .boxed(consts::MEMORY_TYPE, memory.ty(&wasmer::Store::default()))
             .set(consts::MEMORY, memory.as_jsvalue(&wasmer::Store::default()))
             .boxed(consts::WBG_JS_MODULE_NAME, wbg_js_module_name)
+            .boxed(consts::PRESTARTED_WORKERS, prestarted_workers)
             .finish()
     }
 
@@ -77,6 +81,7 @@ impl SchedulerInit {
         let memory: JsValue = de.js(consts::MEMORY)?;
         let memory_type: MemoryType = de.boxed(consts::MEMORY_TYPE)?;
         let wbg_js_module_name: String = de.boxed(consts::WBG_JS_MODULE_NAME)?;
+        let prestarted_workers: usize = de.boxed(consts::PRESTARTED_WORKERS)?;
 
         Ok(Self {
             msg_tx,
@@ -89,6 +94,7 @@ impl SchedulerInit {
             )
             .map_err(Error::js)?,
             wbg_js_module_name,
+            prestarted_workers,
             _not_send: PhantomData,
         })
     }
@@ -103,4 +109,5 @@ mod consts {
     pub const MEMORY: &str = "memory";
     pub const MEMORY_TYPE: &str = "memory-type";
     pub const WBG_JS_MODULE_NAME: &str = "wbg-js-module-name";
+    pub const PRESTARTED_WORKERS: &str = "prestarted-workers";
 }

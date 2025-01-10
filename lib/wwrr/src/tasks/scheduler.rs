@@ -1,15 +1,12 @@
 use std::collections::{HashMap, VecDeque};
+use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
-use std::{
-    fmt::Debug,
-    sync::atomic::{AtomicU32, Ordering},
-};
 
 use anyhow::{anyhow, Context, Error};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, Notify};
 use utils::GlobalScope;
 use wasm_bindgen::prelude::*;
-use wasmer::{Memory, Module};
+use wasmer_wasix::runtime::task_manager::SchedulerSpawn;
 use web_sys::DedicatedWorkerGlobalScope;
 
 use super::scheduler_message::SchedulerMsg;
@@ -26,8 +23,14 @@ pub(crate) struct Scheduler {
 
 impl Scheduler {
     /// Spawn a web worker running the scheduler.
-    pub fn spawn(module: Module, memory: Memory, wbg_js_module_name: String) -> Self {
+    pub fn spawn(scheduler_spawn: SchedulerSpawn) -> Self {
         tracing::info!("Spawning task scheduler");
+        let SchedulerSpawn {
+            module,
+            memory,
+            wbg_js_module_name,
+            prestarted_workers,
+        } = scheduler_spawn;
 
         // Start web worker.
         let wo = web_sys::WorkerOptions::new();
@@ -47,6 +50,7 @@ impl Scheduler {
             module,
             memory,
             wbg_js_module_name,
+            prestarted_workers,
             _not_send: std::marker::PhantomData,
         };
         worker
@@ -102,10 +106,14 @@ impl SchedulerWorker {
 /// The state for the actor in charge of the threadpool.
 #[derive(Debug)]
 pub(crate) struct SchedulerState {
+    /// Next worker id.
+    next_worker_id: u32,
     /// Workers that are busy and cannot be reused afterwards.
     active_workers: HashMap<u32, WorkerHandle>,
     /// Workers that are ready to be used.
     ready_workers: Arc<Mutex<VecDeque<WorkerHandle>>>,
+    /// Notification that a worker has been added to `ready_workers`.
+    worker_ready: Arc<Notify>,
     /// Message sender.
     msg_tx: mpsc::UnboundedSender<SchedulerMsg>,
     /// Message receiver.
@@ -114,6 +122,8 @@ pub(crate) struct SchedulerState {
     module: wasmer::Module,
     /// WebAssembly memory for spawning threads.
     memory: wasmer::Memory,
+    /// Number of workers to pre-start.
+    prestarted_workers: usize,
     /// wasm-bindgen generated module name.
     wbg_js_module_name: String,
 }
@@ -127,38 +137,38 @@ impl SchedulerState {
             module,
             memory,
             wbg_js_module_name,
+            prestarted_workers,
             _not_send,
         } = init;
 
         let this = Self {
+            next_worker_id: 1,
             active_workers: HashMap::new(),
             ready_workers: Arc::new(Mutex::new(VecDeque::new())),
+            worker_ready: Arc::new(Notify::new()),
             msg_tx,
             msg_rx,
             module,
             memory,
             wbg_js_module_name,
+            prestarted_workers,
         };
         wasm_bindgen_futures::spawn_local(this.run());
     }
 
     /// Scheduler main loop.
     async fn run(mut self) {
-        tracing::info!("prespawning workers");
-        for _ in 1..=8 {
-            let worker = Self::start_worker(
-                self.msg_tx.clone(),
-                self.module.clone(),
-                self.memory.clone(),
-                self.wbg_js_module_name.clone(),
-            )
-            .await
-            .unwrap();
-            self.ready_workers.lock().unwrap().push_back(worker);
+        tracing::info!("pre-starting {} workers", self.prestarted_workers);
+        for _ in 0..self.prestarted_workers {
+            self.start_worker();
+        }
+        while self.ready_workers.lock().unwrap().len() < self.prestarted_workers {
+            self.worker_ready.notified().await;
         }
 
+        tracing::info!("scheduler is ready");
         while let Some(msg) = self.msg_rx.recv().await {
-            if let Err(e) = self.execute(msg) {
+            if let Err(e) = self.execute(msg).await {
                 tracing::error!(error = &*e, "An error occurred while handling a message");
             }
         }
@@ -171,14 +181,14 @@ impl SchedulerState {
     }
 
     /// Executes a scheduler message.
-    pub fn execute(&mut self, message: SchedulerMsg) -> Result<(), Error> {
+    pub async fn execute(&mut self, message: SchedulerMsg) -> Result<(), Error> {
         match message {
             SchedulerMsg::SpawnWasm(spawn_wasm) => {
                 tracing::info!(
                     "scheduler spawn module at {} ms",
                     GlobalScope::current().now()
                 );
-                self.post_message(WorkerMsg::SpawnWasm(spawn_wasm))?;
+                self.post_message(WorkerMsg::SpawnWasm(spawn_wasm)).await?;
                 Ok(())
             }
             SchedulerMsg::WorkerExit(worker_id) => {
@@ -195,49 +205,59 @@ impl SchedulerState {
     }
 
     /// Spawns a worker and sends a message to it.
-    fn post_message(&mut self, msg: WorkerMsg) -> Result<(), Error> {
-        let ready_workers = self.ready_workers.clone();
-
-        let worker = ready_workers
-            .lock()
-            .unwrap()
-            .pop_front()
-            .expect("no workers available");
+    async fn post_message(&mut self, msg: WorkerMsg) -> Result<(), Error> {
+        let worker = self.take_worker().await;
         worker
             .send(msg)
             .with_context(|| format!("Unable to send a message to worker {}", worker.id()))?;
 
         self.active_workers.insert(worker.id(), worker);
 
-        // Refill worker pool.
+        Ok(())
+    }
+
+    /// Starts a new worker in the background and adds it to the pool of ready workers
+    /// once it is initialized.
+    fn start_worker(&mut self) {
+        let id = self.next_worker_id;
+        let ready_workers = self.ready_workers.clone();
+        let worker_ready = self.worker_ready.clone();
         let msg_tx = self.msg_tx.clone();
         let module = self.module.clone();
         let memory = self.memory.clone();
         let wbg_js_module_name = self.wbg_js_module_name.clone();
-        wasm_bindgen_futures::spawn_local(async move {
-            let new_worker = Self::start_worker(msg_tx, module, memory, wbg_js_module_name)
-                .await
-                .unwrap();
-            ready_workers.lock().unwrap().push_back(new_worker);
-        });
 
-        Ok(())
+        self.next_worker_id += 1;
+
+        wasm_bindgen_futures::spawn_local(async move {
+            let scheduler = Scheduler { msg_tx };
+            let handle = WorkerHandle::spawn(id, scheduler, module, memory, wbg_js_module_name)
+                .await
+                .expect("starting thread worker failed");
+
+            ready_workers.lock().unwrap().push_back(handle);
+            worker_ready.notify_one();
+        });
     }
 
-    async fn start_worker(
-        msg_tx: mpsc::UnboundedSender<SchedulerMsg>,
-        module: wasmer::Module,
-        memory: wasmer::Memory,
-        wbg_js_module_name: String,
-    ) -> Result<WorkerHandle, Error> {
-        // Note: By using a monotonically incrementing counter, we can make sure
-        // every single worker created with this shared linear memory will get a
-        // unique ID.
-        static NEXT_ID: AtomicU32 = AtomicU32::new(1);
-        let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+    /// Takes a worker from the pool of ready workers and starts a new worker
+    /// to refill the pool.
+    ///
+    /// Waits until a ready worker becomes available.
+    async fn take_worker(&mut self) -> WorkerHandle {
+        self.start_worker();
 
-        let scheduler = Scheduler { msg_tx };
-        let handle = WorkerHandle::spawn(id, scheduler, module, memory, wbg_js_module_name).await?;
-        Ok(handle)
+        loop {
+            let worker_opt = self.ready_workers.lock().unwrap().pop_front();
+            match worker_opt {
+                Some(worker) => break worker,
+                None => {
+                    if self.prestarted_workers > 0 {
+                        tracing::warn!("thread pool has run out of pre-started workers");
+                    }
+                    self.worker_ready.notified().await;
+                }
+            }
+        }
     }
 }

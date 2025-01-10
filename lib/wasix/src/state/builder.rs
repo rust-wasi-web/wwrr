@@ -6,6 +6,7 @@ use std::{
 };
 
 use thiserror::Error;
+use utils::GlobalScope;
 use virtual_fs::{ArcFile, FileSystem, FsError, TmpFileSystem, VirtualFile};
 use wasmer::{
     AsStoreMut, ExportsObj, Extern, Imports, ImportsObj, Instance, Module, RuntimeError, Store,
@@ -59,6 +60,8 @@ pub struct WasiEnvBuilder {
     pub(super) additional_imports: Imports,
     /// Name of wasm-bindgen generated JavaScript module.
     pub(super) wbg_js_module_name: Option<String>,
+    /// Number of thread workers to pre-start.
+    pub(super) prestarted_workers: Option<usize>,
 }
 
 impl std::fmt::Debug for WasiEnvBuilder {
@@ -74,6 +77,7 @@ impl std::fmt::Debug for WasiEnvBuilder {
             .field("stdin_override exists", &self.stdin.is_some())
             .field("runtime_override_exists", &self.runtime.is_some())
             .field("wbg_js_module_name", &self.wbg_js_module_name)
+            .field("prestarted_workers", &self.prestarted_workers)
             .finish()
     }
 }
@@ -549,6 +553,11 @@ impl WasiEnvBuilder {
         self.wbg_js_module_name = Some(wbg_js_module_name);
     }
 
+    /// Sets the number of web workers to pre-start for executing threads.
+    pub fn set_prestarted_workers(&mut self, prestarted_workers: usize) {
+        self.prestarted_workers = Some(prestarted_workers);
+    }
+
     /// Consumes the [`WasiEnvBuilder`] and produces a [`WasiEnvInit`], which
     /// can be used to construct a new [`WasiEnv`].
     ///
@@ -706,6 +715,16 @@ impl WasiEnvBuilder {
 
         let control_plane = WasiControlPlane::new();
 
+        let prestarted_workers = self.prestarted_workers.unwrap_or_else(|| {
+            match GlobalScope::current()
+                .navigator()
+                .has_independent_event_loops()
+            {
+                true => 0,
+                false => 8,
+            }
+        });
+
         let init = WasiEnvInit {
             state,
             runtime,
@@ -718,6 +737,7 @@ impl WasiEnvBuilder {
             wbg_js_module_name: self
                 .wbg_js_module_name
                 .ok_or(WasiStateCreationError::WbgJsModuleNameMissing)?,
+            prestarted_workers,
         };
 
         Ok(init)

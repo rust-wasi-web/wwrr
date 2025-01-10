@@ -1,11 +1,11 @@
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use std::{fmt::Debug, future::Future, pin::Pin};
 
 use futures::future::LocalBoxFuture;
 use futures::FutureExt;
 use instant::Duration;
 use virtual_mio::InlineSleep;
-use wasmer::{Memory, Module};
+use wasmer_wasix::runtime::task_manager::SchedulerSpawn;
 use wasmer_wasix::{runtime::task_manager::TaskWasm, VirtualTaskManager, WasiThreadError};
 
 use super::scheduler::Scheduler;
@@ -13,7 +13,12 @@ use super::scheduler_message::SchedulerMsg;
 
 /// A handle to a threadpool backed by Web Workers.
 #[derive(Debug, Clone)]
-pub struct ThreadPool(OnceLock<Scheduler>);
+pub struct ThreadPool {
+    // Using wrappers that potentially block is safe here because
+    // the initialization can only take place when only the main
+    // thread is running.
+    scheduler: Arc<OnceLock<Scheduler>>,
+}
 
 const CROSS_ORIGIN_WARNING: &str =
     r#"You can only run packages from "Cross-Origin Isolated" websites."#;
@@ -29,27 +34,30 @@ impl ThreadPool {
             );
         }
 
-        Self(OnceLock::new())
+        Self {
+            scheduler: Arc::new(OnceLock::new()),
+        }
     }
 
     pub(crate) fn send(&self, msg: SchedulerMsg) {
-        let scheduler = self.0.get().expect("thread pool not initialized");
+        let scheduler = self.scheduler.get().expect("thread pool not initialized");
         scheduler.send(msg).expect("scheduler is dead");
     }
 }
 
 #[async_trait::async_trait]
 impl VirtualTaskManager for ThreadPool {
-    fn init(
-        &self,
-        module: Module,
-        memory: Memory,
-        wbg_js_module_name: String,
-    ) -> LocalBoxFuture<()> {
+    fn init(&self, scheduler_spawn: SchedulerSpawn) -> LocalBoxFuture<()> {
         async move {
-            let scheduler = Scheduler::spawn(module, memory, wbg_js_module_name);
+            tracing::info!(
+                "initializing thread pool with {} prestarted workers",
+                scheduler_spawn.prestarted_workers
+            );
+            let scheduler = Scheduler::spawn(scheduler_spawn);
             scheduler.ping().await.unwrap();
-            self.0.set(scheduler).unwrap();
+            self.scheduler
+                .set(scheduler)
+                .expect("thread pool already initialized");
         }
         .boxed_local()
     }

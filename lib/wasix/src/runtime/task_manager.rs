@@ -81,6 +81,19 @@ impl<'a, 'b> TaskWasm<'a, 'b> {
     }
 }
 
+/// Data for spawning the scheduler.
+#[derive(Debug)]
+pub struct SchedulerSpawn {
+    /// WebAssembly module for spawning threads.
+    pub module: Module,
+    /// WebAssembly memory for spawning threads.
+    pub memory: Memory,
+    /// wasm-bindgen generated module name.
+    pub wbg_js_module_name: String,
+    /// Number of workers to pre-start.
+    pub prestarted_workers: usize,
+}
+
 /// A task executor backed by a thread pool.
 ///
 /// ## Thread Safety
@@ -98,12 +111,7 @@ impl<'a, 'b> TaskWasm<'a, 'b> {
 /// [#4158]: https://github.com/wasmerio/wasmer/issues/4158
 pub trait VirtualTaskManager: std::fmt::Debug + Send + Sync + 'static {
     /// Initializes the task manager.
-    fn init(
-        &self,
-        module: Module,
-        memory: Memory,
-        wbg_js_module_name: String,
-    ) -> LocalBoxFuture<()>;
+    fn init(&self, scheduler_spawn: SchedulerSpawn) -> LocalBoxFuture<()>;
 
     /// Build a new Webassembly memory.
     ///
@@ -181,13 +189,8 @@ where
     D: Deref<Target = T> + std::fmt::Debug + Send + Sync + 'static,
     T: VirtualTaskManager + ?Sized,
 {
-    fn init(
-        &self,
-        module: Module,
-        memory: Memory,
-        wbg_js_module_name: String,
-    ) -> LocalBoxFuture<()> {
-        (**self).init(module, memory, wbg_js_module_name)
+    fn init(&self, scheduler_spawn: SchedulerSpawn) -> LocalBoxFuture<()> {
+        (**self).init(scheduler_spawn)
     }
 
     fn build_memory(

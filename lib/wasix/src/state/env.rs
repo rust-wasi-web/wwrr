@@ -15,6 +15,7 @@ use wasmer_wasix_types::{
     wasix::ThreadStartType,
 };
 
+use crate::runtime::task_manager::SchedulerSpawn;
 use crate::{
     fs::{WasiFsRoot, WasiInodes},
     import_object_for_all_wasi_versions,
@@ -135,6 +136,8 @@ pub struct WasiEnvInit {
 
     /// Name of wasm-bindgen generated JavaScript module.
     pub wbg_js_module_name: String,
+
+    pub prestarted_workers: usize,
 }
 
 impl WasiEnvInit {
@@ -166,6 +169,7 @@ impl WasiEnvInit {
             call_initialize: self.call_initialize,
             additional_imports: self.additional_imports.clone(),
             wbg_js_module_name: self.wbg_js_module_name.clone(),
+            prestarted_workers: self.prestarted_workers,
         }
     }
 }
@@ -295,6 +299,7 @@ impl WasiEnv {
 
         let additional_imports = init.additional_imports.clone();
         let wbg_js_module_name = init.wbg_js_module_name.clone();
+        let prestarted_workers = init.prestarted_workers;
 
         let env = Self::from_init(init)?;
         let pid = env.process.pid();
@@ -384,12 +389,13 @@ impl WasiEnv {
         }
 
         // Initialize the task manager.
-        let memory = func_env.data(&store).try_memory_clone().unwrap();
-        func_env
-            .data(&store)
-            .tasks()
-            .init(module, memory, wbg_js_module_name)
-            .await;
+        let scheduler_spawn = SchedulerSpawn {
+            module,
+            memory: func_env.data(&store).try_memory_clone().unwrap(),
+            wbg_js_module_name,
+            prestarted_workers,
+        };
+        func_env.data(&store).tasks().init(scheduler_spawn).await;
 
         // If this module exports an _initialize function, run that first.
         if call_initialize {

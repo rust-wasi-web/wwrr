@@ -137,22 +137,6 @@ pub(crate) struct WasiState {
     pub preopen: Vec<String>,
 }
 
-impl WasiState {
-    // fn new(fs: WasiFs, inodes: Arc<RwLock<WasiInodes>>) -> Self {
-    //     WasiState {
-    //         fs,
-    //         secret: rand::thread_rng().gen::<[u8; 32]>(),
-    //         inodes,
-    //         args: Vec::new(),
-    //         preopen: Vec::new(),
-    //         threading: Default::default(),
-    //         futexs: Default::default(),
-    //         clock_offset: Default::default(),
-    //         envs: Vec::new(),
-    //     }
-    // }
-}
-
 // Implementations of direct to FS calls so that we can easily change their implementation
 impl WasiState {
     pub(crate) fn fs_read_dir<P: AsRef<Path>>(
