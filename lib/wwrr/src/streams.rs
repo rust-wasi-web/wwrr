@@ -164,7 +164,7 @@ impl ReadableStreamSource {
 
                 match pipe.read_buf(&mut buffer).await.context("Read failed") {
                     Ok(0) => {
-                        tracing::debug!("EOF");
+                        tracing::trace!("EOF");
                         controller.close()?;
                     }
                     Ok(bytes_read) => {

@@ -55,7 +55,7 @@ impl WasiFunctionEnv {
         // Get wasm-bindgen imports provided to WebAssembly module.
         let imports_obj = match &wbg_js_module {
             Some(wbg_mod) => {
-                tracing::debug!("getting imports for wasm-bindgen");
+                tracing::trace!("getting imports for wasm-bindgen");
                 let get_imports = Reflect::get(wbg_mod, &JsValue::from_str("__wbg_get_imports"))
                     .map_err(WasiThreadError::wbg_failed)?;
                 let get_imports =
@@ -83,7 +83,7 @@ impl WasiFunctionEnv {
         // Initialize JavaScript side of wasm-bindgen generated bindings.
         if let Some(wbg_mod) = &wbg_js_module {
             // Set exports provided by WASM module.
-            tracing::debug!("setting wasm-bindgen exports");
+            tracing::trace!("setting wasm-bindgen exports");
             let set_exports = Reflect::get(wbg_mod, &JsValue::from_str("__wbg_set_exports"))
                 .map_err(WasiThreadError::wbg_failed)?;
             let set_exports =
@@ -97,7 +97,7 @@ impl WasiFunctionEnv {
                 .map_err(WasiThreadError::wbg_failed)?;
 
             // Initialize externref table.
-            tracing::debug!("initializing wasm-bindgen externref table");
+            tracing::trace!("initializing wasm-bindgen externref table");
             let wbg = Reflect::get(&imports_obj.0, &JsValue::from_str("wbg"))
                 .map_err(WasiThreadError::wbg_failed)?;
             let init_externref_table =

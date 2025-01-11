@@ -69,9 +69,9 @@ impl WorkerHandle {
             .unwrap();
 
         // Wait for worker to initialize.
-        tracing::info!("waiting for worker {id}");
+        tracing::trace!("waiting for worker {id}");
         ready_rx.await.unwrap();
-        tracing::info!("worker {id} is ready");
+        tracing::trace!("worker {id} is ready");
 
         Ok(WorkerHandle {
             id,

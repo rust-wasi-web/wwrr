@@ -4,7 +4,6 @@
 
 use anyhow::Context;
 use derivative::Derivative;
-use utils::GlobalScope;
 use wasm_bindgen::JsValue;
 use wasmer::{AsStoreRef, MemoryType, Store};
 use wasmer_wasix::{
@@ -107,7 +106,6 @@ impl SpawnWasm {
             store,
             wbg_js_module,
         };
-        tracing::info!("spawn_wasm run at {} ms", GlobalScope::current().now());
         run(properties).await;
 
         Ok(())

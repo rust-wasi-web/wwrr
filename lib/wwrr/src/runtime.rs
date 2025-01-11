@@ -37,7 +37,6 @@ impl Runtime {
                 Some(rt) => Ok(rt),
                 None => {
                     tracing::info!("WWRR - WASI Web Reactor Runtime - version {VERSION}");
-                    tracing::debug!("Initializing the global runtime");
                     let rt = Arc::new(Runtime::with_defaults()?);
                     *guard = Arc::downgrade(&rt);
 

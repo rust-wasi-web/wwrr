@@ -8,7 +8,7 @@ use crate::{errors::InstantiationError, js::js_handle::JsHandle};
 use crate::{ExportType, ImportType};
 use bytes::Bytes;
 use js_sys::{Reflect, Uint8Array, WebAssembly};
-use tracing::{debug, trace, warn};
+use tracing::{trace, warn};
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 use wasmer_types::{CompileError, ExportsIterator, ExternType, ImportsIterator, ModuleInfo};
@@ -133,7 +133,7 @@ impl Module {
 
             if let wasmer_types::ExternType::Memory(mem_ty) = import_type.ty() {
                 if resolved_import.is_some() {
-                    debug!("imported shared memory {:?}", &mem_ty);
+                    trace!("imported shared memory {:?}", &mem_ty);
                 } else {
                     warn!(
                         "Error while importing {0:?}.{1:?}: memory. Expected {2:?}",
@@ -194,7 +194,7 @@ impl Module {
             }
         }
 
-        tracing::info!(
+        tracing::trace!(
             "instantiating module {}",
             self.name.as_deref().unwrap_or_default()
         );

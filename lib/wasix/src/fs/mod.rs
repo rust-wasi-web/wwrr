@@ -552,7 +552,7 @@ impl WasiFs {
         inodes: &WasiInodes,
         st_ino: Inode,
     ) -> Result<Self, String> {
-        debug!("Initializing WASI filesystem");
+        trace!("Initializing WASI filesystem");
 
         let stat = Filestat {
             st_filetype: Filetype::Directory,
@@ -1744,7 +1744,7 @@ impl WasiFs {
             create,
         } in self.init_preopens.iter()
         {
-            debug!(
+            trace!(
                 "Attempting to preopen {} with alias {:?}",
                 &path.to_string_lossy(),
                 &alias

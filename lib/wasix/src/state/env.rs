@@ -400,7 +400,7 @@ impl WasiEnv {
         // If this module exports an _initialize function, run that first.
         if call_initialize {
             if let Ok(initialize) = instance.exports.get_function("_initialize") {
-                tracing::info!("calling WASI _initialize");
+                tracing::debug!("calling WASI _initialize");
                 if let Err(err) = crate::run_wasi_func_start(initialize, &mut store) {
                     func_env
                         .data(&store)

@@ -1,6 +1,5 @@
 use js_sys::Promise;
 use tokio::sync::mpsc;
-use utils::GlobalScope;
 use wasm_bindgen::{prelude::wasm_bindgen, JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::DedicatedWorkerGlobalScope;
@@ -28,9 +27,8 @@ impl ThreadPoolWorker {
     /// Handles the init message and starts the worker.
     #[wasm_bindgen]
     pub fn handle(&self, msg: JsValue) -> Result<(), utils::Error> {
-        tracing::info!("Initializing worker");
         let worker_init = unsafe { WorkerInit::try_from_js(msg) }?;
-        ThreadPoolWorkerState::spawn(self.id, worker_init);
+        wasm_bindgen_futures::spawn_local(ThreadPoolWorkerState::worker(self.id, worker_init));
         Ok(())
     }
 }
@@ -38,8 +36,6 @@ impl ThreadPoolWorker {
 /// Worker state.
 #[derive(Debug)]
 pub struct ThreadPoolWorkerState {
-    /// Worker id.
-    id: u32,
     /// Message receiver.
     msg_rx: mpsc::UnboundedReceiver<WorkerMsg>,
     /// WebAssembly module for spawning threads.
@@ -52,7 +48,8 @@ pub struct ThreadPoolWorkerState {
 
 impl ThreadPoolWorkerState {
     /// Run the worker on this web worker.
-    pub fn spawn(id: u32, init: WorkerInit) {
+    #[tracing::instrument(level = "debug", skip_all, fields(id = id))]
+    pub async fn worker(id: u32, init: WorkerInit) {
         let WorkerInit {
             scheduler,
             ready_tx,
@@ -63,41 +60,34 @@ impl ThreadPoolWorkerState {
             _not_send,
         } = init;
 
+        // Import wasm-bindgen generated JavaScript module.
+        tracing::debug!("importing JavaScript bindings");
+        let wbg_js_promise: Promise = js_sys::eval(&format!("import(\"{wbg_js_module_name}\")"))
+            .expect("failed to import wasm-bindgen generated module")
+            .into();
+        let wbg_js_module = JsFuture::from(wbg_js_promise)
+            .await
+            .expect("failed to import wasm-bindgen generated module")
+            .into();
+
+        // Send ready notification.
+        ready_tx.send(()).unwrap();
+
+        // Start worker loop.
+        Self {
+            msg_rx,
+            module,
+            memory,
+            wbg_js_module,
+        }
+        .run()
+        .await;
+
+        // Notify scheduler that worker is exiting.
+        let _ = scheduler.send(SchedulerMsg::WorkerExit(id));
         wasm_bindgen_futures::spawn_local(async move {
-            // Import wasm-bindgen generated JavaScript module.
-            tracing::debug!(
-                "worker {id} importing wasm-bindgen generated bindings {wbg_js_module_name}"
-            );
-            let wbg_js_promise: Promise =
-                js_sys::eval(&format!("import(\"{wbg_js_module_name}\")"))
-                    .expect("failed to import wasm-bindgen generated module")
-                    .into();
-            let wbg_js_module = JsFuture::from(wbg_js_promise)
-                .await
-                .expect("failed to import wasm-bindgen generated module")
-                .into();
-
-            // Send ready notification.
-            ready_tx.send(()).unwrap();
-
-            // Start worker loop.
-            Self {
-                id,
-                msg_rx,
-                module,
-                memory,
-                wbg_js_module,
-            }
-            .run()
-            .await;
-
-            // Notify scheduler that worker is exiting.
-            tracing::info!("worker {id} exiting");
-            let _ = scheduler.send(SchedulerMsg::WorkerExit(id));
-            wasm_bindgen_futures::spawn_local(async move {
-                let scope: DedicatedWorkerGlobalScope = js_sys::global().dyn_into().unwrap();
-                scope.close();
-            });
+            let scope: DedicatedWorkerGlobalScope = js_sys::global().dyn_into().unwrap();
+            scope.close();
         });
     }
 
@@ -110,18 +100,15 @@ impl ThreadPoolWorkerState {
         }
     }
 
-    #[tracing::instrument(level = "debug", skip_all, fields(worker.id = self.id))]
+    /// Execute a received message.
+    #[tracing::instrument(level = "debug", skip_all)]
     async fn execute(&self, msg: WorkerMsg) -> Result<(), utils::Error> {
         tracing::trace!(?msg, "Handling a message");
 
         match msg {
             WorkerMsg::SpawnWasm(spawn_wasm) => {
-                tracing::info!(
-                    "spawn_wasm in worker at {} ms",
-                    GlobalScope::current().now()
-                );
-
                 // Execute spawned thread.
+                tracing::debug!("starting thread");
                 spawn_wasm
                     .execute(
                         self.module.clone(),

@@ -4,7 +4,6 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, Context, Error};
 use tokio::sync::{mpsc, oneshot, Notify};
-use utils::GlobalScope;
 use wasm_bindgen::prelude::*;
 use wasmer_wasix::runtime::task_manager::SchedulerSpawn;
 use web_sys::DedicatedWorkerGlobalScope;
@@ -24,7 +23,6 @@ pub(crate) struct Scheduler {
 impl Scheduler {
     /// Spawn a web worker running the scheduler.
     pub fn spawn(scheduler_spawn: SchedulerSpawn) -> Self {
-        tracing::info!("Spawning task scheduler");
         let SchedulerSpawn {
             module,
             memory,
@@ -62,10 +60,6 @@ impl Scheduler {
 
     /// Sends a message to the scheduler.
     pub fn send(&self, msg: SchedulerMsg) -> Result<(), Error> {
-        tracing::info!(
-            "send scheduler message {msg:?} at {} ms",
-            GlobalScope::current().now()
-        );
         self.msg_tx
             .send(msg)
             .map_err(|_| anyhow!("scheduler died"))?;
@@ -96,7 +90,6 @@ impl SchedulerWorker {
     /// Handles the init message and starts the scheduler.
     #[wasm_bindgen]
     pub fn handle(&mut self, msg: JsValue) -> Result<(), utils::Error> {
-        tracing::info!("Initializing scheduler");
         let scheduler_init = unsafe { SchedulerInit::try_from_js(msg) }?;
         SchedulerState::spawn(scheduler_init);
         Ok(())
@@ -158,7 +151,7 @@ impl SchedulerState {
 
     /// Scheduler main loop.
     async fn run(mut self) {
-        tracing::info!("pre-starting {} workers", self.prestarted_workers);
+        tracing::trace!("pre-starting {} workers", self.prestarted_workers);
         for _ in 0..self.prestarted_workers {
             self.start_worker();
         }
@@ -166,14 +159,13 @@ impl SchedulerState {
             self.worker_ready.notified().await;
         }
 
-        tracing::info!("scheduler is ready");
         while let Some(msg) = self.msg_rx.recv().await {
             if let Err(e) = self.execute(msg).await {
                 tracing::error!(error = &*e, "An error occurred while handling a message");
             }
         }
 
-        tracing::info!("scheduler exiting");
+        tracing::debug!("scheduler exiting");
         wasm_bindgen_futures::spawn_local(async move {
             let scope: DedicatedWorkerGlobalScope = js_sys::global().dyn_into().unwrap();
             scope.close();
@@ -184,10 +176,6 @@ impl SchedulerState {
     pub async fn execute(&mut self, message: SchedulerMsg) -> Result<(), Error> {
         match message {
             SchedulerMsg::SpawnWasm(spawn_wasm) => {
-                tracing::info!(
-                    "scheduler spawn module at {} ms",
-                    GlobalScope::current().now()
-                );
                 self.post_message(WorkerMsg::SpawnWasm(spawn_wasm)).await?;
                 Ok(())
             }
