@@ -1,6 +1,6 @@
 use std::sync::Arc;
-use utils::Error;
 
+use utils::Error;
 use wasm_bindgen::{prelude::*, JsCast};
 use wasmer::ImportsObj;
 use wasmer_wasix::{WasiEnvBuilder, WasiReactor};
@@ -63,11 +63,6 @@ pub async fn load_wasix(
     imports_obj: js_sys::Object,
     wbg_js_module_url: String,
 ) -> Result<WasiReactorInstance, Error> {
-    // Check whehther our memory is shared, so that we can start web workers.
-    let our_memory = wasm_bindgen::memory();
-    if !is_memory_shared(our_memory.dyn_ref().unwrap()) {
-        return Err(anyhow::anyhow!("wwrr memory is not shared").into());
-    }
     let runtime = config.runtime().resolve()?.into_inner();
 
     let program_name = config
@@ -79,11 +74,11 @@ pub async fn load_wasix(
     let (stdin, stdout, stderr) = config.configure_builder(&mut builder)?;
 
     let module: wasmer::Module = wasm_module.to_module(&*runtime).await?;
-
-    tracing::info!("loading with module: {module:?} and JavaScript bindings {wbg_js_module_url}");
-    builder.set_wbg_js_module_name(wbg_js_module_url);
-
-    let _span = tracing::debug_span!("load").entered();
+    builder.set_wbg_js_module_name(wbg_js_module_url.clone());
+    tracing::info!(
+        "loaded module {} with JavaScript bindings {wbg_js_module_url}",
+        module.name().unwrap_or_default()
+    );
 
     let imports_obj = ImportsObj(imports_obj);
     let reactor = builder
