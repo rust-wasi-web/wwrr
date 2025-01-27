@@ -102,9 +102,11 @@ lto = true
 opt-level = 'z'
 
 
-[patches.crates-io]
+[patch.crates-io]
+js-sys = { path = "../wasm-bindgen/crates/js-sys" }
 wasm-bindgen = { path = "../wasm-bindgen" }
 wasm-bindgen-cli-support = { path = "../wasm-bindgen/crates/cli-support" }
 wasm-bindgen-futures = { path = "../wasm-bindgen/crates/futures" }
 wasm-bindgen-shared = { path = "../wasm-bindgen/crates/shared" }
 wasm-bindgen-test = { path = "../wasm-bindgen/crates/test" }
+web-sys = { path = "../wasm-bindgen/crates/web-sys" }
