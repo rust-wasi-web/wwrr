@@ -34,9 +34,9 @@ type CommonOptions = {
     /** The standard input stream. */
     stdin?: string | Uint8Array;
     /** If true, stdout can be read from the returned instance */
-    streamStdout?: bool;
+    streamStdout?: boolean;
     /** If true, stderr can be read from the returned instance */
-    streamStderr?: bool;    
+    streamStderr?: boolean;    
     /**
      * Directories that should be mounted inside the WASIX instance.
      *
