@@ -66,8 +66,10 @@ export type RunOptions = CommonOptions & {
      * created.
      */
     runtime?: Runtime;
-    /** The name of the WebAssembly module (.wasm file) to load */
+    /** The (relative) URL of the WebAssembly module (.wasm file) to load */
     module?: string;
+    /** The (relative) URL of the WWRR runtime WebAssembly module (.wasm file) to load */
+    wwrrModule?: string;
 };
 
 /**
