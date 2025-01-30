@@ -68,7 +68,7 @@ export type RunOptions = CommonOptions & {
     runtime?: Runtime;
     /** The (relative) URL of the wasm-bindgen generated JavaScript bindings (.js file) 
      * for the WebAssembly module */
-    bindings: string;    
+    bindings?: string;    
     /** The (relative) URL of the WebAssembly module (.wasm file) */
     module?: string;
     /** The (relative) URL of the WWRR runtime WebAssembly module (wwrr_bg.wasm file) */
