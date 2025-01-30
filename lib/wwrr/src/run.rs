@@ -61,7 +61,6 @@ pub async fn load_wasix(
     wasm_module: WasmModule,
     config: RunOptions,
     imports_obj: js_sys::Object,
-    wbg_js_module_url: String,
 ) -> Result<WasiReactorInstance, Error> {
     let runtime = config.runtime().resolve()?.into_inner();
 
@@ -74,10 +73,10 @@ pub async fn load_wasix(
     let (stdin, stdout, stderr) = config.configure_builder(&mut builder)?;
 
     let module: wasmer::Module = wasm_module.to_module(&*runtime).await?;
-    builder.set_wbg_js_module_name(wbg_js_module_url.clone());
     tracing::info!(
-        "loaded module {} with JavaScript bindings {wbg_js_module_url}",
-        module.name().unwrap_or_default()
+        "loaded module {} with JavaScript bindings {}",
+        module.name().unwrap_or_default(),
+        builder.wbg_js_module_name().unwrap_or_default()
     );
 
     let imports_obj = ImportsObj(imports_obj);

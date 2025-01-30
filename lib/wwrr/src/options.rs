@@ -66,9 +66,12 @@ export type RunOptions = CommonOptions & {
      * created.
      */
     runtime?: Runtime;
-    /** The (relative) URL of the WebAssembly module (.wasm file) to load */
+    /** The (relative) URL of the wasm-bindgen generated JavaScript bindings (.js file) 
+     * for the WebAssembly module */
+    bindings: string;    
+    /** The (relative) URL of the WebAssembly module (.wasm file) */
     module?: string;
-    /** The (relative) URL of the WWRR runtime WebAssembly module (.wasm file) to load */
+    /** The (relative) URL of the WWRR runtime WebAssembly module (wwrr_bg.wasm file) */
     wwrrModule?: string;
 };
 
@@ -183,6 +186,9 @@ extern "C" {
 
     #[wasm_bindgen(method, getter)]
     pub(crate) fn runtime(this: &RunOptions) -> OptionalRuntime;
+
+    #[wasm_bindgen(method, getter)]
+    pub(crate) fn bindings(this: &RunOptions) -> String;
 }
 
 impl RunOptions {
@@ -241,6 +247,8 @@ impl RunOptions {
         if let Some(n) = self.prestarted_workers() {
             builder.set_prestarted_workers(n);
         }
+
+        builder.set_wbg_js_module_name(self.bindings());
 
         Ok((stdin, stdout, stderr))
     }

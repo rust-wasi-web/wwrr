@@ -553,6 +553,11 @@ impl WasiEnvBuilder {
         self.wbg_js_module_name = Some(wbg_js_module_name);
     }
 
+    /// Gets the wasm-bindgen generated JavaScript module name.
+    pub fn wbg_js_module_name(&self) -> Option<&str> {
+        self.wbg_js_module_name.as_deref()
+    }
+
     /// Sets the number of web workers to pre-start for executing threads.
     pub fn set_prestarted_workers(&mut self, prestarted_workers: usize) {
         self.prestarted_workers = Some(prestarted_workers);
