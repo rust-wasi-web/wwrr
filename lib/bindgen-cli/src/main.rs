@@ -6,7 +6,7 @@ use std::process;
 use wasm_bindgen_cli_support::{Bindgen, EncodeInto};
 
 const USAGE: &str = "
-Generating JS bindings for a Wasm file
+Generating JS bindings for WWRR (internal)
 
 Usage:
     bindgen-cli [options] <input>
@@ -116,7 +116,8 @@ fn rmain(args: &Args) -> Result<(), Error> {
         .typescript(typescript)
         .omit_imports(args.flag_omit_imports)
         .omit_default_module_path(args.flag_omit_default_module_path)
-        .split_linked_modules(args.flag_split_linked_modules);
+        .split_linked_modules(args.flag_split_linked_modules)
+        .wait(true);
     if let Some(ref name) = args.flag_no_modules_global {
         b.no_modules_global(name)?;
     }
