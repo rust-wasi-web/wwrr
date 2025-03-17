@@ -10,6 +10,7 @@ use web_sys::DedicatedWorkerGlobalScope;
 
 use super::scheduler_message::SchedulerMsg;
 use super::worker_message::WorkerMsg;
+use crate::register_panic_hook;
 use crate::tasks::scheduler_message::SchedulerInit;
 use crate::tasks::worker::{init_message_scheduler, WORKER_URL};
 use crate::tasks::WorkerHandle;
@@ -84,6 +85,7 @@ impl SchedulerWorker {
     /// Preinitializes the scheduler.
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
+        register_panic_hook();
         Self {}
     }
 

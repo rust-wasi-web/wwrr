@@ -31,8 +31,7 @@ pub fn wat2wasm(wat: String) -> Result<js_sys::Uint8Array, utils::Error> {
     Ok(wasm.as_ref().into())
 }
 
-#[wasm_bindgen(start, skip_typescript)]
-fn on_start() {
+fn register_panic_hook() {
     std::panic::set_hook(Box::new(|p| {
         tracing::error!("{p}");
         console_error_panic_hook::hook(p);

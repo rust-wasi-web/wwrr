@@ -6,6 +6,7 @@ use web_sys::DedicatedWorkerGlobalScope;
 
 use super::scheduler_message::SchedulerMsg;
 use super::worker_message::WorkerMsg;
+use crate::register_panic_hook;
 use crate::tasks::WorkerInit;
 
 /// Worker initialization state.
@@ -21,6 +22,7 @@ impl ThreadPoolWorker {
     /// Preinitializes the worker.
     #[wasm_bindgen(constructor)]
     pub fn new(id: u32) -> Self {
+        register_panic_hook();
         Self { id }
     }
 
@@ -69,6 +71,7 @@ impl ThreadPoolWorkerState {
             .await
             .expect("failed to import wasm-bindgen generated module")
             .into();
+        tracing::debug!("JavaScript bindings imported");
 
         // Send ready notification.
         ready_tx.send(()).unwrap();
