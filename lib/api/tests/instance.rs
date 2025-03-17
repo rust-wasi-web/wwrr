@@ -3,9 +3,10 @@ use wasm_bindgen_test::*;
 use wasmer::*;
 
 #[wasm_bindgen_test]
+#[cfg(feature = "wat")]
 async fn exports_work_after_multiple_instances_have_been_freed() {
     let mut store = Store::default();
-    let module = Module::new(
+    let module = Module::from_wat(
         "
 (module
   (type $sum_t (func (param i32 i32) (result i32)))

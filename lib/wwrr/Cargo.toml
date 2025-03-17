@@ -9,6 +9,9 @@ publish = false
 [lib]
 crate-type = ["cdylib"]
 
+[features]
+wat = ["wasmer/wat"]
+
 [dependencies]
 utils = { path = "../utils" }
 virtual-fs = { path = "../virtual-fs" }

@@ -1,3 +1,5 @@
+#![cfg(feature = "wat")]
+
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
@@ -12,7 +14,7 @@ fn test_shared_memory_atomics_notify_send() {
     let wat = r#"(module
 (import "host" "memory" (memory 10 65536 shared))
 )"#;
-    let module = block_on(Module::new(wat))
+    let module = block_on(Module::from_wat(wat))
         .map_err(|e| format!("{e:?}"))
         .unwrap();
 

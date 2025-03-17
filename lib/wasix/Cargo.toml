@@ -17,7 +17,7 @@ utils = { path = "../utils" }
 virtual-fs = { path = "../virtual-fs", features = ["no-time"] }
 virtual-mio = { path = "../virtual-mio" }
 virtual-net = { path = "../virtual-net", features = ["rkyv"] }
-wasmer = { path = "../api", features = ["wat"] }
+wasmer = { path = "../api" }
 wasmer-types = { path = "../types", default-features = false }
 wasmer-wasix-types = { path = "../wasix-types", features = ["enable-serde"] }
 
@@ -55,6 +55,7 @@ web-sys = { workspace = true, features = ["Request", "RequestInit", "Window", "W
 xxhash-rust = { workspace = true, features = ["xxh64"] }
 
 [dev-dependencies]
+wasmer = { path = "../api", features = ["wat"] }
 tracing-wasm = { workspace = true }
 wasm-bindgen-test = { workspace = true }
 

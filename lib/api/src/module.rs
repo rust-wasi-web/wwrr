@@ -2,6 +2,7 @@ use bytes::Bytes;
 use js_sys::WebAssembly;
 use std::fmt;
 use std::io;
+use std::sync::Arc;
 
 use thiserror::Error;
 #[cfg(feature = "wat")]
@@ -10,8 +11,8 @@ use wasmer_types::{CompileError, ExportsIterator, ImportsIterator, ModuleInfo};
 use wasmer_types::{ExportType, ImportType};
 
 use crate::into_bytes::IntoBytes;
-
 use crate::js::module as module_imp;
+use crate::ModuleTypeHints;
 
 /// IO Error on a Module Compilation
 #[derive(Error, Debug)]
@@ -54,58 +55,8 @@ impl Module {
     /// Creating a WebAssembly module from bytecode can result in a
     /// [`CompileError`] since this operation requires to transorm the Wasm
     /// bytecode into code the machine can easily execute.
-    ///
-    /// ## Example
-    ///
-    /// Reading from a WAT file.
-    ///
-    /// ```
-    /// use wasmer::*;
-    /// # fn main() -> anyhow::Result<()> {
-    /// # let mut store = Store::default();
-    /// let wat = "(module)";
-    /// let module = Module::new(&store, wat)?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// Reading from bytes:
-    ///
-    /// ```
-    /// use wasmer::*;
-    /// # fn main() -> anyhow::Result<()> {
-    /// # let mut store = Store::default();
-    /// // The following is the same as:
-    /// // (module
-    /// //   (type $t0 (func (param i32) (result i32)))
-    /// //   (func $add_one (export "add_one") (type $t0) (param $p0 i32) (result i32)
-    /// //     get_local $p0
-    /// //     i32.const 1
-    /// //     i32.add)
-    /// // )
-    /// let bytes: Vec<u8> = vec![
-    ///     0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x01, 0x06, 0x01, 0x60,
-    ///     0x01, 0x7f, 0x01, 0x7f, 0x03, 0x02, 0x01, 0x00, 0x07, 0x0b, 0x01, 0x07,
-    ///     0x61, 0x64, 0x64, 0x5f, 0x6f, 0x6e, 0x65, 0x00, 0x00, 0x0a, 0x09, 0x01,
-    ///     0x07, 0x00, 0x20, 0x00, 0x41, 0x01, 0x6a, 0x0b, 0x00, 0x1a, 0x04, 0x6e,
-    ///     0x61, 0x6d, 0x65, 0x01, 0x0a, 0x01, 0x00, 0x07, 0x61, 0x64, 0x64, 0x5f,
-    ///     0x6f, 0x6e, 0x65, 0x02, 0x07, 0x01, 0x00, 0x01, 0x00, 0x02, 0x70, 0x30,
-    /// ];
-    /// let module = Module::new(&store, bytes)?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    /// # Example of loading a module using just an `Engine` and no `Store`
-    ///
-    /// ```
-    /// # use wasmer::*;
-    /// #
-    /// # let engine: Engine = Cranelift::default().into();
-    ///
-    /// let module = Module::from_file(&engine, "path/to/foo.wasm");
-    /// ```
-    pub async fn new(bytes: impl AsRef<[u8]>) -> Result<Self, CompileError> {
-        #[cfg(feature = "wat")]
+    #[cfg(feature = "wat")]
+    pub async fn from_wat(bytes: impl AsRef<[u8]>) -> Result<Self, CompileError> {
         let bytes = wat::parse_bytes(bytes.as_ref()).map_err(|e| {
             CompileError::Wasm(WasmError::Generic(format!(
                 "Error when converting wat: {}",
@@ -113,7 +64,8 @@ impl Module {
             )))
         })?;
 
-        Self::from_binary(bytes.as_ref()).await
+        let bytes = Bytes::from(bytes.to_vec());
+        Self::from_binary(bytes).await
     }
 
     /// Creates a new WebAssembly module from a Wasm binary.
@@ -121,15 +73,26 @@ impl Module {
     /// Opposed to [`Module::new`], this function is not compatible with
     /// the WebAssembly text format (if the "wat" feature is enabled for
     /// this crate).
-    pub async fn from_binary(binary: &[u8]) -> Result<Self, CompileError> {
+    pub async fn from_binary(binary: Bytes) -> Result<Self, CompileError> {
         Ok(Self(module_imp::Module::from_binary(binary).await?))
     }
 
     /// Creates a new WebAssembly module from the compiled module and its binary data.
-    pub fn from_module_and_binary(module: WebAssembly::Module, binary: &[u8]) -> Self {
+    pub fn from_module_and_binary(module: WebAssembly::Module, binary: Bytes) -> Self {
         Self(module_imp::Module::from_module_and_binary(
             module,
             binary.into_bytes(),
+        ))
+    }
+
+    /// Creates a new WebAssembly module from the compiled module and its name and type hints.
+    pub fn from_module_name_and_type_hints(
+        module: WebAssembly::Module,
+        name: Option<String>,
+        type_hints: Arc<ModuleTypeHints>,
+    ) -> Self {
+        Self(module_imp::Module::from_module_name_and_type_hints(
+            module, name, type_hints,
         ))
     }
 
@@ -162,8 +125,8 @@ impl Module {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn serialize(&self) -> Bytes {
-        self.0.serialize()
+    pub fn type_hints(&self) -> Arc<ModuleTypeHints> {
+        self.0.type_hints()
     }
 
     /// Returns the name of the current module.

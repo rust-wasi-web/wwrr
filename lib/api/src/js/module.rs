@@ -1,9 +1,10 @@
+use std::sync::Arc;
+
 use crate::errors::RuntimeError;
 use crate::imports::{Imports, ImportsObj};
 use crate::js::AsJs;
 use crate::store::AsStoreMut;
 use crate::vm::VMInstance;
-use crate::IntoBytes;
 use crate::{errors::InstantiationError, js::js_handle::JsHandle};
 use crate::{ExportType, ImportType};
 use bytes::Bytes;
@@ -37,9 +38,7 @@ pub struct Module {
     /// Name.
     name: Option<String>,
     /// WebAssembly type hints
-    pub type_hints: ModuleTypeHints,
-    /// Raw bytes.
-    pub raw_bytes: Bytes,
+    type_hints: Arc<ModuleTypeHints>,
 }
 
 // Module implements `structuredClone` in js, so it's safe it to make it Send.
@@ -61,8 +60,8 @@ impl From<Module> for JsValue {
 
 impl Module {
     /// Creates a new WebAssembly module from its binary data.
-    pub(crate) async fn from_binary(binary: &[u8]) -> Result<Self, CompileError> {
-        let js_bytes = unsafe { Uint8Array::view(binary) };
+    pub(crate) async fn from_binary(binary: Bytes) -> Result<Self, CompileError> {
+        let js_bytes = unsafe { Uint8Array::view(&binary) };
         let module = JsFuture::from(WebAssembly::compile(&js_bytes))
             .await
             .map(|v| v.into())
@@ -72,12 +71,7 @@ impl Module {
     }
 
     /// Creates a new WebAssembly module from the compiled module and its binary data.
-    pub(crate) fn from_module_and_binary(
-        module: WebAssembly::Module,
-        binary: impl IntoBytes,
-    ) -> Self {
-        let binary = binary.into_bytes();
-
+    pub(crate) fn from_module_and_binary(module: WebAssembly::Module, binary: Bytes) -> Self {
         // The module is now validated, so we can safely parse it's types
         let info = crate::module_info_polyfill::translate_module(&binary[..])
             .expect("parsing module types failed");
@@ -96,9 +90,21 @@ impl Module {
 
         Self {
             module: JsHandle::new(module),
-            type_hints,
+            type_hints: Arc::new(type_hints),
             name: info.info.name,
-            raw_bytes: binary,
+        }
+    }
+
+    /// Create from module, its name and type hints.
+    pub(crate) fn from_module_name_and_type_hints(
+        module: WebAssembly::Module,
+        name: Option<String>,
+        type_hints: Arc<ModuleTypeHints>,
+    ) -> Self {
+        Self {
+            module: JsHandle::new(module),
+            name,
+            type_hints,
         }
     }
 
@@ -213,8 +219,8 @@ impl Module {
         self.name.as_ref().map(|s| s.as_ref())
     }
 
-    pub fn serialize(&self) -> Bytes {
-        self.raw_bytes.clone()
+    pub fn type_hints(&self) -> Arc<ModuleTypeHints> {
+        self.type_hints.clone()
     }
 
     pub fn set_name(&mut self, name: &str) -> bool {

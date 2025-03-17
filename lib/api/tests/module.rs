@@ -1,3 +1,5 @@
+#![cfg(feature = "wat")]
+
 use futures::executor::block_on;
 use wasm_bindgen_test::*;
 
@@ -6,7 +8,7 @@ use wasmer::*;
 #[wasm_bindgen_test]
 async fn module_get_name() {
     let wat = r#"(module)"#;
-    let module = Module::new(wat)
+    let module = Module::from_wat(wat)
         .await
         .map_err(|e| format!("{e:?}"))
         .map_err(|e| format!("{e:?}"))
@@ -17,7 +19,7 @@ async fn module_get_name() {
 #[wasm_bindgen_test]
 async fn module_set_name() {
     let wat = r#"(module $name)"#;
-    let mut module = Module::new(wat)
+    let mut module = Module::from_wat(wat)
         .await
         .map_err(|e| format!("{e:?}"))
         .unwrap();
@@ -35,7 +37,7 @@ async fn imports() {
 (import "host" "table" (table 1 anyfunc))
 (import "host" "global" (global i32))
 )"#;
-    let module = Module::new(wat)
+    let module = Module::from_wat(wat)
         .await
         .map_err(|e| format!("{e:?}"))
         .unwrap();
@@ -108,7 +110,7 @@ fn exports() {
 (table (export "table") 1 funcref)
 (global (export "global") i32 (i32.const 0))
 )"#;
-    let module = block_on(Module::new(wat))
+    let module = block_on(Module::from_wat(wat))
         .map_err(|e| format!("{e:?}"))
         .unwrap();
     assert_eq!(
@@ -191,7 +193,7 @@ async fn calling_host_functions_with_negative_values_works() {
 (func (export "call_host_func8")
       (call 7 (i32.const -1)))
 )"#;
-    let module = Module::new(wat)
+    let module = Module::from_wat(wat)
         .await
         .map_err(|e| format!("{e:?}"))
         .unwrap();
@@ -290,7 +292,7 @@ async fn calling_host_functions_with_negative_values_works() {
 #[wasm_bindgen_test]
 async fn module_custom_sections() {
     let custom_section_wasm_bytes = include_bytes!("simple-name-section.wasm");
-    let module = Module::new(custom_section_wasm_bytes)
+    let module = Module::from_wat(custom_section_wasm_bytes)
         .await
         .map_err(|e| format!("{e:?}"))
         .unwrap();

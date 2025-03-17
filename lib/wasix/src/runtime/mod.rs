@@ -1,16 +1,17 @@
 pub mod module_cache;
 pub mod task_manager;
 
-use self::module_cache::CacheError;
-pub use self::task_manager::{SpawnMemoryType, VirtualTaskManager};
-use wasmer_types::ModuleHash;
-
 use std::{fmt, sync::Arc};
 
+use bytes::Bytes;
 use futures::future::LocalBoxFuture;
 use virtual_net::DynVirtualNetworking;
 use wasmer::{Module, RuntimeError};
+use wasmer_types::ModuleHash;
 use wasmer_wasix_types::wasi::ExitCode;
+
+use self::module_cache::CacheError;
+pub use self::task_manager::{SpawnMemoryType, VirtualTaskManager};
 
 use crate::{
     runtime::module_cache::{ModuleCache, ThreadLocalCache},
@@ -101,7 +102,7 @@ pub async fn load_module(
         }
     }
 
-    let module = Module::new(wasm)
+    let module = Module::from_binary(Bytes::from(wasm.to_vec()))
         .await
         .map_err(|err| crate::SpawnError::CompileError {
             module_hash: wasm_hash,

@@ -25,6 +25,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 pub(crate) static CUSTOM_WORKER_URL: Lazy<Mutex<Option<String>>> = Lazy::new(Mutex::default);
 
 #[wasm_bindgen]
+#[cfg(feature = "wat")]
 pub fn wat2wasm(wat: String) -> Result<js_sys::Uint8Array, utils::Error> {
     let wasm = ::wasmer::wat2wasm(wat.as_bytes())?;
     Ok(wasm.as_ref().into())

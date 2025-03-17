@@ -3,6 +3,7 @@ use wasm_bindgen_test::*;
 use wasmer::*;
 
 #[wasm_bindgen_test]
+#[cfg(feature = "wat")]
 async fn pass_i64_between_host_and_plugin() {
     let mut store = Store::default();
 
@@ -12,7 +13,7 @@ async fn pass_i64_between_host_and_plugin() {
             (i64.add (call $add_one_i64 (i64.add (local.get 0) (i64.const 1))) (i64.const 1))
         )
     )"#;
-    let module = Module::new(wat)
+    let module = Module::from_wat(wat)
         .await
         .map_err(|e| format!("{e:?}"))
         .unwrap();
@@ -52,6 +53,7 @@ async fn pass_i64_between_host_and_plugin() {
 }
 
 #[wasm_bindgen_test]
+#[cfg(feature = "wat")]
 async fn pass_u64_between_host_and_plugin() {
     let mut store = Store::default();
 
@@ -61,7 +63,7 @@ async fn pass_u64_between_host_and_plugin() {
             (i64.add (call $add_one_u64 (i64.add (local.get 0) (i64.const 1))) (i64.const 1))
         )
     )"#;
-    let module = Module::new(wat)
+    let module = Module::from_wat(wat)
         .await
         .map_err(|e| format!("{e:?}"))
         .unwrap();
@@ -101,6 +103,7 @@ async fn pass_u64_between_host_and_plugin() {
 }
 
 #[wasm_bindgen_test]
+#[cfg(feature = "wat")]
 async fn calling_function_exports() {
     let mut store = Store::default();
     let wat = r#"(module
@@ -109,7 +112,7 @@ async fn calling_function_exports() {
         local.get $rhs
         i32.add)
 )"#;
-    let module = Module::new(wat).await.unwrap();
+    let module = Module::from_wat(wat).await.unwrap();
     let imports = imports! {
         // "host" => {
         //     "host_func1" => Function::new_typed(&mut store, |p: u64| {
@@ -130,10 +133,11 @@ async fn calling_function_exports() {
 }
 
 #[wasm_bindgen_test]
+#[cfg(feature = "wat")]
 async fn back_and_forth_with_imports() {
     let mut store = Store::default();
     // We can use the WAT syntax as well!
-    let module = Module::new(
+    let module = Module::from_wat(
         br#"(module
             (func $sum (import "env" "sum") (param i32 i32) (result i32))
             (func (export "add_one") (param i32) (result i32)

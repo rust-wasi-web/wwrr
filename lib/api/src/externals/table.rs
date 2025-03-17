@@ -122,6 +122,7 @@ impl<'a> Exportable<'a> for Table {
 
 /// Check the example from <https://github.com/wasmerio/wasmer/issues/3197>.
 #[test]
+#[cfg(feature = "wat")]
 fn test_table_grow_issue_3197() {
     use crate::imports::ImportsObj;
     use crate::{imports, Instance, Module, Store, Table, TableType, Type, Value};
@@ -131,7 +132,7 @@ fn test_table_grow_issue_3197() {
     // Tests that the table type of `table` is compatible with the export in the WAT
     // This tests that `wasmer_types::types::is_table_compatible` works as expected.
     let mut store = Store::default();
-    let module = futures::executor::block_on(Module::new(WAT)).unwrap();
+    let module = futures::executor::block_on(Module::from_wat(WAT)).unwrap();
     let ty = TableType::new(Type::FuncRef, 0, None);
     let table = Table::new(&mut store, ty, Value::FuncRef(None)).unwrap();
     table.grow(&mut store, 100, Value::FuncRef(None)).unwrap();
