@@ -178,7 +178,7 @@ async fn call_module<M: MemorySize>(
             .clone()
         {
             if let Err(err) = thread_set_actions.call(&mut store, ThreadActions::NO_START.bits()) {
-                warn!("cannot set thread actions for cleanup: {err}");
+                error!("cannot set thread actions for cleanup: {err}");
             }
         }
 
@@ -207,14 +207,14 @@ async fn call_module<M: MemorySize>(
                 };
             }
             Ok(WasiError::UnknownWasiVersion) => {
-                debug!("failed as wasi version is unknown",);
+                error!("failed as wasi version is unknown",);
                 env.data(&store)
                     .runtime
                     .on_taint(TaintReason::UnknownWasiVersion);
                 ret = Errno::Noexec;
             }
             Err(err) => {
-                debug!("failed with runtime error: {}", err);
+                error!("thread start failed: {}", err);
                 env.data(&store)
                     .runtime
                     .on_taint(TaintReason::RuntimeError(err));
