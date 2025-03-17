@@ -1,5 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 use std::fmt::Debug;
+use std::pin::pin;
 use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, Context, Error};
@@ -237,17 +238,26 @@ impl SchedulerState {
     async fn take_worker(&mut self) -> WorkerHandle {
         self.start_worker();
 
+        let mut waited = false;
         loop {
+            let mut notified = pin!(self.worker_ready.notified());
+            notified.as_mut().enable();
+
             let worker_opt = self.ready_workers.lock().unwrap().pop_front();
-            match worker_opt {
-                Some(worker) => break worker,
-                None => {
-                    if self.prestarted_workers > 0 {
-                        tracing::warn!("thread pool has run out of pre-started workers");
-                    }
-                    self.worker_ready.notified().await;
+            if let Some(worker) = worker_opt {
+                if waited {
+                    tracing::debug!("worker has become available");
                 }
+                break worker;
             }
+
+            if self.prestarted_workers > 0 {
+                tracing::warn!("thread pool has run out of pre-started workers");
+            } else {
+                tracing::debug!("waiting for worker to become available");
+            }
+            notified.await;
+            waited = true;
         }
     }
 }
