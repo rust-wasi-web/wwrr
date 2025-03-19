@@ -36,7 +36,15 @@ impl Runtime {
             Ok(mut guard) => match guard.upgrade() {
                 Some(rt) => Ok(rt),
                 None => {
-                    tracing::info!("WWRR - WASI Web Reactor Runtime - version {VERSION}");
+                    let debug_label = match cfg!(debug_assertions) {
+                        true => " (debug build)",
+                        false => "",
+                    };
+                    tracing::info!(
+                        "{} - {} - version {VERSION}{debug_label}",
+                        env!("CARGO_PKG_NAME"),
+                        env!("CARGO_PKG_DESCRIPTION")
+                    );
                     let rt = Arc::new(Runtime::with_defaults()?);
                     *guard = Arc::downgrade(&rt);
 
