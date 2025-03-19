@@ -10,6 +10,7 @@ use crate::{ExportType, ImportType};
 use bytes::Bytes;
 use js_sys::{Reflect, Uint8Array, WebAssembly};
 use tracing::{trace, warn};
+use utils::js_error;
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 use wasmer_types::{CompileError, ExportsIterator, ExternType, ImportsIterator, ModuleInfo};
@@ -65,7 +66,7 @@ impl Module {
         let module = JsFuture::from(WebAssembly::compile(&js_bytes))
             .await
             .map(|v| v.into())
-            .map_err(|e| CompileError::Validate(format!("{}", e.as_string().unwrap())))?;
+            .map_err(|e| CompileError::Validate(js_error(e).to_string()))?;
 
         Ok(Self::from_module_and_binary(module, binary))
     }

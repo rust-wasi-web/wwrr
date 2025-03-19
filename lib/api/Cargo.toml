@@ -13,6 +13,7 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
+utils = { path = "../utils" }
 wasmer-types = { path = "../types", default-features = false, features = ["std", "enable-serde"] }
 wasmer-derive = { path = "../derive" }
 
