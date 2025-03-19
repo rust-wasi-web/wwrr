@@ -246,7 +246,11 @@ impl SchedulerState {
             let worker_opt = self.ready_workers.lock().unwrap().pop_front();
             if let Some(worker) = worker_opt {
                 if waited {
-                    tracing::debug!("worker has become available");
+                    if self.prestarted_workers > 0 {
+                        tracing::info!("worker has become available");
+                    } else {
+                        tracing::debug!("worker has become available");
+                    };
                 }
                 break worker;
             }
