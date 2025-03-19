@@ -100,8 +100,6 @@ pub enum SpawnError {
     /// Failed to fetch the Wasmer process
     #[error("fetch failed")]
     FetchFailed,
-    #[error(transparent)]
-    CacheError(crate::runtime::module_cache::CacheError),
     /// Failed to compile the Wasmer process
     #[error("compile error: {error:?}")]
     CompileError {

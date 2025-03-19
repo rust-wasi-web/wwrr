@@ -3,7 +3,7 @@ use std::sync::{Arc, LazyLock, Mutex, Weak};
 use utils::Error;
 use virtual_net::VirtualNetworking;
 use wasmer::VERSION;
-use wasmer_wasix::{runtime::module_cache::ThreadLocalCache, VirtualTaskManager};
+use wasmer_wasix::VirtualTaskManager;
 
 use crate::tasks::ThreadPool;
 
@@ -19,7 +19,6 @@ static GLOBAL_RUNTIME: Mutex<Weak<Runtime>> = Mutex::new(Weak::new());
 #[derivative(Debug)]
 pub struct Runtime {
     networking: Arc<dyn VirtualNetworking>,
-    module_cache: Arc<ThreadLocalCache>,
 }
 
 impl Runtime {
@@ -73,7 +72,6 @@ impl Runtime {
     pub(crate) fn new() -> Self {
         Runtime {
             networking: Arc::new(virtual_net::UnsupportedVirtualNetworking::default()),
-            module_cache: Arc::new(ThreadLocalCache::default()),
         }
     }
 }
@@ -85,11 +83,5 @@ impl wasmer_wasix::runtime::Runtime for Runtime {
 
     fn task_manager(&self) -> &Arc<dyn VirtualTaskManager> {
         &*THREAD_POOL
-    }
-
-    fn module_cache(
-        &self,
-    ) -> Arc<dyn wasmer_wasix::runtime::module_cache::ModuleCache + Send + Sync> {
-        self.module_cache.clone()
     }
 }
