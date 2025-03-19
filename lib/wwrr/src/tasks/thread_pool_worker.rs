@@ -77,7 +77,7 @@ impl ThreadPoolWorkerState {
         ready_tx.send(()).unwrap();
 
         // Start worker loop.
-        Self {
+        let res = Self {
             msg_rx,
             module,
             memory,
@@ -85,6 +85,11 @@ impl ThreadPoolWorkerState {
         }
         .run()
         .await;
+
+        // Notify scheduler if failure occurred.
+        if res.is_err() {
+            let _ = scheduler.send(SchedulerMsg::Failed);
+        }
 
         // Notify scheduler that worker is exiting.
         let _ = scheduler.send(SchedulerMsg::WorkerExit(id));
@@ -95,12 +100,15 @@ impl ThreadPoolWorkerState {
     }
 
     /// Worker main loop.
-    async fn run(mut self) {
+    async fn run(mut self) -> Result<(), utils::Error> {
         if let Some(msg) = self.msg_rx.recv().await {
             if let Err(e) = self.execute(msg).await {
-                tracing::error!("An error occurred while handling a message: {e}");
+                tracing::error!(error = %e, "worker failed");
+                return Err(e);
             }
         }
+
+        Ok(())
     }
 
     /// Execute a received message.

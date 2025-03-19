@@ -19,6 +19,8 @@ use crate::tasks::{
 pub(crate) enum SchedulerMsg {
     /// Message from worker that it is exiting.
     WorkerExit(u32),
+    /// Message from worker that it failed.
+    Failed,
     /// Pings the scheduler.
     Ping(oneshot::Sender<()>),
     /// Spawn a thread on a new web worker.

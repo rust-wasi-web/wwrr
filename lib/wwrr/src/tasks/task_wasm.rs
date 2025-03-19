@@ -106,7 +106,7 @@ impl SpawnWasm {
             store,
             wbg_js_module,
         };
-        run(properties).await;
+        run(properties).await?;
 
         Ok(())
     }

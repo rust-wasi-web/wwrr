@@ -164,11 +164,15 @@ impl SchedulerState {
 
         while let Some(msg) = self.msg_rx.recv().await {
             if let Err(e) = self.execute(msg).await {
-                tracing::error!(error = &*e, "An error occurred while handling a message");
+                tracing::error!(error = &*e, "scheduler failed");
+                break;
             }
         }
 
-        tracing::debug!("scheduler exiting");
+        tracing::error!("scheduler exiting and killing all threads");
+        for (_, mut worker) in self.active_workers.drain() {
+            worker.set_terminate(true);
+        }
         wasm_bindgen_futures::spawn_local(async move {
             let scope: DedicatedWorkerGlobalScope = js_sys::global().dyn_into().unwrap();
             scope.close();
@@ -188,6 +192,7 @@ impl SchedulerState {
                 tracing::trace!(worker.id = worker_id, "Worker has exited");
                 Ok(())
             }
+            SchedulerMsg::Failed => Err(anyhow!("a worker failed")),
             SchedulerMsg::Ping(tx) => {
                 let _ = tx.send(());
                 Ok(())

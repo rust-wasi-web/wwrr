@@ -36,8 +36,9 @@ pub struct TaskWasmRunProperties {
 }
 
 /// Async callback that will be invoked
-pub type TaskWasmRun =
-    dyn FnOnce(TaskWasmRunProperties) -> LocalBoxFuture<'static, ()> + Send + 'static;
+pub type TaskWasmRun = dyn FnOnce(TaskWasmRunProperties) -> LocalBoxFuture<'static, anyhow::Result<()>>
+    + Send
+    + 'static;
 
 /// Represents a WASM task that will be executed on a dedicated thread
 pub struct TaskWasm<'a, 'b> {

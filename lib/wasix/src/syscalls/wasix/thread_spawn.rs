@@ -120,9 +120,10 @@ pub fn thread_spawn_internal_using_layout<M: MemorySize>(
     trace!("threading: spawning background thread");
     let run = move |props: TaskWasmRunProperties| {
         async move {
-            if let Err(err) = execute_module(props.ctx, props.store).await {
-                tracing::warn!("Starting thread failed: {err}");
-            }
+            execute_module(props.ctx, props.store)
+                .await
+                .map(|_| ())
+                .map_err(|err| err.into())
         }
         .boxed_local()
     };
@@ -162,35 +163,39 @@ async fn call_module<M: MemorySize>(
     );
 
     // Check for thread holding.
-    let wasi_env = env.data_mut(&mut store);
-    if let Some(release_rx) = wasi_env.thread_release_rx.take() {
-        wasi_env.thread_start_executed = true;
+    if call_ret.is_ok() {
+        let wasi_env = env.data_mut(&mut store);
+        if let Some(release_rx) = wasi_env.thread_release_rx.take() {
+            wasi_env.thread_start_executed = true;
 
-        // Wait for thread release.
-        // This "await" releases control back to the brower event loop and allows
-        // callbacks and promises to execute.
-        tracing::debug!("thread is on hold");
-        let _ = release_rx.await;
+            // Wait for thread release.
+            // This "await" releases control back to the brower event loop and allows
+            // callbacks and promises to execute.
+            tracing::debug!("thread is on hold");
+            let _ = release_rx.await;
 
-        tracing::debug!("thread hold released, cleaning up");
-        if let Some(thread_set_actions) = unsafe { env.data(&store).inner() }
-            .thread_set_actions
-            .clone()
-        {
-            if let Err(err) = thread_set_actions.call(&mut store, ThreadActions::NO_START.bits()) {
-                error!("cannot set thread actions for cleanup: {err}");
+            tracing::debug!("thread hold released, cleaning up");
+            if let Some(thread_set_actions) = unsafe { env.data(&store).inner() }
+                .thread_set_actions
+                .clone()
+            {
+                if let Err(err) =
+                    thread_set_actions.call(&mut store, ThreadActions::NO_START.bits())
+                {
+                    error!("cannot set thread actions for cleanup: {err}");
+                }
             }
-        }
 
-        call_ret = thread_start.call(
-            &mut store,
-            tid.raw().try_into().map_err(|_| Errno::Overflow).unwrap(),
-            start_ptr_offset
-                .try_into()
-                .map_err(|_| Errno::Overflow)
-                .unwrap(),
-        );
-        tracing::debug!("thread cleanup finished");
+            call_ret = thread_start.call(
+                &mut store,
+                tid.raw().try_into().map_err(|_| Errno::Overflow).unwrap(),
+                start_ptr_offset
+                    .try_into()
+                    .map_err(|_| Errno::Overflow)
+                    .unwrap(),
+            );
+            tracing::debug!("thread cleanup finished");
+        }
     }
 
     let mut ret = Errno::Success;
@@ -211,14 +216,14 @@ async fn call_module<M: MemorySize>(
                 env.data(&store)
                     .runtime
                     .on_taint(TaintReason::UnknownWasiVersion);
-                ret = Errno::Noexec;
+                return Err(Errno::Noexec);
             }
             Err(err) => {
-                error!("thread start failed: {}", err);
+                error!("thread failed: {}", err);
                 env.data(&store)
                     .runtime
                     .on_taint(TaintReason::RuntimeError(err));
-                ret = Errno::Noexec;
+                return Err(Errno::Noexec);
             }
         }
     }
