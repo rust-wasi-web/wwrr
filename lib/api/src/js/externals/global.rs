@@ -5,6 +5,7 @@ use crate::value::Value;
 use crate::vm::{VMExtern, VMGlobal};
 use crate::GlobalType;
 use crate::Mutability;
+use js_sys::BigInt;
 use wasm_bindgen::JsValue;
 use wasmer_types::{RawValue, Type};
 
@@ -70,29 +71,25 @@ impl Global {
             let ty = self.handle.ty;
             let raw = match ty.ty {
                 Type::I32 => RawValue {
-                    i32: value.as_f64().unwrap_or_default() as _,
-                },
-                Type::I64 => RawValue {
-                    i64: value.as_f64().unwrap_or_default() as _,
+                    i32: value.as_f64().unwrap() as _,
                 },
                 Type::F32 => RawValue {
-                    f32: value.as_f64().unwrap_or_default() as _,
+                    f32: value.as_f64().unwrap() as _,
                 },
                 Type::F64 => RawValue {
-                    f64: value.as_f64().unwrap_or_default(),
+                    f64: value.as_f64().unwrap(),
                 },
-                Type::V128 => RawValue {
-                    u128: value.as_f64().unwrap_or_default() as _,
+                Type::I64 => RawValue {
+                    i64: BigInt::from(value)
+                        .to_string(10)
+                        .unwrap()
+                        .as_string()
+                        .unwrap()
+                        .parse()
+                        .unwrap(),
                 },
-                Type::FuncRef => {
-                    unimplemented!();
-                    // Self::FuncRef(VMFuncRef::from_raw(raw).map(|f| Function::from_vm_funcref(store, f)))
-                }
-                Type::ExternRef => {
-                    unimplemented!();
-                    // Self::ExternRef(
-                    //     VMExternRef::from_raw(raw).map(|e| ExternRef::from_vm_externref(store, e)),
-                    // )
+                Type::V128 | Type::FuncRef | Type::ExternRef => {
+                    unimplemented!("global type {} unsupported", ty.ty)
                 }
             };
             Value::from_raw(store, ty.ty, raw)
@@ -114,13 +111,13 @@ impl Global {
         }
         let new_value = match val {
             Value::I32(i) => JsValue::from_f64(i as _),
-            Value::I64(i) => JsValue::from_f64(i as _),
             Value::F32(f) => JsValue::from_f64(f as _),
             Value::F64(f) => JsValue::from_f64(f),
-            _ => {
-                return Err(RuntimeError::new(
-                    "The type is not yet supported in the JS Global API".to_owned(),
-                ))
+            Value::I64(i) => BigInt::new(&JsValue::from_str(&i.to_string()))
+                .unwrap()
+                .into(),
+            Value::V128(_) | Value::FuncRef(_) | Value::ExternRef(_) => {
+                unimplemented!("global type {val:?} unsupported");
             }
         };
         self.handle.global.set_value(&new_value);

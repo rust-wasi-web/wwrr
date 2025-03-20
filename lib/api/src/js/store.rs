@@ -4,7 +4,9 @@ pub use objects::{StoreHandle, StoreObjects};
 mod objects {
     use std::{fmt, marker::PhantomData, num::NonZeroUsize};
 
+    use js_sys::BigInt;
     use wasm_bindgen::JsValue;
+    use wasmer_types::Type;
 
     use crate::js::vm::{VMFunctionEnvironment, VMGlobal};
 
@@ -91,7 +93,21 @@ mod objects {
         /// Return an vector of all globals and converted to u128
         pub fn as_u128_globals(&self) -> Vec<u128> {
             self.iter_globals()
-                .map(|v| v.global.value().as_f64().unwrap() as u128)
+                .map(|global| match global.ty.ty {
+                    Type::I32 | Type::F32 | Type::F64 => {
+                        global.global.value().as_f64().unwrap() as u128
+                    }
+                    Type::I64 => BigInt::from(global.global.value())
+                        .to_string(10)
+                        .unwrap()
+                        .as_string()
+                        .unwrap()
+                        .parse()
+                        .unwrap(),
+                    Type::V128 | Type::ExternRef | Type::FuncRef => {
+                        unimplemented!("global type {} unsupported", global.ty.ty)
+                    }
+                })
                 .collect()
         }
 
@@ -101,12 +117,25 @@ mod objects {
         pub fn set_global_unchecked(&self, idx: usize, new_val: u128) {
             assert!(idx < self.globals.len());
 
-            let g = &self.globals[idx].global;
-            let cur_val = g.value().as_f64().unwrap();
-            let new_val = new_val as f64;
-            if cur_val != new_val {
-                let new_value = JsValue::from(new_val);
-                g.set_value(&new_value);
+            let global = &self.globals[idx];
+            let g = &global.global;
+
+            match global.ty.ty {
+                Type::I32 | Type::F32 | Type::F64 => {
+                    let cur_val = g.value().as_f64().unwrap();
+                    let new_val = new_val as f64;
+                    if cur_val != new_val {
+                        let new_value = JsValue::from(new_val);
+                        g.set_value(&new_value);
+                    }
+                }
+                Type::I64 => {
+                    let new_value = BigInt::new(&JsValue::from_str(&new_val.to_string())).unwrap();
+                    g.set_value(&new_value);
+                }
+                Type::V128 | Type::ExternRef | Type::FuncRef => {
+                    unimplemented!("global type {} unsupported", global.ty.ty)
+                }
             }
         }
     }
