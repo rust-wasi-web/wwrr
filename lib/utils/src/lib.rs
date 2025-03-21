@@ -140,16 +140,18 @@ impl GlobalScope {
 pub struct NavigatorInfo(String);
 
 impl NavigatorInfo {
-    fn is_firefox_like(&self) -> bool {
-        self.0.to_lowercase().contains("firefox")
+    fn is_chrome_like(&self) -> bool {
+        self.0.to_lowercase().contains("chrome")
     }
 
-    /// Whether the browser has events loop that are independent between workers.
+    /// Whether the browser has event loops that are independent between workers.
     ///
-    /// Currently this is not the case for Firefox. When the UI thread is blocked by
+    /// Currently this is only the case for Chrome and Edge.
+    ///
+    /// When the browser has no independent event loops and the UI thread is blocked by
     /// running code, some events like timeouts will not fire on web workers.
     pub fn has_independent_event_loops(&self) -> bool {
-        !self.is_firefox_like()
+        self.is_chrome_like()
     }
 }
 
