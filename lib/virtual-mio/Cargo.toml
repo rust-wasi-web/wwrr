@@ -16,3 +16,4 @@ derivative = { workspace = true }
 futures = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 tracing = { workspace = true }
+wasm-bindgen = { workspace = true }

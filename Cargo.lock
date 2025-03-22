@@ -2350,6 +2350,7 @@ dependencies = [
  "serde",
  "tracing",
  "utils",
+ "wasm-bindgen",
 ]
 
 [[package]]

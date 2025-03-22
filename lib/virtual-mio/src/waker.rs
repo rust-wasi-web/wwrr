@@ -9,6 +9,30 @@ use std::{
 
 use futures::Future;
 use utils::GlobalScope;
+use wasm_bindgen::prelude::*;
+
+#[wasm_bindgen]
+extern "C" {
+    type Atomics;
+
+    #[wasm_bindgen(static_method_of = Atomics, js_name = pause)]
+    fn pause();
+
+    #[wasm_bindgen(static_method_of = Atomics, js_name = pause, getter)]
+    fn get_pause() -> JsValue;
+}
+
+/// Calls Atomics.pause(), if available.
+#[inline]
+pub fn atomics_pause() {
+    thread_local! {
+        static HAS_PAUSE: bool = !Atomics::get_pause().is_undefined();
+    }
+
+    if HAS_PAUSE.with(|p| *p) {
+        Atomics::pause();
+    }
+}
 
 /// Runs a Future on the current thread.
 pub struct InlineWaker {
@@ -93,7 +117,10 @@ impl InlineWaker {
             while global.now() <= until {
                 match task.as_mut().poll(&mut cx) {
                     Poll::Ready(ret) => return ret,
-                    Poll::Pending => std::thread::yield_now(),
+                    Poll::Pending => {
+                        atomics_pause();
+                        std::thread::yield_now();
+                    }
                 }
             }
 

@@ -1,3 +1,5 @@
+use virtual_mio::atomics_pause;
+
 use super::*;
 use crate::syscalls::*;
 
@@ -29,6 +31,8 @@ pub(crate) fn thread_sleep_internal<M: MemorySize + 'static>(
         block_on(async move {
             tasks.sleep_now(duration).await;
         });
+    } else {
+        atomics_pause();
     }
 
     Ok(Errno::Success)
