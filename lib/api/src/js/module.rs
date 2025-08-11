@@ -10,7 +10,7 @@ use crate::{ExportType, ImportType};
 use bytes::Bytes;
 use js_sys::{Reflect, Uint8Array, WebAssembly};
 use tracing::{trace, warn};
-use utils::js_error;
+use utils::{js_error, GlobalScope};
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 use wasmer_types::{CompileError, ExportsIterator, ExternType, ImportsIterator, ModuleInfo};
@@ -62,7 +62,18 @@ impl From<Module> for JsValue {
 impl Module {
     /// Creates a new WebAssembly module from its binary data.
     pub(crate) async fn from_binary(binary: Bytes) -> Result<Self, CompileError> {
-        let js_bytes = unsafe { Uint8Array::view(&binary) };
+        let js_bytes = match GlobalScope::current()
+            .navigator()
+            .requires_browser_compile_buffer()
+        {
+            false => unsafe { Uint8Array::view(&binary) },
+            true => {
+                let js_bytes = Uint8Array::new_with_length(binary.len() as u32);
+                js_bytes.copy_from(&binary);
+                js_bytes
+            }
+        };
+
         let module = JsFuture::from(WebAssembly::compile(&js_bytes))
             .await
             .map(|v| v.into())

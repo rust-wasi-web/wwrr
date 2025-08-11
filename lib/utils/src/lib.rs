@@ -144,6 +144,11 @@ impl NavigatorInfo {
         self.0.to_lowercase().contains("chrome")
     }
 
+    fn is_firefox_like(&self) -> bool {
+        let ua = self.0.to_lowercase();
+        ua.contains("firefox") || ua.contains("gecko/")
+    }
+
     /// Whether the browser has event loops that are independent between workers.
     ///
     /// Currently this is only the case for Chrome and Edge.
@@ -152,6 +157,13 @@ impl NavigatorInfo {
     /// running code, some events like timeouts will not fire on web workers.
     pub fn has_independent_event_loops(&self) -> bool {
         self.is_chrome_like()
+    }
+
+    /// Whether the browser requires a Uint8Array in *browser* memory for WebAssembly compilation.
+    ///
+    /// Currently this is the case for Firefox.
+    pub fn requires_browser_compile_buffer(&self) -> bool {
+        self.is_firefox_like()
     }
 }
 
