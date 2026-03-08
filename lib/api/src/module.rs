@@ -262,6 +262,6 @@ impl fmt::Debug for Module {
 
 impl From<Module> for wasm_bindgen::JsValue {
     fn from(value: Module) -> Self {
-        wasm_bindgen::JsValue::from(value.0)
+        Self::from(value.0)
     }
 }

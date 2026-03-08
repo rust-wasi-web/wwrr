@@ -90,7 +90,7 @@ impl From<JsValue> for RuntimeError {
             }
         }
 
-        RuntimeError::from(Trap {
+        Self::from(Trap {
             inner: InnerTrap::Js(value.into()),
         })
     }
@@ -114,10 +114,7 @@ fn downcast_from_ptr(value: &JsValue) -> Option<Trap> {
         .and_then(|v: JsValue| v.dyn_into())
         .ok();
 
-    if marker_func.is_none() {
-        // We couldn't find the marker, so it's something else.
-        return None;
-    }
+    marker_func.as_ref()?;
 
     // Safety: The marker function exists, therefore it's safe to convert back
     // to a Trap.
@@ -164,27 +161,27 @@ impl From<JsValue> for JsTrap {
                 msg.push_str(&stack);
             }
 
-            return JsTrap::Message(msg);
+            return Self::Message(msg);
         }
 
         if let Some(s) = value.as_string() {
-            return JsTrap::Message(s);
+            return Self::Message(s);
         }
 
         // Otherwise, we'll try to stringify the error and hope for the best
         if let Some(obj) = value.dyn_ref::<js_sys::Object>() {
-            return JsTrap::Message(obj.to_string().into());
+            return Self::Message(obj.to_string().into());
         }
 
-        JsTrap::Unknown
+        Self::Unknown
     }
 }
 
 impl Display for JsTrap {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            JsTrap::Message(m) => write!(f, "{m}"),
-            JsTrap::Unknown => write!(f, "unknown"),
+            Self::Message(m) => write!(f, "{m}"),
+            Self::Unknown => write!(f, "unknown"),
         }
     }
 }

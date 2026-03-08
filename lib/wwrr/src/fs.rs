@@ -197,7 +197,7 @@ impl FileSystem for Directory {
         self.0.remove_file(path)
     }
 
-    fn new_open_options(&self) -> virtual_fs::OpenOptions {
+    fn new_open_options(&self) -> virtual_fs::OpenOptions<'_> {
         virtual_fs::OpenOptions::new(self)
     }
 

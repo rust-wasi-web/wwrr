@@ -86,7 +86,7 @@ mod objects {
         }
 
         /// Return an immutable iterator over all globals
-        pub fn iter_globals(&self) -> core::slice::Iter<VMGlobal> {
+        pub fn iter_globals(&self) -> core::slice::Iter<'_, VMGlobal> {
             self.globals.iter()
         }
 

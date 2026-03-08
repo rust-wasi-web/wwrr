@@ -11,11 +11,11 @@ impl Engine {
 
 impl Default for Engine {
     fn default() -> Self {
-        Engine
+        Self
     }
 }
 
 /// Returns the default engine for the JS engine
 pub(crate) fn default_engine() -> Engine {
-    Engine::default()
+    Engine
 }

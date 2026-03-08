@@ -258,7 +258,7 @@ impl ConsoleFile {
     /// Output buffered line to console.
     fn output(&mut self) {
         let line = String::from_utf8_lossy(&self.line);
-        let value = &JsValue::from_str(&*line);
+        let value = &JsValue::from_str(&line);
 
         match self.target {
             ConsoleTarget::Log => web_sys::console::log_1(value),

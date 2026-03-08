@@ -53,7 +53,7 @@ impl ThreadPool {
 
 #[async_trait::async_trait]
 impl VirtualTaskManager for ThreadPool {
-    fn init(&self, scheduler_spawn: SchedulerSpawn) -> LocalBoxFuture<()> {
+    fn init(&self, scheduler_spawn: SchedulerSpawn) -> LocalBoxFuture<'_, ()> {
         async move {
             if Self::available() {
                 tracing::debug!(

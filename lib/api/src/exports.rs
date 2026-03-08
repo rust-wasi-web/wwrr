@@ -172,7 +172,7 @@ impl Exports {
     }
 
     /// Get an iterator over the exports.
-    pub fn iter(&self) -> ExportsIterator<impl Iterator<Item = (&String, &Extern)>> {
+    pub fn iter(&self) -> ExportsIterator<'_, impl Iterator<Item = (&String, &Extern)>> {
         ExportsIterator {
             iter: self.map.iter(),
         }
@@ -299,7 +299,7 @@ pub trait ExportableWithGenerics<'a, Args: WasmTypeList, Rets: WasmTypeList>: Si
 /// with empty `Args` and `Rets`.
 impl<'a, T: Exportable<'a> + Clone + 'static> ExportableWithGenerics<'a, (), ()> for T {
     fn get_self_from_extern_with_generics(_extern: &'a Extern) -> Result<Self, ExportError> {
-        T::get_self_from_extern(_extern).map(|i| i.clone())
+        T::get_self_from_extern(_extern).cloned()
     }
 }
 

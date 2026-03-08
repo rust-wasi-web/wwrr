@@ -171,7 +171,7 @@ impl Module {
                     js_sys::Reflect::set(
                         &imports_object,
                         &import_type.module().into(),
-                        &import_namespace.clone().into(),
+                        &import_namespace.clone(),
                     )?;
                 }
 

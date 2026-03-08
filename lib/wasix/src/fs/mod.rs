@@ -350,7 +350,7 @@ impl FileSystem for WasiFsRoot {
             WasiFsRoot::Backing(fs) => fs.remove_file(path),
         }
     }
-    fn new_open_options(&self) -> OpenOptions {
+    fn new_open_options(&self) -> OpenOptions<'_> {
         match self {
             WasiFsRoot::Sandbox(fs) => fs.new_open_options(),
             WasiFsRoot::Backing(fs) => fs.new_open_options(),

@@ -29,7 +29,7 @@ pub static WORKER_URL: LazyLock<String> = LazyLock::new(|| {
     bpb.set_type("application/javascript");
 
     let blob = web_sys::Blob::new_with_u8_array_sequence_and_options(
-        Array::from_iter([Uint8Array::from(script.as_bytes())]).as_ref(),
+        Array::<JsValue>::from_iter([Uint8Array::from(script.as_bytes())]).as_ref(),
         &bpb,
     )
     .unwrap();

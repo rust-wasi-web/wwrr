@@ -195,7 +195,7 @@ impl std::cmp::PartialEq for Memory {
 
 impl From<Memory> for crate::Memory {
     fn from(value: Memory) -> Self {
-        crate::Memory(value)
+        Self(value)
     }
 }
 
@@ -228,7 +228,7 @@ impl<'a> MemoryBuffer<'a> {
             return Err(MemoryAccessError::HeapOutOfBounds);
         }
         view.subarray(offset as _, end as _)
-            .copy_to(unsafe { &mut slice::from_raw_parts_mut(buf.as_mut_ptr(), buf.len()) });
+            .copy_to(unsafe { slice::from_raw_parts_mut(buf.as_mut_ptr(), buf.len()) });
         Ok(())
     }
 
@@ -252,7 +252,7 @@ impl<'a> MemoryBuffer<'a> {
         }
         let buf_ptr = buf.as_mut_ptr() as *mut u8;
         view.subarray(offset as _, end as _)
-            .copy_to(unsafe { &mut slice::from_raw_parts_mut(buf_ptr, buf.len()) });
+            .copy_to(unsafe { slice::from_raw_parts_mut(buf_ptr, buf.len()) });
 
         Ok(unsafe { slice::from_raw_parts_mut(buf_ptr, buf.len()) })
     }

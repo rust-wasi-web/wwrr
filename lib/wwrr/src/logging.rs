@@ -84,7 +84,7 @@ pub fn initialize_logger(log_config: LogConfig) -> Result<(), utils::Error> {
     let filter = EnvFilter::builder()
         .with_regex(false)
         .with_default_directive(max_level.into())
-        .parse_lossy(&log_config.parse_filter());
+        .parse_lossy(log_config.parse_filter());
 
     tracing_subscriber::fmt::fmt()
         .with_writer(ConsoleLogger::spawn(ansi))

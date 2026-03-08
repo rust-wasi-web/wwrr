@@ -82,6 +82,6 @@ impl wasmer_wasix::runtime::Runtime for Runtime {
     }
 
     fn task_manager(&self) -> &Arc<dyn VirtualTaskManager> {
-        &*THREAD_POOL
+        &THREAD_POOL
     }
 }

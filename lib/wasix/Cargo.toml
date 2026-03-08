@@ -33,7 +33,7 @@ chrono = { workspace = true, default-features = false, features = ["wasmbind", "
 cooked-waker = { workspace = true }
 derivative = { workspace = true }
 futures = { workspace = true }
-getrandom = { workspace = true, features = ["js"] }
+getrandom = { workspace = true, features = ["wasm_js"] }
 heapless = { workspace = true }
 hex = { workspace = true }
 js-sys = { workspace = true }

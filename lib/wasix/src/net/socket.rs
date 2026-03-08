@@ -1484,19 +1484,6 @@ impl InodeSocketProtected {
     }
 }
 
-#[derive(Default)]
-struct IndefinitePoll {}
-
-impl Future for IndefinitePoll {
-    type Output = ();
-    fn poll(
-        self: Pin<&mut Self>,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Self::Output> {
-        std::task::Poll::Pending
-    }
-}
-
 // TODO: review allow...
 #[allow(dead_code)]
 pub(crate) fn all_socket_rights() -> Rights {

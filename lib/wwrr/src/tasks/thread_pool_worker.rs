@@ -69,8 +69,7 @@ impl ThreadPoolWorkerState {
             .into();
         let wbg_js_module = JsFuture::from(wbg_js_promise)
             .await
-            .expect("failed to import wasm-bindgen generated module")
-            .into();
+            .expect("failed to import wasm-bindgen generated module");
         tracing::debug!("JavaScript bindings imported");
 
         // Send ready notification.

@@ -147,7 +147,7 @@ impl Memory {
         }
         self.0
             .try_copy(&store)
-            .map(|new_memory| Self::new_from_existing(new_store, new_memory.into()))
+            .map(|new_memory| Self::new_from_existing(new_store, new_memory))
     }
 
     pub(crate) fn from_vm_extern(store: &mut impl AsStoreMut, vm_extern: VMExternMemory) -> Self {

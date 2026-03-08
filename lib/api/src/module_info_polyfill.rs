@@ -251,7 +251,7 @@ fn transform_err(err: BinaryReaderError) -> String {
 
 /// Translate a sequence of bytes forming a valid Wasm binary into a
 /// parsed ModuleInfo `ModuleInfoPolyfill`.
-pub fn translate_module<'data>(data: &'data [u8]) -> WasmResult<ModuleInfoPolyfill> {
+pub fn translate_module(data: &[u8]) -> WasmResult<ModuleInfoPolyfill> {
     let mut module_info: ModuleInfoPolyfill = Default::default();
 
     for payload in Parser::new(0).parse_all(data) {

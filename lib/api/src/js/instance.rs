@@ -28,9 +28,9 @@ impl Instance {
             .0
             .instantiate(&mut store, imports, imports_obj)
             .await
-            .map_err(|e| InstantiationError::Start(e))?;
+            .map_err(InstantiationError::Start)?;
 
-        Self::from_module_and_instance(store, &module, instance)
+        Self::from_module_and_instance(store, module, instance)
     }
 
     /// Creates a Wasmer `Instance` from a Wasmer `Module` and a WebAssembly Instance
@@ -48,13 +48,13 @@ impl Instance {
                 let extern_type = export_type.ty();
                 let js_export = js_sys::Reflect::get(&instance_exports, &name.into()).unwrap();
                 let extern_ = Extern::from_jsvalue(&mut store, extern_type, &js_export)
-                    .map_err(|e| wasm_bindgen::JsValue::from(e))
+                    .map_err(wasm_bindgen::JsValue::from)
                     .unwrap();
                 Ok((name.to_string(), extern_))
             })
             .collect::<Result<Exports, InstantiationError>>()?;
 
-        let instance = Instance {
+        let instance = Self {
             _handle: JsHandle::new(instance),
         };
 

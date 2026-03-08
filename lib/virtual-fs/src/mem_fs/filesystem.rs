@@ -677,7 +677,7 @@ impl crate::FileSystem for FileSystem {
         Ok(())
     }
 
-    fn new_open_options(&self) -> OpenOptions {
+    fn new_open_options(&self) -> OpenOptions<'_> {
         OpenOptions::new(self)
     }
 

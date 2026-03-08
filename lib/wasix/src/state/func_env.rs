@@ -96,21 +96,18 @@ impl WasiFunctionEnv {
                 .call1(&JsValue::undefined(), &instance.exports_obj.0)
                 .map_err(WasiThreadError::wbg_failed)?;
 
-            // Initialize externref table.
+            // Initialize externref table by calling the WASM export.
             tracing::trace!("initializing wasm-bindgen externref table");
-            let wbg = Reflect::get(&imports_obj.0, &JsValue::from_str("wbg"))
-                .map_err(WasiThreadError::wbg_failed)?;
-            let init_externref_table =
-                Reflect::get(&wbg, &JsValue::from_str("__wbindgen_init_externref_table"))
+            let init_externref_table = Reflect::get(
+                &instance.exports_obj.0,
+                &JsValue::from_str("__wbg_init_externref_table"),
+            )
+            .map_err(WasiThreadError::wbg_failed)?;
+            if let Some(init_fn) = init_externref_table.dyn_ref::<js_sys::Function>() {
+                init_fn
+                    .call0(&JsValue::undefined())
                     .map_err(WasiThreadError::wbg_failed)?;
-            let init_externref_table = init_externref_table.dyn_ref::<js_sys::Function>().ok_or(
-                WasiThreadError::WbgFailed(
-                    "wbg.__wbindgen_init_externref_table is not an exported function".to_string(),
-                ),
-            )?;
-            init_externref_table
-                .call0(&JsValue::undefined())
-                .map_err(WasiThreadError::wbg_failed)?;
+            }
         }
 
         // Initialize instance.

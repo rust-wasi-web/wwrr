@@ -211,7 +211,7 @@ impl AsJs for Instance {
         let (instance, exports, exports_obj) =
             JsInstance::from_module_and_instance(store, module, js_instance)
                 .map_err(|e| JsError::new(&format!("Can't get the instance: {:?}", e)))?;
-        Ok(Instance {
+        Ok(Self {
             _inner: instance,
             module: module.clone(),
             exports,
@@ -233,9 +233,9 @@ impl AsJs for Memory {
         value: &JsValue,
     ) -> Result<Self, JsError> {
         if let Some(memory) = value.dyn_ref::<JsMemory>() {
-            Ok(Memory::from_vm_extern(
+            Ok(Self::from_vm_extern(
                 store,
-                VMMemory::new(memory.clone(), memory_type.clone()),
+                VMMemory::new(memory.clone(), *memory_type),
             ))
         } else {
             Err(JsError::new(&format!(
@@ -259,7 +259,7 @@ impl AsJs for Function {
         value: &JsValue,
     ) -> Result<Self, JsError> {
         if value.is_instance_of::<JsFunction>() {
-            Ok(Function::from_vm_extern(
+            Ok(Self::from_vm_extern(
                 store,
                 VMFunction::new(
                     value.clone().unchecked_into::<JsFunction>(),
@@ -288,12 +288,9 @@ impl AsJs for Global {
         value: &JsValue,
     ) -> Result<Self, JsError> {
         if value.is_instance_of::<JsGlobal>() {
-            Ok(Global::from_vm_extern(
+            Ok(Self::from_vm_extern(
                 store,
-                VMGlobal::new(
-                    value.clone().unchecked_into::<JsGlobal>(),
-                    global_type.clone(),
-                ),
+                VMGlobal::new(value.clone().unchecked_into::<JsGlobal>(), *global_type),
             ))
         } else {
             Err(JsError::new(&format!(
@@ -317,12 +314,9 @@ impl AsJs for Table {
         value: &JsValue,
     ) -> Result<Self, JsError> {
         if value.is_instance_of::<JsTable>() {
-            Ok(Table::from_vm_extern(
+            Ok(Self::from_vm_extern(
                 store,
-                VMTable::new(
-                    value.clone().unchecked_into::<JsTable>(),
-                    table_type.clone(),
-                ),
+                VMTable::new(value.clone().unchecked_into::<JsTable>(), *table_type),
             ))
         } else {
             Err(JsError::new(&format!(

@@ -16,7 +16,7 @@ impl Engine {
 
 impl AsEngineRef for Engine {
     #[inline]
-    fn as_engine_ref(&self) -> EngineRef {
+    fn as_engine_ref(&self) -> EngineRef<'_> {
         EngineRef { inner: self }
     }
 }

@@ -67,11 +67,11 @@ pub struct InodeVal {
 }
 
 impl InodeVal {
-    pub fn read(&self) -> RwLockReadGuard<Kind> {
+    pub fn read(&self) -> RwLockReadGuard<'_, Kind> {
         self.kind.read().unwrap()
     }
 
-    pub fn write(&self) -> RwLockWriteGuard<Kind> {
+    pub fn write(&self) -> RwLockWriteGuard<'_, Kind> {
         self.kind.write().unwrap()
     }
 }

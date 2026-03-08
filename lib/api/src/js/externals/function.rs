@@ -15,6 +15,7 @@ use std::panic::{self, AssertUnwindSafe};
 use wasmer_types::{FunctionType, NativeWasmType, RawValue};
 
 use js_sys::{Array, Function as JSFunction};
+use wasm_bindgen::convert::Upcast;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
@@ -103,7 +104,7 @@ impl Function {
                     .map(|(i, param)| param_from_js(param, &args.get(i as u32)))
                     .collect::<Vec<_>>();
                 let results = func(env, &wasm_arguments)?;
-                return Ok(result_to_js(&results[0]));
+                Ok(result_to_js(&results[0]))
             })
                 as Box<dyn FnMut(&Array) -> Result<JsValue, JsValue>>)
             .into_js_value(),
@@ -117,7 +118,7 @@ impl Function {
                     .map(|(i, param)| param_from_js(param, &args.get(i as u32)))
                     .collect::<Vec<_>>();
                 let results = func(env, &wasm_arguments)?;
-                return Ok(results_to_js_array(&results));
+                Ok(results_to_js_array(&results))
             })
                 as Box<dyn FnMut(&Array) -> Result<Array, JsValue>>)
             .into_js_value(),
@@ -125,7 +126,9 @@ impl Function {
 
         let dyn_func =
             JSFunction::new_with_args("f", "return f(Array.prototype.slice.call(arguments, 1))");
-        let binded_func = dyn_func.bind1(&JsValue::UNDEFINED, &wrapped_func);
+        let binded_func: JSFunction = dyn_func
+            .bind1(&JsValue::UNDEFINED, &wrapped_func)
+            .upcast_into();
         let vm_function = VMFunction::new(binded_func, func_ty);
         Self::from_vm_extern(&mut store, vm_function)
     }
@@ -148,10 +151,12 @@ impl Function {
         let as_table = ft.unchecked_ref::<js_sys::WebAssembly::Table>();
         let func = as_table.get(address).unwrap();
 
-        let binded_func = func.bind1(
-            &JsValue::UNDEFINED,
-            &JsValue::from_f64(store.as_raw() as *mut u8 as usize as f64),
-        );
+        let binded_func: JSFunction = func
+            .bind1(
+                &JsValue::UNDEFINED,
+                &JsValue::from_f64(store.as_raw() as *mut u8 as usize as f64),
+            )
+            .upcast_into();
         let ty = function.ty();
         let vm_function = VMFunction::new(binded_func, ty);
         Self {
@@ -180,11 +185,13 @@ impl Function {
         let as_table = ft.unchecked_ref::<js_sys::WebAssembly::Table>();
         let func = as_table.get(address).unwrap();
 
-        let binded_func = func.bind2(
-            &JsValue::UNDEFINED,
-            &JsValue::from_f64(store.as_raw() as *mut u8 as usize as f64),
-            &JsValue::from_f64(env.handle.internal_handle().index() as f64),
-        );
+        let binded_func: JSFunction = func
+            .bind2(
+                &JsValue::UNDEFINED,
+                &JsValue::from_f64(store.as_raw() as *mut u8 as usize as f64),
+                &JsValue::from_f64(env.handle.internal_handle().index() as f64),
+            )
+            .upcast_into();
         let ty = function.ty();
         let vm_function = VMFunction::new(binded_func, ty);
         Self {
