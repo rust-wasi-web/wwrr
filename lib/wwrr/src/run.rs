@@ -12,20 +12,7 @@ const DEFAULT_PROGRAM_NAME: &str = "wasm";
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(typescript_type = "Uint8Array")]
-    pub type WasmModule;
-}
-
-impl WasmModule {
-    async fn to_module(
-        &self,
-        runtime: &dyn wasmer_wasix::Runtime,
-    ) -> Result<wasmer::Module, Error> {
-        let Some(buffer) = self.dyn_ref::<js_sys::Uint8Array>() else {
-            unreachable!()
-        };
-
-        Ok(runtime.load_module(&buffer.to_vec()).await?)
-    }
+    pub type WasmBinary;
 }
 
 /// A handle connected to a loaded WASIX program.
@@ -58,7 +45,8 @@ impl WasiReactorInstance {
 /// Loads a WASIX program.
 #[wasm_bindgen(js_name = "loadWasix")]
 pub async fn load_wasix(
-    wasm_module: WasmModule,
+    compiled_module: js_sys::WebAssembly::Module,
+    wasm_binary: WasmBinary,
     config: RunOptions,
     imports_obj: js_sys::Object,
 ) -> Result<WasiReactorInstance, Error> {
@@ -74,7 +62,11 @@ pub async fn load_wasix(
     let mut builder = WasiEnvBuilder::new(program_name).runtime(runtime.clone());
     let (stdin, stdout, stderr) = config.configure_builder(&mut builder)?;
 
-    let module: wasmer::Module = wasm_module.to_module(&*runtime).await?;
+    let binary = wasm_binary
+        .dyn_ref::<js_sys::Uint8Array>()
+        .expect("wasm_binary must be Uint8Array");
+    let module =
+        wasmer::Module::from_module_and_binary(compiled_module, bytes::Bytes::from(binary.to_vec()));
     tracing::info!(
         "loaded module {} with JavaScript bindings {}",
         module.name().unwrap_or_default(),
